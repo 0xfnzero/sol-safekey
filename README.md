@@ -39,7 +39,7 @@ A powerful command-line tool for securely generating, managing, and encrypting S
 
 ```bash
 # 克隆仓库 | Clone repository
-git clone https://github.com/your-username/sol-safekey.git
+git clone https://github.com/0xfnzero/sol-safekey.git
 cd sol-safekey
 
 # 编译 | Build
