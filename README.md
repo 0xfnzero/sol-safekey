@@ -67,6 +67,9 @@ sol-safekey gen-secure -p mypassword -o secure-keys.json
 # 加密现有私钥 | Encrypt existing private key
 sol-safekey encrypt -k YOUR_PRIVATE_KEY -p mypassword
 
+# 解密私钥字符串 | Decrypt private key string
+sol-safekey decrypt -e "ENCRYPTED_DATA" -p mypassword
+
 # 解锁加密文件 | Decrypt encrypted file
 sol-safekey unlock -f secure-keys.json -p mypassword
 ```
