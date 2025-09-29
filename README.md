@@ -148,7 +148,7 @@ sol-safekey gen-2fa-wallet -o my-wallet.json
 
 # This creates TWO files:
 # - my-wallet.json: Triple-factor encrypted (requires device + password + security question + 2FA)
-# - XXXXXXXX_keystore.json: Password-only backup (works on any device)
+# - XXXXXXXX_keystore.json: Password-only backup (recover private key cross-device using master password)
 
 # 3. Unlock your wallet
 sol-safekey unlock-2fa-wallet -f my-wallet.json
@@ -200,7 +200,7 @@ sol-safekey gen-2fa-wallet -o my-wallet.json
 - `XXXXXXXX_keystore.json`: Cross-device backup
   - XXXXXXXX = first 8 characters of your wallet address
   - Encrypted with master password only
-  - Can be used on any device for emergency recovery
+  - Recover private key cross-device using master password for emergency recovery
   - Unlock with: `sol-safekey unlock -f XXXXXXXX_keystore.json -p <password>`
 
 **Input Process:**
@@ -318,7 +318,7 @@ sol-safekey address -f encrypted-keys.json -p password123
   "public_key": "GfkFnJY5pcPp2xeGYTH...",
   "encryption_type": "password_only",
   "created_at": "2025-09-30T10:15:30Z",
-  "note": "This file can be unlocked on any device with master password"
+  "note": "Recover private key cross-device using master password"
 }
 ```
 

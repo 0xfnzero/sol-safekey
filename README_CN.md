@@ -148,7 +148,7 @@ sol-safekey gen-2fa-wallet -o my-wallet.json
 
 # 这会创建两个文件：
 # - my-wallet.json: 三因子加密（需要设备 + 密码 + 安全问题 + 2FA）
-# - XXXXXXXX_keystore.json: 仅密码备份（可在任何设备使用）
+# - XXXXXXXX_keystore.json: 仅密码备份（可跨设备使用主密码恢复私钥）
 
 # 3. 解锁您的钱包
 sol-safekey unlock-2fa-wallet -f my-wallet.json
@@ -200,7 +200,7 @@ sol-safekey gen-2fa-wallet -o my-wallet.json
 - `XXXXXXXX_keystore.json`: 跨设备备份
   - XXXXXXXX = 您钱包地址的前 8 个字符
   - 仅使用主密码加密
-  - 可在任何设备上用于紧急恢复
+  - 可跨设备使用主密码恢复私钥用于紧急恢复
   - 解锁命令：`sol-safekey unlock -f XXXXXXXX_keystore.json -p <密码>`
 
 **输入过程：**
@@ -318,7 +318,7 @@ sol-safekey address -f encrypted-keys.json -p password123
   "public_key": "GfkFnJY5pcPp2xeGYTH...",
   "encryption_type": "password_only",
   "created_at": "2025-09-30T10:15:30Z",
-  "note": "此文件可在任何设备上使用主密码解锁"
+  "note": "此文件可跨设备使用主密码恢复私钥"
 }
 ```
 
