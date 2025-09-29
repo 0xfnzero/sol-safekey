@@ -67,7 +67,7 @@ sol-safekey unlock-2fa-wallet -f my-secure-wallet.json
 **What happens during generation:**
 1. Generates a new Solana keypair
 2. Creates triple-factor encrypted wallet (device-bound)
-3. Automatically creates a keystore backup (works on any device with password only)
+3. Automatically creates a keystore backup (recover private key cross-device using master password)
 
 ## ✨ Features
 

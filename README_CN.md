@@ -67,7 +67,7 @@ sol-safekey unlock-2fa-wallet -f my-secure-wallet.json
 **生成过程中会发生什么：**
 1. 生成新的 Solana 密钥对
 2. 创建三因子加密钱包（设备绑定）
-3. 自动创建 keystore 备份（仅需密码即可在任何设备使用）
+3. 自动创建 keystore 备份（可跨设备使用主密码恢复私钥）
 
 ## ✨ 特性
 
