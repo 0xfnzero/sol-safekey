@@ -39,6 +39,25 @@
     <a href="https://discord.gg/ckf5UHxz">Discord</a>
 </p>
 
+## 🛡️ 增强安全设置（强烈推荐）
+
+**重要提示**：首次使用 Sol SafeKey 之前，我们强烈建议运行 `init` 命令来增强安全性：
+
+```bash
+sol-safekey init
+```
+
+这个**可选但关键**的步骤提供**双重安全保护**：
+- 🔐 为您的系统生成独特的主加密密钥
+- 🔒 在密码保护之外增加额外的安全层
+- 🛡️ 确保加密私钥获得最大程度的保护
+
+> **⚠️ 重要提醒**：请安全备份以下两个组件：
+> 1. **主密钥**（由 `init` 命令生成）
+> 2. **加密密码**（使用 `-p` 参数设置的密码）
+>
+> 缺少任一组件都将无法恢复加密的私钥！
+
 ## ✨ 特性
 
 ### 🔑 密钥生成
@@ -69,6 +88,21 @@ cargo build --release
 
 # 安装到系统
 cargo install --path .
+
+# 可选（推荐）：初始化以增强安全性
+sol-safekey init
+
+# 推荐：将主密钥添加到环境变量以提升安全性
+# 方法1：添加到 ~/.zshrc (zsh 用户)
+echo 'export SOL_SAFEKEY_MASTER_KEY="your_master_key_here"' >> ~/.zshrc
+source ~/.zshrc
+
+# 方法2：添加到 ~/.bashrc (bash 用户)
+echo 'export SOL_SAFEKEY_MASTER_KEY="your_master_key_here"' >> ~/.bashrc
+source ~/.bashrc
+
+# 重要：设置环境变量后，删除 .env 文件中的密钥
+rm .env  # 或编辑 .env 文件删除 SOL_SAFEKEY_MASTER_KEY 行
 ```
 
 ### 基本使用
@@ -161,15 +195,42 @@ sol-safekey address -f encrypted-keys.json -p password123
 
 ### ⚙️ 配置命令
 
-#### `init`
-初始化工具，生成随机加密密钥
+#### `init` 🛡️ **可选但强烈推荐**
+初始化工具，生成随机主加密密钥以增强安全性
 ```bash
-# 初始化（生成.env文件）
+# 初始化（创建包含主密钥的.env文件）
 sol-safekey init
 
-# 强制重新生成主密钥
+# 强制重新生成主密钥（如果已存在）
 sol-safekey init --force
 ```
+
+> **🔒 双重安全保护**：`init` 命令创建的主加密密钥与您的密码（`-p`）协同工作，提供最大安全保障。这意味着即使有人获得了您的加密私钥文件，他们也需要同时拥有您的密码和主密钥才能解密。
+
+**环境变量配置（推荐）：**
+```bash
+# zsh 用户（macOS 默认）
+echo 'export SOL_SAFEKEY_MASTER_KEY="init命令生成的主密钥"' >> ~/.zshrc
+source ~/.zshrc
+
+# bash 用户（Linux 默认）
+echo 'export SOL_SAFEKEY_MASTER_KEY="init命令生成的主密钥"' >> ~/.bashrc
+source ~/.bashrc
+
+# 验证环境变量是否设置成功
+echo $SOL_SAFEKEY_MASTER_KEY
+
+# 重要：确认环境变量生效后，从 .env 文件中删除密钥
+# 方法1：删除整个 .env 文件
+rm .env
+
+# 方法2：或者编辑 .env 文件，仅删除 SOL_SAFEKEY_MASTER_KEY 行
+nano .env  # 或 vim .env
+```
+
+> **💡 提示**：环境变量优先于 .env 文件。这种方式更安全，因为不需要在项目目录中存储密钥文件。
+
+> **🔒 安全最佳实践**：成功设置环境变量后，**请从 .env 文件中删除主密钥**，避免在两个地方同时存储密钥。系统将优先使用环境变量。
 
 ## 📝 选项说明
 
@@ -218,10 +279,14 @@ sol-safekey init --force
 
 ## ⚠️ 安全提醒
 
-1. **备份私钥**: 请务必安全备份您的私钥文件
-2. **密码管理**: 使用强密码并妥善保管
-3. **离线存储**: 建议将加密私钥存储在离线设备中
-4. **定期检查**: 定期验证私钥文件的完整性
+1. **双重备份策略**: 务必安全备份以下两个组件：
+   - 🔑 **主加密密钥**（来自 `init` 命令或 .env 文件）
+   - 🔒 **加密密码**（使用 `-p` 参数设置的密码）
+2. **密码管理**: 使用强密码并安全存储
+3. **主密钥保护**: 像保护私钥一样保护您的主密钥
+4. **离线存储**: 将加密私钥和主密钥存储在离线设备中
+5. **定期验证**: 定期测试解密功能确保两个组件都有效
+6. **恢复规划**: 记录您的备份策略 - 丢失任一组件都意味着永久丢失密钥
 
 ## 🛠️ 开发
 
