@@ -15,6 +15,11 @@ chrono = { version = "0.4", features = ["serde"] }
 colored = "3.0.0"
 dotenv = "0.15"
 rand = "0.8"
+totp-rs = "5.4"
+qrcode = "0.14"
+rpassword = "7.0"
+data-encoding = "2.4"
+hex = "0.4.3"
 
 [lib]
 name = "sol_safekey"

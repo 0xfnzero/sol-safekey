@@ -1,11 +1,16 @@
 use clap::{Parser, Subcommand};
-use sol_safekey::{encrypt_key, decrypt_key};
+use sol_safekey::{
+    encrypt_key, decrypt_key, generate_encryption_key_simple,
+    encrypt_with_triple_factor, decrypt_with_triple_factor_and_2fa,
+    derive_totp_secret_from_hardware_and_password,
+    totp::*, hardware_fingerprint::*, security_question::*
+};
 use solana_sdk::signer::Signer;
-use std::{fs, process, env};
+use std::{fs, process, io::{self, Write}};
+use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json;
 use colored::*;
-use rand::RngCore;
-use base64::{Engine as _, engine::general_purpose};
+use rpassword;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -92,11 +97,64 @@ enum Commands {
         #[arg(short = 'p', long)]
         password: Option<String>,
     },
-    /// 初始化工具，生成随机加密密钥
-    Init {
-        /// 强制重新生成密钥（覆盖现有的.env文件）
-        #[arg(long)]
-        force: bool,
+    /// 设置 TOTP 2FA 认证
+    SetupTotp {
+        /// 账户名称
+        #[arg(short = 'a', long, default_value = "master-key")]
+        account: String,
+        /// 输出配置文件路径
+        #[arg(short = 'o', long, default_value = "totp-config.json")]
+        output: String,
+    },
+    /// 生成 TOTP 验证码
+    GenerateTotp {
+        /// TOTP 配置文件路径
+        #[arg(short = 'c', long, default_value = "totp-config.json")]
+        config_file: String,
+    },
+    /// 使用 TOTP 生成加密私钥
+    GenSecureTotp {
+        /// 输出文件路径
+        #[arg(short = 'o', long, default_value = "keystore.json")]
+        output: String,
+        /// TOTP 配置文件路径
+        #[arg(short = 'c', long, default_value = "totp-config.json")]
+        totp_config: String,
+    },
+    /// 使用 TOTP 解锁私钥
+    UnlockTotp {
+        /// 加密文件路径
+        #[arg(short = 'f', long)]
+        file_path: String,
+        /// TOTP 配置文件路径
+        #[arg(short = 'c', long, default_value = "totp-config.json")]
+        totp_config: String,
+    },
+    /// 调试 TOTP 时间窗口
+    DebugTotp {
+        /// TOTP 配置文件路径
+        #[arg(short = 'c', long, default_value = "totp-config.json")]
+        totp_config: String,
+        /// 要检查的时间窗口数量
+        #[arg(short = 'w', long, default_value = "5")]
+        windows: i32,
+    },
+    /// 设置 2FA 认证（硬件指纹 + 主密码 + 安全问题）
+    #[command(name = "setup-2fa")]
+    Setup2FA,
+    /// 使用三因子加密生成安全钱包
+    #[command(name = "gen-2fa-wallet")]
+    Gen2FAWallet {
+        /// 输出文件路径
+        #[arg(short = 'o', long, default_value = "secure-wallet.json")]
+        output: String,
+    },
+    /// 使用三因子 + 2FA 验证码解锁钱包
+    #[command(name = "unlock-2fa-wallet")]
+    Unlock2FAWallet {
+        /// 加密文件路径
+        #[arg(short = 'f', long)]
+        file_path: String,
     },
 }
 
@@ -130,14 +188,17 @@ fn print_colored_help() {
     println!("    {} {}", "address".bright_green(), "     查看私钥对应的钱包地址".white());
     println!();
 
-    // 配置命令部分
-    println!("  {} {}", "⚙️  配置命令 | Configuration Commands:".bright_red().bold(), "");
-    println!("    {} {}", "init".bright_green(), "        初始化工具，生成随机加密密钥".white());
+
+    // 2FA 命令部分
+    println!("  {} {}", "🔐 2FA 三因子安全命令 | 2FA Triple-Factor Security:".bright_red().bold(), "");
+    println!("    {} {}", "setup-2fa".bright_green(), "        设置 2FA（硬件指纹 + 主密码 + 安全问题）".white());
+    println!("    {} {}", "gen-2fa-wallet".bright_green(), "    生成三因子钱包 + keystore备份".white());
+    println!("                       生成两个文件: 1) 三因子钱包(仅当前设备) 2) keystore备份(跨设备)");
+    println!("    {} {}", "unlock-2fa-wallet".bright_green(), "  解锁三因子钱包（需要主密码 + 安全问题 + 2FA验证码）".white());
     println!();
 
     // 使用示例
     println!("  {} {}", "📖 使用示例 | Usage Examples:".bright_red().bold(), "");
-    println!("    {} {}", "sol-safekey".bright_green(), "init".bright_white());
     println!("    {} {}", "sol-safekey".bright_green(), "gen-keypair -o wallet.json".bright_white());
     println!("    {} {}", "sol-safekey".bright_green(), "gen-key -s 3 -o keys.json".bright_white());
     println!("    {} {}", "sol-safekey".bright_green(), "gen-keystore -p mypass -o keystore.json".bright_white());
@@ -148,6 +209,13 @@ fn print_colored_help() {
     println!("    {} {}", "sol-safekey".bright_green(), "address -e ENCRYPTED_KEY -p mypass".bright_white());
     println!("    {} {}", "sol-safekey".bright_green(), "address -f keys.json".bright_white());
     println!();
+    println!("  {} {}", "🔥 2FA 三因子工作流程 | 2FA Triple-Factor Workflow:".bright_magenta().bold(), "");
+    println!("    {} {}", "1. sol-safekey".bright_green(), "setup-2fa                        # 首次设置（扫描二维码 + 设置安全问题）".bright_white());
+    println!("    {} {}", "2. sol-safekey".bright_green(), "gen-2fa-wallet -o wallet.json     # 生成钱包（两个文件）".bright_white());
+    println!("    {} {}", "   输出:".bright_blue(), "wallet.json (三因子) + <地址前缀>_keystore.json (跨设备备份)".bright_white());
+    println!("    {} {}", "3a. sol-safekey".bright_green(), "unlock-2fa-wallet -f wallet.json  # 解锁三因子钱包".bright_white());
+    println!("    {} {}", "3b. sol-safekey".bright_green(), "unlock -f <前缀>_keystore.json -p <密码>  # 跨设备解锁备份".bright_white());
+    println!();
 
     // 常用选项
     println!("  {} {}", "📝 常用选项 | Common Options:".bright_red().bold(), "");
@@ -157,6 +225,14 @@ fn print_colored_help() {
     println!("    {} {}", "-k, --private-key".bright_magenta(), " 私钥字符串（encrypt命令使用）".white());
     println!("    {} {}", "-e, --encrypted-key".bright_magenta(), " 加密数据（decrypt命令使用）".white());
     println!("    {} {}", "-f, --file-path".bright_magenta(), "  文件路径（unlock命令使用）".white());
+    println!();
+
+    // 重要说明
+    println!("{} {}", "🔑 2FA 主密码说明 | Master Password Info:".bright_cyan().bold(), "");
+    println!("{} {}", "  • 主密码:".bright_white(), "您自己设置的强密码，用于派生 2FA 密钥".white());
+    println!("{} {}", "  • 输入方式:".bright_white(), "程序会提示时输入，输入时不显示字符（安全输入）".white());
+    println!("{} {}", "  • 重要性:".bright_white(), "主密码丢失将无法恢复，请务必记住".bright_red());
+    println!("{} {}", "  • 一致性:".bright_white(), "相同主密码总是生成相同的 2FA 密钥".white());
     println!();
 
     // 提示信息
@@ -170,39 +246,38 @@ fn print_colored_help() {
     println!("  {} {}", "-V, --version".bright_magenta(), "  Print version".white());
 }
 
-fn generate_encryption_key(password: &str) -> [u8; 32] {
-    // 补齐到10位
-    let padded_password = format!("{:0<10}", password);
-
-    // 从环境变量读取基础密钥，如果没有则使用默认值
-    let base_key = env::var("SOL_SAFEKEY_MASTER_KEY")
-        .unwrap_or_else(|_| "my_secret_key_32_bytes_encryptio".to_string());
-
-    // 确保基础密钥长度为32字节
-    let mut encryption_key = [0u8; 32];
-    let base_key_bytes = base_key.as_bytes();
-    for i in 0..32 {
-        encryption_key[i] = base_key_bytes.get(i).copied().unwrap_or(0);
-    }
-
-    // 将密码混入加密密钥
-    for (i, c) in padded_password.chars().enumerate() {
-        if i < 32 {
-            encryption_key[i] ^= c as u8; // 使用XOR而不是直接替换
-        }
-    }
-
-    encryption_key
-}
 
 fn encrypt_private_key(private_key: &str, password: &str) -> Result<String, String> {
-    let encryption_key = generate_encryption_key(password);
+    let encryption_key = generate_encryption_key_simple(password);
     encrypt_key(private_key, &encryption_key)
 }
 
 fn decrypt_private_key(encrypted_data: &str, password: &str) -> Result<String, String> {
-    let encryption_key = generate_encryption_key(password);
+    let encryption_key = generate_encryption_key_simple(password);
     decrypt_key(encrypted_data, &encryption_key)
+}
+
+/// 检查密码强度
+fn check_password_strength(password: &str) -> Result<(), String> {
+    if password.len() < 8 {
+        return Err("密码长度至少需要8位".to_string());
+    }
+
+    let has_upper = password.chars().any(|c| c.is_uppercase());
+    let has_lower = password.chars().any(|c| c.is_lowercase());
+    let has_digit = password.chars().any(|c| c.is_numeric());
+    let has_special = password.chars().any(|c| !c.is_alphanumeric());
+
+    let strength_count = [has_upper, has_lower, has_digit, has_special]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+
+    if strength_count < 3 {
+        return Err("密码强度不足，需包含大写、小写、数字、特殊字符中的至少3种".to_string());
+    }
+
+    Ok(())
 }
 
 fn generate_new_keypair() -> (String, String) {
@@ -284,9 +359,6 @@ fn save_keystore_to_file(encrypted_data: &str, public_key: &str, file_path: &str
 }
 
 fn main() {
-    // 尝试加载 .env 文件（如果存在）
-    let _ = dotenv::dotenv();
-
     let cli = Cli::parse();
 
     // 如果用户请求帮助或没有提供命令，显示彩色帮助
@@ -330,12 +402,6 @@ fn main() {
 
             match password {
                 Some(pwd) => {
-                    // 验证密码长度
-                    if pwd.len() > 10 {
-                        eprintln!("❌ 错误: 密码长度不能超过10位");
-                        process::exit(1);
-                    }
-
                     println!("🔑 正在生成新的加密Solana私钥...");
                     println!();
 
@@ -411,9 +477,9 @@ fn main() {
             }
         }
         Commands::GenKeystore { output, password } => {
-            // 验证密码长度
-            if password.len() > 10 {
-                eprintln!("❌ 错误: 密码长度不能超过10位");
+            // 检查密码强度
+            if let Err(e) = check_password_strength(password) {
+                eprintln!("❌ 密码强度不足: {}", e);
                 process::exit(1);
             }
 
@@ -455,9 +521,9 @@ fn main() {
             }
         }
         Commands::Encrypt { private_key, password } => {
-            // 验证密码长度
-            if password.len() > 10 {
-                eprintln!("❌ 错误: 密码长度不能超过10位");
+            // 检查密码强度
+            if let Err(e) = check_password_strength(password) {
+                eprintln!("❌ 密码强度不足: {}", e);
                 process::exit(1);
             }
 
@@ -702,58 +768,823 @@ fn main() {
             println!("🆔 钱包地址:");
             println!("{}", pubkey);
         }
-        Commands::Init { force } => {
-            let env_file = ".env";
+        Commands::SetupTotp { account, output } => {
+            println!("{}", "🔐 设置 TOTP 2FA 认证...".bright_cyan().bold());
+            println!();
 
-            // 检查 .env 文件是否已存在
-            if fs::metadata(env_file).is_ok() && !force {
-                println!("⚠️  .env 文件已存在！");
-                println!("💡 如果要重新生成密钥，请使用 --force 参数");
-                println!("   例如: sol-safekey init --force");
-                return;
-            }
+            // 生成新的密钥
+            let secret = TOTPManager::generate_secret();
+            let config = TOTPConfig {
+                secret: secret.clone(),
+                account: account.clone(),
+                ..Default::default()
+            };
 
-            // 生成32字节的随机密钥
-            let mut master_key = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut master_key);
+            let totp_manager = TOTPManager::new(config.clone());
 
-            // 将字节转换为base64字符串以便存储
-            let master_key_b64 = general_purpose::STANDARD.encode(&master_key);
-
-            // 创建.env文件内容
-            let env_content = format!(
-                "# Sol-SafeKey 主密钥配置文件\n# 警告: 请妥善保管此文件，不要泄露给他人！\n# 此密钥用于加密/解密您的私钥\n\nSOL_SAFEKEY_MASTER_KEY={}\n",
-                master_key_b64
-            );
-
-            // 写入.env文件
-            match fs::write(env_file, env_content) {
-                Ok(()) => {
-                    if *force {
-                        println!("✅ 已重新生成主密钥！");
-                    } else {
-                        println!("✅ 初始化完成！已生成随机主密钥");
-                    }
-                    println!("📄 配置文件: {}", env_file);
-                    println!("🔑 主密钥: {}", master_key_b64);
-                    println!();
-                    println!("🌍 环境变量设置:");
-                    println!("   变量名: SOL_SAFEKEY_MASTER_KEY");
-                    println!("   变量值: {}", master_key_b64);
-                    println!();
-                    println!("💡 建议将环境变量添加到系统配置文件:");
-                    println!("   macOS/Linux (zsh): echo 'export SOL_SAFEKEY_MASTER_KEY=\"{}\"' >> ~/.zshrc", master_key_b64);
-                    println!("   macOS/Linux (bash): echo 'export SOL_SAFEKEY_MASTER_KEY=\"{}\"' >> ~/.bashrc", master_key_b64);
-                    println!("   然后重新启动终端或运行: source ~/.zshrc");
-                    println!();
-                    println!("⚠️  重要提醒:");
-                    println!("  1. 请备份 .env 文件和环境变量到安全位置");
-                    println!("  2. 不要将 .env 文件提交到版本控制系统");
-                    println!("  3. 如果丢失此密钥，将无法解密现有的加密私钥");
-                    println!("  4. 环境变量优先级高于 .env 文件");
+            // 显示 QR 码
+            println!("{}", "📱 请使用谷歌认证器、Authy 或其他 TOTP 应用扫描以下 QR 码：".bright_yellow());
+            println!();
+            match totp_manager.generate_qr_code() {
+                Ok(qr_code) => {
+                    println!("{}", qr_code);
                 }
                 Err(e) => {
-                    eprintln!("❌ 创建 .env 文件失败: {}", e);
+                    eprintln!("{} QR 码生成失败: {}", "❌".red(), e);
+                    println!("{}", "📝 请手动输入以下信息：".bright_yellow());
+                    println!("{}", totp_manager.get_manual_setup_info());
+                }
+            }
+
+            println!();
+            println!("{} 或者手动输入密钥: {}", "🔑".bright_cyan(), secret.bright_white());
+            println!();
+
+            // 验证设置
+            loop {
+                print!("{} ", "请输入认证器显示的 6 位验证码以确认设置:".bright_yellow());
+                io::stdout().flush().unwrap();
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).unwrap();
+                let code = input.trim();
+
+                match totp_manager.verify_code(code) {
+                    Ok(true) => {
+                        println!("{}", "✅ TOTP 设置成功！".bright_green());
+                        break;
+                    }
+                    Ok(false) => {
+                        println!("{}", "❌ 验证码不正确，请重试".red());
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("{} 验证失败: {}", "❌".red(), e);
+                        continue;
+                    }
+                }
+            }
+
+            // 保存配置
+            match save_totp_config(&config, output) {
+                Ok(()) => {
+                    println!("{} TOTP 配置已保存到: {}", "💾".bright_green(), output);
+                    println!("{} 警告: 请安全备份此配置文件和您的认证器应用！", "⚠️".bright_yellow());
+                }
+                Err(e) => {
+                    eprintln!("{} 保存配置失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::GenerateTotp { config_file } => {
+            let config = match load_totp_config(config_file) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("{} {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            let totp_manager = TOTPManager::new(config);
+
+            match totp_manager.generate_current_code() {
+                Ok(code) => {
+                    println!("{} 当前 TOTP 验证码: {}", "🔢".bright_cyan(), code.bright_white().bold());
+
+                    // 显示剩余有效时间
+                    let remaining = totp_manager.get_remaining_time();
+                    println!("{} 剩余有效时间: {} 秒", "⏰".bright_yellow(), remaining.to_string().bright_white());
+                }
+                Err(e) => {
+                    eprintln!("{} 生成验证码失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::GenSecureTotp { output, totp_config } => {
+            let config = match load_totp_config(totp_config) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("{} {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            let totp_manager = TOTPManager::new(config);
+
+            // 提示用户输入 TOTP 验证码
+            print!("{} ", "请输入 TOTP 验证码:".bright_yellow());
+            io::stdout().flush().unwrap();
+            let code = rpassword::read_password().unwrap();
+
+            // 验证 TOTP 码
+            match totp_manager.verify_code(&code) {
+                Ok(true) => {
+                    // 生成密钥对
+                    let (private_key, public_key) = generate_new_keypair();
+
+                    // 使用 TOTP 码作为密码进行加密
+                    match encrypt_private_key(&private_key, &code) {
+                        Ok(encrypted_data) => {
+                            println!("{}", "✅ 密钥生成成功！".bright_green());
+                            println!("{} 公钥地址: {}", "🆔".bright_cyan(), public_key);
+
+                            // 保存加密私钥
+                            if let Err(e) = save_encrypted_key_to_file(&encrypted_data, &public_key, &[], output) {
+                                eprintln!("{} 保存文件失败: {}", "❌".red(), e);
+                                process::exit(1);
+                            }
+                            println!("{} 加密私钥已保存到: {}", "💾".bright_green(), output);
+                            println!("{} 使用 TOTP 验证码解锁时，请确保在同一个 30 秒时间窗口内！", "⚠️".bright_yellow());
+                        }
+                        Err(e) => {
+                            eprintln!("{} 加密失败: {}", "❌".red(), e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Ok(false) => {
+                    eprintln!("{}", "❌ 2FA 验证码不正确".red());
+                    process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("{} 2FA 验证失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::UnlockTotp { file_path, totp_config } => {
+            let config = match load_totp_config(totp_config) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("{} {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            let totp_manager = TOTPManager::new(config);
+
+            // 读取加密文件
+            let file_content = match fs::read_to_string(file_path) {
+                Ok(content) => content,
+                Err(e) => {
+                    eprintln!("{} 读取文件失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            let encrypted_data = match parse_encrypted_file(&file_content) {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("{} {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            // 提示用户输入 TOTP 验证码
+            print!("{} ", "请输入 TOTP 验证码解锁:".bright_yellow());
+            io::stdout().flush().unwrap();
+            let code = rpassword::read_password().unwrap();
+
+            // 首先尝试标准验证（±30秒窗口）
+            match totp_manager.verify_code(&code) {
+                Ok(true) => {
+                    match decrypt_private_key(&encrypted_data, &code) {
+                        Ok(decrypted_key) => {
+                            // 验证私钥有效性
+                            let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
+                            let pubkey = keypair.pubkey();
+
+                            println!("{}", "✅ 解锁成功！".bright_green());
+                            println!("{} 私钥: {}", "🔑".bright_cyan(), decrypted_key);
+                            println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
+                        }
+                        Err(e) => {
+                            eprintln!("{} 标准解密失败: {}", "❌".red(), e);
+                            println!("{} 尝试扩展时间窗口解锁...", "🔄".bright_yellow());
+
+                            // 尝试扩展时间窗口
+                            if let Ok((is_valid, debug_info)) = totp_manager.verify_code_extended(&code) {
+                                if is_valid {
+                                    println!("{} 扩展验证通过，尝试解密安全时间窗口的验证码...", "✅".bright_green());
+
+                                    // 尝试解密多个时间窗口的验证码
+                                    if let Ok(codes) = totp_manager.get_codes_for_windows(1) {
+                                        for (timestamp, window_code) in codes {
+                                            if let Ok(decrypted_key) = decrypt_private_key(&encrypted_data, &window_code) {
+                                                // 验证私钥有效性
+                                                let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
+                                                let pubkey = keypair.pubkey();
+
+                                                println!("{}", "✅ 解锁成功！(使用历史时间窗口)".bright_green());
+                                                println!("{} 使用的时间戳: {}", "⏰".bright_blue(), timestamp);
+                                                println!("{} 使用的验证码: {}", "🔢".bright_blue(), window_code);
+                                                println!("{} 私钥: {}", "🔑".bright_cyan(), decrypted_key);
+                                                println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                eprintln!("{} 所有时间窗口解密都失败了", "❌".red());
+                                eprintln!("{} 调试信息:", "🔍".bright_blue());
+                                eprintln!("{}", debug_info);
+                            }
+
+                            eprintln!("{} 可能的解决方案:", "💡".bright_blue());
+                            eprintln!("  1. 确保系统时间准确（安全时间窗口：±30秒）");
+                            eprintln!("  2. 检查 TOTP 配置文件是否正确");
+                            eprintln!("  3. 使用 debug-totp 命令查看当前可用的验证码");
+                            eprintln!("  4. 重新生成加密私钥");
+                            process::exit(1);
+                        }
+                    }
+                }
+                Ok(false) => {
+                    println!("{} 标准验证失败，尝试扩展时间窗口...", "⚠️".bright_yellow());
+
+                    // 尝试扩展验证
+                    match totp_manager.verify_code_extended(&code) {
+                        Ok((true, _debug_info)) => {
+                            println!("{} 扩展验证通过！", "✅".bright_green());
+                            // 已经通过验证，但标准解密可能失败，尝试多窗口解密
+                            if let Ok(codes) = totp_manager.get_codes_for_windows(1) {
+                                for (_timestamp, window_code) in codes {
+                                    if window_code == code {
+                                        if let Ok(decrypted_key) = decrypt_private_key(&encrypted_data, &window_code) {
+                                            let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
+                                            let pubkey = keypair.pubkey();
+
+                                            println!("{}", "✅ 解锁成功！".bright_green());
+                                            println!("{} 私钥: {}", "🔑".bright_cyan(), decrypted_key);
+                                            println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
+                                            return;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Ok((false, debug_info)) => {
+                            eprintln!("{}", "❌ 扩展验证也失败了".red());
+                            eprintln!("{} 调试信息:", "🔍".bright_blue());
+                            eprintln!("{}", debug_info);
+                        }
+                        Err(e) => {
+                            eprintln!("{} 扩展验证出错: {}", "❌".red(), e);
+                        }
+                    }
+
+                    eprintln!("{}", "❌ 2FA 验证码不正确".red());
+                    eprintln!("{} 请使用 debug-totp 命令查看当前可用的验证码（时间窗口已优化为±30秒）", "💡".bright_blue());
+                    process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("{} 2FA 验证失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::DebugTotp { totp_config, windows } => {
+            let config = match load_totp_config(totp_config) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("{} {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            let totp_manager = TOTPManager::new(config);
+
+            println!("{}", "🔍 TOTP 时间窗口调试信息".bright_cyan().bold());
+            println!();
+
+            // 显示当前验证码
+            match totp_manager.generate_current_code() {
+                Ok(current_code) => {
+                    println!("{} 当前 TOTP 验证码: {}", "🔢".bright_green(), current_code.bright_white().bold());
+                    let remaining = totp_manager.get_remaining_time();
+                    println!("{} 剩余有效时间: {} 秒", "⏰".bright_yellow(), remaining.to_string().bright_white());
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("{} 生成当前验证码失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+
+            // 显示多个时间窗口的验证码
+            match totp_manager.get_codes_for_windows(*windows) {
+                Ok(codes) => {
+                    println!("{} 时间窗口验证码列表（窗口数: {}）:", "📋".bright_blue(), windows);
+                    println!();
+
+                    for (timestamp, code) in codes {
+                        let time_diff = timestamp as i64 - SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+                        let status = if time_diff.abs() <= 30 {
+                            "🟢 当前"
+                        } else if time_diff.abs() <= 90 {
+                            "🟡 最近"
+                        } else {
+                            "🔴 较远"
+                        };
+
+                        println!("{} 时间戳: {} | 验证码: {} | 时差: {}秒",
+                                status,
+                                timestamp,
+                                code.bright_white().bold(),
+                                time_diff);
+                    }
+                    println!();
+                    println!("{} 建议使用 🟢 或 🟡 标记的验证码进行解锁", "💡".bright_blue());
+                }
+                Err(e) => {
+                    eprintln!("{} 生成时间窗口验证码失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::Setup2FA => {
+            let account = "wallet";
+            let issuer = "Sol-SafeKey";
+
+            println!("{}", "🔐 三因子 2FA 安全设置".bright_cyan().bold());
+            println!();
+            println!("{}", "⚠️  安全架构说明:".bright_yellow().bold());
+            println!("  • 因子1: 硬件指纹（自动收集，绑定设备）");
+            println!("  • 因子2: 主密码（您设置的强密码）");
+            println!("  • 因子3: 安全问题答案（防止密码泄露）");
+            println!("  • 2FA密钥: 从硬件指纹+主密码派生（确定性）");
+            println!("  • 解锁需要: 主密码 + 安全问题答案 + 2FA动态验证码");
+            println!();
+
+            // 步骤1: 收集硬件指纹
+            println!("{}", "步骤 1/4: 收集硬件指纹...".bright_blue());
+            let hardware_fp = match HardwareFingerprint::collect() {
+                Ok(fp) => {
+                    println!("{} 硬件指纹已收集（SHA256哈希）", "✅".bright_green());
+                    println!("   指纹预览: {}...", &fp.as_str()[..16]);
+                    fp
+                }
+                Err(e) => {
+                    eprintln!("{} 收集硬件指纹失败: {}", "❌".red(), e);
+                    eprintln!("   此功能需要读取系统硬件信息");
+                    process::exit(1);
+                }
+            };
+            println!();
+
+            // 步骤2: 设置主密码（需输入两次+强度检查）
+            println!("{}", "步骤 2/4: 设置主密码".bright_blue());
+            let master_password = loop {
+                print!("{} ", "请输入主密码:".bright_yellow());
+                io::stdout().flush().unwrap();
+                let password = rpassword::read_password()
+                    .expect("读取密码失败");
+
+                if password.is_empty() {
+                    eprintln!("{} 主密码不能为空", "❌".red());
+                    continue;
+                }
+
+                // 检查密码强度
+                if let Err(e) = check_password_strength(&password) {
+                    eprintln!("{} {}", "❌".red(), e);
+                    continue;
+                }
+
+                print!("{} ", "请再次输入主密码确认:".bright_yellow());
+                io::stdout().flush().unwrap();
+                let password_confirm = rpassword::read_password()
+                    .expect("读取密码失败");
+
+                if password != password_confirm {
+                    eprintln!("{} 两次输入的密码不一致", "❌".red());
+                    continue;
+                }
+
+                break password;
+            };
+
+            println!("{} 主密码设置成功", "✅".bright_green());
+            println!();
+
+            // 步骤3: 设置安全问题
+            println!("{}", "步骤 3/4: 设置安全问题".bright_blue());
+            let (question_index, _security_answer) = match SecurityQuestion::setup_interactive() {
+                Ok(result) => result,
+                Err(e) => {
+                    eprintln!("{} 设置安全问题失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            println!();
+
+            // 步骤4: 从硬件指纹和主密码派生2FA密钥
+            println!("{}", "步骤 4/4: 设置 2FA 动态验证码".bright_blue());
+
+            // 从硬件指纹和主密码派生2FA密钥（确定性）
+            let twofa_secret = match derive_totp_secret_from_hardware_and_password(
+                hardware_fp.as_str(),
+                &master_password,
+                account,
+                issuer,
+            ) {
+                Ok(secret) => secret,
+                Err(e) => {
+                    eprintln!("{} 派生2FA密钥失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            let config = TOTPConfig {
+                secret: twofa_secret.clone(),
+                account: account.to_string(),
+                issuer: issuer.to_string(),
+                algorithm: "SHA1".to_string(),
+                digits: 6,
+                step: 30,
+            };
+
+            let totp_manager = TOTPManager::new(config.clone());
+
+            // 显示 QR 码
+            println!("{}", "📱 请使用 Google Authenticator 或 Authy 扫描以下 QR 码：".bright_yellow());
+            println!();
+            match totp_manager.generate_qr_code() {
+                Ok(qr_code) => {
+                    println!("{}", qr_code);
+                }
+                Err(e) => {
+                    eprintln!("{} QR 码生成失败: {}", "⚠️".yellow(), e);
+                    println!("{}", "📝 请手动输入以下信息：".bright_yellow());
+                    println!("{}", totp_manager.get_manual_setup_info());
+                }
+            }
+
+            println!();
+            println!("{} 或者手动输入密钥: {}", "🔑".bright_cyan(), twofa_secret.bright_white());
+            println!();
+
+            // 验证2FA设置
+            loop {
+                print!("{} ", "请输入认证器显示的 6 位验证码以确认设置:".bright_yellow());
+                io::stdout().flush().unwrap();
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).unwrap();
+                let code = input.trim();
+
+                match totp_manager.verify_code(code) {
+                    Ok(true) => {
+                        println!("{}", "✅ 2FA 验证成功！".bright_green());
+                        break;
+                    }
+                    Ok(false) => {
+                        println!("{}", "❌ 验证码不正确，请重试".red());
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("{} 验证失败: {}", "❌".red(), e);
+                        continue;
+                    }
+                }
+            }
+
+            println!();
+            println!("{}", "🎉 三因子 2FA 设置完成！".bright_green().bold());
+            println!();
+            println!("{}", "📝 重要信息（请妥善保管）:".bright_yellow().bold());
+            println!("  • 硬件指纹: 已绑定到当前设备");
+            println!("  • 安全问题: 问题 {} - {}", question_index + 1, SECURITY_QUESTIONS[question_index]);
+            println!("  • 2FA密钥: 已添加到认证器");
+            println!();
+            println!("{}", "💡 下一步: 使用 gen-2fa-wallet 命令生成安全钱包".bright_blue());
+        }
+        Commands::Gen2FAWallet { output } => {
+            println!("{}", "🔐 生成三因子加密钱包".bright_cyan().bold());
+            println!();
+
+            // 生成新的Solana密钥对
+            let (private_key, public_key) = generate_new_keypair();
+            println!("公钥: {}", public_key.bright_cyan());
+            println!();
+
+            // 步骤1: 收集硬件指纹
+            let hardware_fp = match HardwareFingerprint::collect() {
+                Ok(fp) => fp,
+                Err(e) => {
+                    eprintln!("{} 收集硬件指纹失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            // 步骤2: 输入主密码
+            print!("主密码: ");
+            io::stdout().flush().unwrap();
+            let master_password = rpassword::read_password()
+                .map_err(|e| {
+                    eprintln!("{} 读取密码失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }).unwrap();
+
+            if master_password.is_empty() {
+                eprintln!("{} 主密码不能为空", "❌".red());
+                process::exit(1);
+            }
+
+            // 步骤3: 回答安全问题
+            println!();
+            let (question_index, security_answer) = match SecurityQuestion::setup_interactive() {
+                Ok(result) => result,
+                Err(e) => {
+                    eprintln!("{} 设置安全问题失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            // 步骤4: 验证2FA
+            println!();
+            print!("2FA验证码: ");
+            io::stdout().flush().unwrap();
+
+            // 从硬件指纹和主密码派生2FA密钥（确定性）
+            let twofa_secret = match derive_totp_secret_from_hardware_and_password(
+                hardware_fp.as_str(),
+                &master_password,
+                "wallet",
+                "Sol-SafeKey",
+            ) {
+                Ok(secret) => secret,
+                Err(e) => {
+                    eprintln!("{} 派生2FA密钥失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            let config = TOTPConfig {
+                secret: twofa_secret.clone(),
+                account: "wallet".to_string(),
+                issuer: "Sol-SafeKey".to_string(),
+                algorithm: "SHA1".to_string(),
+                digits: 6,
+                step: 30,
+            };
+
+            let totp_manager = TOTPManager::new(config.clone());
+
+            // 验证2FA
+            loop {
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).unwrap();
+                let code = input.trim();
+
+                match totp_manager.verify_code(code) {
+                    Ok(true) => break,
+                    Ok(false) => {
+                        print!("{} 验证码错误，请重试: ", "❌".red());
+                        io::stdout().flush().unwrap();
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("{} 验证失败: {}", "❌".red(), e);
+                        process::exit(1);
+                    }
+                }
+            }
+
+            // 使用三因子加密
+            println!("{}", "正在加密...".bright_blue());
+            match encrypt_with_triple_factor(
+                &private_key,
+                &twofa_secret,
+                hardware_fp.as_str(),
+                &master_password,
+                question_index,
+                &security_answer,
+            ) {
+                Ok(encrypted_data) => {
+                    // 保存加密钱包
+                    let data = serde_json::json!({
+                        "encrypted_private_key": encrypted_data,
+                        "public_key": public_key,
+                        "version": "triple_factor_v1",
+                        "question_index": question_index,
+                        "created_at": chrono::Utc::now().to_rfc3339()
+                    });
+
+                    match fs::write(output, serde_json::to_string_pretty(&data).unwrap()) {
+                        Ok(()) => {
+                            println!("{} 钱包已保存: {}", "✅".bright_green(), output.bright_white());
+                            println!();
+
+                            // 生成跨设备的 keystore 备份
+                            println!("{}", "生成 Keystore 备份...".bright_blue());
+
+                            // 使用简单的主密码加密
+                            match encrypt_private_key(&private_key, &master_password) {
+                                Ok(keystore_encrypted) => {
+                                    // 使用钱包地址前8位作为文件名前缀
+                                    let addr_prefix = &public_key[..8];
+                                    let keystore_filename = format!("{}_keystore.json", addr_prefix);
+
+                                    let keystore_data = serde_json::json!({
+                                        "encrypted_private_key": keystore_encrypted,
+                                        "public_key": public_key,
+                                        "encryption_type": "password_only",
+                                        "created_at": chrono::Utc::now().to_rfc3339(),
+                                        "note": "此文件可在任何设备上使用主密码解锁"
+                                    });
+
+                                    match fs::write(&keystore_filename, serde_json::to_string_pretty(&keystore_data).unwrap()) {
+                                        Ok(()) => {
+                                            println!("{} Keystore 备份: {}", "✅".bright_green(), keystore_filename.bright_white());
+                                            println!();
+                                            println!("{}", "📝 备份说明:".bright_cyan());
+                                            println!("  • 此文件仅用主密码加密，可在任何设备恢复");
+                                            println!("  • 恢复命令: {}", format!("sol-safekey unlock -f {} -p <主密码>", keystore_filename).bright_white());
+                                            println!();
+                                            println!("{} 请妥善备份此文件到多个安全位置", "⚠️".yellow());
+                                        }
+                                        Err(e) => {
+                                            eprintln!("{} 警告: Keystore 备份保存失败: {}", "⚠️".yellow(), e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("{} 警告: Keystore 备份加密失败: {}", "⚠️".yellow(), e);
+                                }
+                            }
+                            println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_blue());
+
+                            println!();
+                            println!("{}", "🔒 安全架构:".bright_blue().bold());
+                            println!("  ✓ 硬件指纹: 绑定到当前设备");
+                            println!("  ✓ 主密码: 强密码保护");
+                            println!("  ✓ 安全问题: 问题 {} - {}", question_index + 1, SECURITY_QUESTIONS[question_index]);
+                            println!("  ✓ 2FA验证码: 动态验证（每30秒更新）");
+                            println!();
+                            println!("{}", "📁 生成的文件:".bright_cyan().bold());
+                            println!();
+                            println!("{} 文件 1: {} (三因子加密钱包)", "1️⃣".bright_white(), output.bright_green());
+                            println!("   安全等级: ⭐⭐⭐⭐⭐ (最高)");
+                            println!("   限制: 仅限当前设备使用");
+                            println!("   解锁需要: 硬件指纹 + 主密码 + 安全问题 + 2FA验证码");
+                            println!("   解锁命令: {}", format!("sol-safekey unlock-2fa-wallet -f {}", output).bright_white());
+                            println!();
+                            println!("{} 文件 2: {} (Keystore跨设备备份)", "2️⃣".bright_white(), format!("{}_keystore.json", &public_key[..8]).bright_green());
+                            println!("   安全等级: ⭐⭐⭐ (中等)");
+                            println!("   限制: 无设备限制");
+                            println!("   解锁需要: 仅需主密码");
+                            println!("   解锁命令: {}", format!("sol-safekey unlock -f {}_keystore.json -p <主密码>", &public_key[..8]).bright_white());
+                            println!();
+                            println!("{}", "❓ 为什么需要 Keystore 备份？".bright_yellow().bold());
+                            println!("  • 硬件损坏: 如果当前设备损坏，三因子钱包将无法使用");
+                            println!("  • 系统重装: 重装系统后硬件指纹可能改变");
+                            println!("  • 跨设备访问: 在其他电脑/服务器上需要访问钱包");
+                            println!("  • 应急恢复: Keystore是最后的保险，保证资金安全");
+                            println!();
+                            println!("{}", "🔓 如何恢复私钥（三种方式）:".bright_cyan().bold());
+                            println!();
+                            println!("{} 当前设备 - 使用三因子钱包（推荐）:", "方式1".bright_green());
+                            println!("   {}", format!("sol-safekey unlock-2fa-wallet -f {}", output).bright_white());
+                            println!("   输入: 主密码 → 安全问题答案 → 2FA验证码");
+                            println!();
+                            println!("{} 任意设备 - 使用 Keystore 备份:", "方式2".bright_yellow());
+                            println!("   {}", format!("sol-safekey unlock -f {}_keystore.json -p <主密码>", &public_key[..8]).bright_white());
+                            println!("   仅需输入主密码即可恢复");
+                            println!();
+                            println!("{} 任意设备 - 查看钱包地址:", "方式3".bright_green());
+                            println!("   {}", format!("sol-safekey address -f {}_keystore.json -p <主密码>", &public_key[..8]).bright_white());
+                            println!();
+                            println!("{}", "⚠️  重要提醒:".bright_red().bold());
+                            println!("  • {} - 日常使用（最安全）", output.bright_green());
+                            println!("  • {}_keystore.json - 离线冷备份（多地备份）", &public_key[..8]);
+                            println!("  • 主密码务必牢记，丢失无法恢复");
+                            println!("  • 建议将 Keystore 备份到 U盘/云盘/纸质 等多个地方");
+                        }
+                        Err(e) => {
+                            eprintln!("{} 保存文件失败: {}", "❌".red(), e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} 加密失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::Unlock2FAWallet { file_path } => {
+            println!("{}", "🔐 解锁三因子加密钱包".bright_cyan().bold());
+            println!();
+
+            // 读取加密文件
+            let file_content = match fs::read_to_string(file_path) {
+                Ok(content) => content,
+                Err(e) => {
+                    eprintln!("{} 读取文件失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            // 解析JSON
+            let data: serde_json::Value = match serde_json::from_str(&file_content) {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("{} 文件格式错误: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+
+            let encrypted_data = data["encrypted_private_key"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+
+            let question_index = data["question_index"]
+                .as_u64()
+                .unwrap_or(0) as usize;
+
+            if encrypted_data.is_empty() {
+                eprintln!("{} 加密数据缺失", "❌".red());
+                process::exit(1);
+            }
+
+            // 步骤1: 收集硬件指纹
+            println!("{}", "步骤 1/3: 验证硬件指纹...".bright_blue());
+            let hardware_fp = match HardwareFingerprint::collect() {
+                Ok(fp) => {
+                    println!("{} 硬件指纹验证通过", "✅".bright_green());
+                    fp
+                }
+                Err(e) => {
+                    eprintln!("{} 硬件指纹验证失败: {}", "❌".red(), e);
+                    eprintln!("   此钱包可能在其他设备上创建");
+                    process::exit(1);
+                }
+            };
+            println!();
+
+            // 步骤2: 输入主密码
+            println!("{}", "步骤 2/3: 输入主密码".bright_blue());
+            print!("{} ", "请输入主密码:".bright_yellow());
+            io::stdout().flush().unwrap();
+            let master_password = rpassword::read_password()
+                .map_err(|e| {
+                    eprintln!("{} 读取密码失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }).unwrap();
+            println!();
+
+            // 步骤3: 回答安全问题
+            println!("{}", "步骤 3/3: 回答安全问题".bright_blue());
+            let security_answer = match SecurityQuestion::verify_interactive(question_index) {
+                Ok(answer) => answer,
+                Err(e) => {
+                    eprintln!("{} 安全问题验证失败: {}", "❌".red(), e);
+                    process::exit(1);
+                }
+            };
+            println!();
+
+            // 步骤4: 输入当前2FA验证码
+            println!("{}", "步骤 4/4: 输入 2FA 动态验证码".bright_blue());
+            print!("{} ", "请输入认证器显示的 6 位验证码:".bright_yellow());
+            io::stdout().flush().unwrap();
+            let mut twofa_code = String::new();
+            io::stdin().read_line(&mut twofa_code).unwrap();
+            let twofa_code = twofa_code.trim();
+            println!();
+
+            // 使用三因子解密并验证2FA
+            println!("{}", "🔓 正在解密钱包...".bright_blue());
+            match decrypt_with_triple_factor_and_2fa(
+                &encrypted_data,
+                hardware_fp.as_str(),
+                &master_password,
+                &security_answer,
+                twofa_code,
+            ) {
+                Ok((private_key, _twofa_secret, _question_idx)) => {
+                    // 验证私钥有效性
+                    let keypair = solana_sdk::signature::Keypair::from_base58_string(&private_key);
+                    let pubkey = keypair.pubkey();
+
+                    println!("{}", "🎉 钱包解锁成功！".bright_green().bold());
+                    println!();
+                    println!("{} 私钥: {}", "🔑".bright_cyan(), private_key);
+                    println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
+                    println!();
+                    println!("{}", "✅ 三因子验证通过:".bright_green().bold());
+                    println!("  ✓ 硬件指纹匹配");
+                    println!("  ✓ 主密码正确");
+                    println!("  ✓ 安全问题答案正确");
+                    println!("  ✓ 2FA动态验证码正确");
+                }
+                Err(e) => {
+                    eprintln!("{} 解锁失败: {}", "❌".red(), e);
+                    eprintln!();
+                    eprintln!("{} 可能的原因:", "💡".bright_yellow());
+                    eprintln!("  • 主密码错误");
+                    eprintln!("  • 安全问题答案错误");
+                    eprintln!("  • 2FA验证码错误或已过期");
+                    eprintln!("  • 硬件指纹不匹配（设备不同）");
                     process::exit(1);
                 }
             }
