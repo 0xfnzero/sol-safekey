@@ -1,8 +1,43 @@
-# sol-safekey
+<div align="center">
+    <h1>🔧 Sol SafeKey</h1>
+    <h3><em>A powerful command-line tool for secure Solana key management</em></h3>
+</div>
 
-🔧 **Solana Security Key Management Tool**
+<p align="center">
+    <strong>Securely generate, manage, and encrypt Solana private keys with multiple output formats, key segmentation, and encrypted file storage.</strong>
+</p>
 
-A powerful command-line tool for securely generating, managing, and encrypting Solana private keys. Supports multiple output formats, key segmentation, and encrypted file storage.
+<p align="center">
+    <a href="https://crates.io/crates/sol-safekey">
+        <img src="https://img.shields.io/crates/v/sol-safekey.svg" alt="Crates.io">
+    </a>
+    <a href="https://docs.rs/sol-safekey">
+        <img src="https://docs.rs/sol-safekey/badge.svg" alt="Documentation">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey">
+        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/network">
+        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
+    </a>
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
+    <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
+    <img src="https://img.shields.io/badge/Security-FF6B6B?style=for-the-badge&logo=shield&logoColor=white" alt="Security">
+</p>
+
+<p align="center">
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
+    <a href="https://fnzero.dev/">Website</a> |
+    <a href="https://t.me/fnzero_group">Telegram</a> |
+    <a href="https://discord.gg/ckf5UHxz">Discord</a>
+</p>
 
 ## ✨ Features
 
@@ -48,8 +83,11 @@ sol-safekey gen-keypair -o my-wallet.json
 # Generate string format, split into 3 segments
 sol-safekey gen-key -s 3 -o my-keys.json
 
-# Generate encrypted private key
-sol-safekey gen-secure -p mypassword -o secure-keys.json
+# Generate encrypted private key with password
+sol-safekey gen-key -s 3 -p mypassword -o my-encrypted-keys.json
+
+# Generate encrypted keystore file
+sol-safekey gen-keystore -p mypassword -o secure-keys.json
 
 # Encrypt existing private key
 sol-safekey encrypt -k YOUR_PRIVATE_KEY -p mypassword
@@ -65,12 +103,6 @@ sol-safekey unlock -f secure-keys.json -p mypassword
 
 ### 🔑 Generation Commands
 
-#### `gen`
-Generate Solana private key (compatibility mode)
-```bash
-sol-safekey gen -o output.json -s 2
-```
-
 #### `gen-keypair`
 Generate keypair format private key
 ```bash
@@ -83,10 +115,10 @@ Generate string format private key
 sol-safekey gen-key -s 3 -o keys.json
 ```
 
-#### `gen-secure`
-Generate encrypted private key
+#### `gen-keystore`
+Generate encrypted keystore file
 ```bash
-sol-safekey gen-secure -p password123 -s 2 -o secure.json
+sol-safekey gen-keystore -p password123 -o secure.json
 ```
 
 ### 🔐 Encryption/Decryption Commands
@@ -107,6 +139,36 @@ sol-safekey decrypt -e "encrypted_data" -p password123
 Decrypt private key from file
 ```bash
 sol-safekey unlock -f encrypted-file.json -p password123
+```
+
+### 🔍 Query Commands
+
+#### `address`
+View wallet address from private key
+```bash
+# From plain private key
+sol-safekey address -k YOUR_PRIVATE_KEY
+
+# From encrypted private key
+sol-safekey address -e ENCRYPTED_KEY -p password123
+
+# From file
+sol-safekey address -f keys.json
+
+# From encrypted file
+sol-safekey address -f encrypted-keys.json -p password123
+```
+
+### ⚙️ Configuration Commands
+
+#### `init`
+Initialize tool and generate random encryption key
+```bash
+# Initialize (creates .env file)
+sol-safekey init
+
+# Force regenerate master key
+sol-safekey init --force
 ```
 
 ## 📝 Options Reference

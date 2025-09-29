@@ -1,8 +1,43 @@
-# sol-safekey
+<div align="center">
+    <h1>🔧 Sol SafeKey</h1>
+    <h3><em>功能强大的 Solana 安全密钥管理命令行工具</em></h3>
+</div>
 
-🔧 **Solana安全密钥管理工具**
+<p align="center">
+    <strong>安全地生成、管理和加密 Solana 私钥，支持多种格式输出、私钥分段显示和文件加密存储。</strong>
+</p>
 
-一个功能强大的命令行工具，用于安全地生成、管理和加密 Solana 私钥。支持多种格式输出、私钥分段显示和文件加密存储。
+<p align="center">
+    <a href="https://crates.io/crates/sol-safekey">
+        <img src="https://img.shields.io/crates/v/sol-safekey.svg" alt="Crates.io">
+    </a>
+    <a href="https://docs.rs/sol-safekey">
+        <img src="https://docs.rs/sol-safekey/badge.svg" alt="Documentation">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey">
+        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/network">
+        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
+    </a>
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
+    <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
+    <img src="https://img.shields.io/badge/Security-FF6B6B?style=for-the-badge&logo=shield&logoColor=white" alt="Security">
+</p>
+
+<p align="center">
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
+    <a href="https://fnzero.dev/">Website</a> |
+    <a href="https://t.me/fnzero_group">Telegram</a> |
+    <a href="https://discord.gg/ckf5UHxz">Discord</a>
+</p>
 
 ## ✨ 特性
 
@@ -48,8 +83,11 @@ sol-safekey gen-keypair -o my-wallet.json
 # 生成字符串格式私钥，分3段显示
 sol-safekey gen-key -s 3 -o my-keys.json
 
-# 生成加密私钥
-sol-safekey gen-secure -p mypassword -o secure-keys.json
+# 生成带密码的加密私钥
+sol-safekey gen-key -s 3 -p mypassword -o my-encrypted-keys.json
+
+# 生成加密keystore文件
+sol-safekey gen-keystore -p mypassword -o secure-keys.json
 
 # 加密现有私钥
 sol-safekey encrypt -k YOUR_PRIVATE_KEY -p mypassword
@@ -65,12 +103,6 @@ sol-safekey unlock -f secure-keys.json -p mypassword
 
 ### 🔑 生成命令
 
-#### `gen`
-生成 Solana 私钥（兼容模式）
-```bash
-sol-safekey gen -o output.json -s 2
-```
-
 #### `gen-keypair`
 生成 keypair 格式私钥
 ```bash
@@ -83,10 +115,10 @@ sol-safekey gen-keypair -o wallet.json
 sol-safekey gen-key -s 3 -o keys.json
 ```
 
-#### `gen-secure`
-生成加密私钥
+#### `gen-keystore`
+生成加密keystore文件
 ```bash
-sol-safekey gen-secure -p password123 -s 2 -o secure.json
+sol-safekey gen-keystore -p password123 -o secure.json
 ```
 
 ### 🔐 加密解密命令
@@ -107,6 +139,36 @@ sol-safekey decrypt -e "encrypted_data" -p password123
 从文件解锁私钥
 ```bash
 sol-safekey unlock -f encrypted-file.json -p password123
+```
+
+### 🔍 查询命令
+
+#### `address`
+查看私钥对应的钱包地址
+```bash
+# 使用明文私钥
+sol-safekey address -k YOUR_PRIVATE_KEY
+
+# 使用加密私钥
+sol-safekey address -e ENCRYPTED_KEY -p password123
+
+# 从文件读取
+sol-safekey address -f keys.json
+
+# 从加密文件读取
+sol-safekey address -f encrypted-keys.json -p password123
+```
+
+### ⚙️ 配置命令
+
+#### `init`
+初始化工具，生成随机加密密钥
+```bash
+# 初始化（生成.env文件）
+sol-safekey init
+
+# 强制重新生成主密钥
+sol-safekey init --force
 ```
 
 ## 📝 选项说明
