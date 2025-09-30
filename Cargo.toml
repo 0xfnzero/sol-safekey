@@ -2,47 +2,23 @@
 name = "sol-safekey"
 version = "0.1.0"
 edition = "2021"
-authors = ["fnzero <fnzero@example.com>"]
-description = "A powerful Solana key management library and CLI with military-grade encryption, supporting password-based encryption, triple-factor authentication, and 2FA"
-repository = "https://github.com/0xfnzero/sol-safekey"
-homepage = "https://github.com/0xfnzero/sol-safekey"
-documentation = "https://docs.rs/sol-safekey"
-license = "MIT"
-keywords = ["solana", "cryptography", "security", "2fa", "wallet"]
-categories = ["cryptography", "command-line-utilities"]
-readme = "README.md"
 default-run = "sol-safekey"
 
 [dependencies]
-# Core cryptography
 base64 = "0.22.1"
 ring = "0.17.8"
-bs58 = "0.5"
-
-# Solana
 solana-sdk = "3.0.0"
-
-# Serialization
+clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-
-# CLI dependencies (optional for library users)
-clap = { version = "4.5", features = ["derive"], optional = true }
-colored = { version = "3.0.0", optional = true }
-rpassword = { version = "7.0", optional = true }
-qrcode = { version = "0.14", optional = true }
-
-# Other
+colored = "3.0.0"
 dotenv = "0.15"
 rand = "0.8"
 totp-rs = "5.4"
+qrcode = "0.14"
+rpassword = "7.0"
 data-encoding = "2.4"
-hex = "0.4.3"
-
-[features]
-default = ["cli"]
-cli = ["clap", "colored", "rpassword", "qrcode"]
 
 [lib]
 name = "sol_safekey"

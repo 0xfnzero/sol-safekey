@@ -40,6 +40,36 @@
     <a href="https://discord.gg/ckf5UHxz">Discord</a>
 </p>
 
+---
+
+## 📋 Table of Contents
+
+- [What's New: Triple-Factor 2FA Security](#-whats-new-triple-factor-2fa-security)
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+  - [🤖 Bot Integration (Recommended for Bots)](#-bot-integration-recommended-for-bots)
+  - [📦 Library Integration (For Developers)](#-library-integration-for-developers)
+  - [🔧 CLI Tool Installation](#-cli-tool-installation)
+- [Library API Reference](#-library-api-reference)
+- [CLI Command Reference](#-cli-command-reference)
+  - [🔐 Triple-Factor 2FA Commands (Recommended)](#-triple-factor-2fa-commands-recommended)
+  - [🔑 Basic Generation Commands](#-basic-generation-commands)
+  - [🔐 Encryption/Decryption Commands](#-encryptiondecryption-commands)
+  - [🔍 Query Commands](#-query-commands)
+- [Options Reference](#-options-reference)
+- [Output Formats](#-output-formats)
+- [Security Architecture](#-security-architecture)
+- [Security Best Practices](#️-security-best-practices)
+- [Security Warnings](#️-security-warnings)
+- [Migration & Recovery Scenarios](#-migration--recovery-scenarios)
+- [Development](#️-development)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Support](#-support)
+- [Acknowledgments](#-acknowledgments)
+
+---
+
 ## 🎯 What's New: Triple-Factor 2FA Security
 
 **The Most Secure Wallet Protection Available!** Sol SafeKey now features a revolutionary **Triple-Factor Authentication System** that combines:
