@@ -1189,6 +1189,7 @@ name = "sol-safekey"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "bs58",
  "chrono",
  "clap",
  "colored",

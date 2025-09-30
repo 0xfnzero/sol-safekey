@@ -94,7 +94,123 @@ sol-safekey unlock-2fa-wallet -f my-secure-wallet.json
 
 ## 🚀 Quick Start
 
-### Installation
+Sol SafeKey can be used in three ways:
+1. **As a CLI Tool** - Command-line interface for managing Solana keys
+2. **As a Rust Library** - Integrate encryption functionality into your own projects
+3. **For Bot Integration** - Easy bot integration with CLI-based key management (🔥 **Recommended for Bots**)
+
+### 🤖 Bot Integration (Recommended for Bots)
+
+Perfect for trading bots, automated tools, and applications that need secure key management.
+
+#### Why Use This for Bots?
+- ✅ **No CLI Implementation Needed** - Just call `BotKeyManager`
+- ✅ **Interactive Password Input** - Secure password prompt at startup
+- ✅ **Encrypted Storage** - Keystore files remain encrypted on disk
+- ✅ **Simple API** - Only 3 lines of code to unlock wallet
+
+#### Quick Bot Example
+
+```rust
+use sol_safekey::bot_helper::BotKeyManager;
+use solana_sdk::signature::Keypair;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manager = BotKeyManager::new();
+
+    // Interactive unlock (prompts user for password)
+    let private_key = manager.unlock_keystore_interactive("bot_wallet.json")?;
+    let keypair = Keypair::from_base58_string(&private_key);
+
+    println!("🚀 Bot started with wallet: {}", keypair.pubkey());
+    // Your bot logic here...
+
+    Ok(())
+}
+```
+
+#### Complete Bot Example
+
+See [`examples/simple_bot.rs`](./examples/simple_bot.rs) for a complete working example:
+
+```bash
+# Run the bot example
+cargo run --example simple_bot
+```
+
+The example includes:
+- First-time wallet generation
+- Interactive password input
+- Secure wallet unlocking
+- Bot operations (balance check, trading simulation)
+
+#### Using in Your Bot
+
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+sol-safekey = "0.1.0"
+solana-sdk = "3.0"
+```
+
+Then use in your bot code:
+```rust
+use sol_safekey::bot_helper::BotKeyManager;
+
+let manager = BotKeyManager::new();
+
+// First run: Generate wallet
+let pubkey = manager.generate_keystore_interactive("wallet.json")?;
+
+// Every run: Unlock wallet
+let private_key = manager.unlock_keystore_interactive("wallet.json")?;
+let keypair = Keypair::from_base58_string(&private_key);
+```
+
+### 📦 Library Integration (For Developers)
+
+Integrate encryption functionality directly into your projects.
+
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+sol-safekey = "0.1.0"
+```
+
+Or without CLI features:
+```toml
+[dependencies]
+sol-safekey = { version = "0.1.0", default-features = false }
+```
+
+#### Basic Usage Example
+
+```rust
+use sol_safekey::KeyManager;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Generate keypair
+    let keypair = KeyManager::generate_keypair();
+    println!("Public key: {}", keypair.pubkey());
+
+    // Encrypt with password
+    let private_key = keypair.to_base58_string();
+    let encrypted = KeyManager::encrypt_with_password(&private_key, "password")?;
+
+    // Decrypt
+    let decrypted = KeyManager::decrypt_with_password(&encrypted, "password")?;
+
+    // Create encrypted JSON keystore
+    let keystore = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
+
+    // Restore from keystore
+    let restored = KeyManager::keypair_from_encrypted_json(&keystore, "password")?;
+
+    Ok(())
+}
+```
+
+### 🔧 CLI Tool Installation
 
 ```bash
 # Clone repository
@@ -111,7 +227,7 @@ cargo build --release
 cargo install --path .
 ```
 
-### Basic Usage (Simple Mode)
+### Basic CLI Usage
 
 ```bash
 # View help
@@ -120,14 +236,15 @@ sol-safekey --help
 # Generate keypair format
 sol-safekey gen-keypair -o my-wallet.json
 
-# Generate string format, split into 3 segments
-sol-safekey gen-key -s 3 -o my-keys.json
+# Generate encrypted keystore (interactive password input)
+sol-safekey gen-keystore -o secure-wallet.json
 
-# Generate encrypted keystore file
-sol-safekey gen-keystore -p mypassword -o secure-keys.json
+# Unlock keystore (interactive password input)
+sol-safekey unlock -f secure-wallet.json
 
-# Unlock encrypted file
-sol-safekey unlock -f secure-keys.json -p mypassword
+# Or provide password as argument for non-interactive use
+sol-safekey gen-keystore -o secure-wallet.json -p mypassword
+sol-safekey unlock -f secure-wallet.json -p mypassword
 ```
 
 ### Advanced Usage (Triple-Factor 2FA Mode)
@@ -159,7 +276,101 @@ sol-safekey unlock-2fa-wallet -f my-wallet.json
 # - Current 2FA code from your authenticator app
 ```
 
-## 📋 Command Reference
+## 📚 Library API Reference
+
+When using sol-safekey as a library, the main interface is the `KeyManager` struct:
+
+### Core Functions
+
+#### `KeyManager::generate_keypair()`
+Generate a new Solana keypair.
+
+```rust
+let keypair = KeyManager::generate_keypair();
+```
+
+#### `KeyManager::encrypt_with_password(private_key, password)`
+Encrypt a private key with a password.
+
+```rust
+let encrypted = KeyManager::encrypt_with_password(&private_key, "password")?;
+```
+
+#### `KeyManager::decrypt_with_password(encrypted_data, password)`
+Decrypt an encrypted private key.
+
+```rust
+let decrypted = KeyManager::decrypt_with_password(&encrypted, "password")?;
+```
+
+#### `KeyManager::get_public_key(private_key)`
+Derive public key from a private key.
+
+```rust
+let public_key = KeyManager::get_public_key(&private_key)?;
+```
+
+#### `KeyManager::keypair_to_encrypted_json(keypair, password)`
+Create an encrypted keystore JSON from a keypair.
+
+```rust
+let json = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
+```
+
+#### `KeyManager::keypair_from_encrypted_json(json_data, password)`
+Restore a keypair from encrypted JSON.
+
+```rust
+let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
+```
+
+### Usage Patterns
+
+#### Pattern 1: Simple Encryption
+```rust
+use sol_safekey::KeyManager;
+
+let keypair = KeyManager::generate_keypair();
+let encrypted = KeyManager::encrypt_with_password(
+    &keypair.to_base58_string(),
+    "password"
+)?;
+```
+
+#### Pattern 2: Keystore Management
+```rust
+use sol_safekey::KeyManager;
+
+// Save to keystore
+let keypair = KeyManager::generate_keypair();
+let keystore = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
+std::fs::write("wallet.json", keystore)?;
+
+// Load from keystore
+let keystore = std::fs::read_to_string("wallet.json")?;
+let keypair = KeyManager::keypair_from_encrypted_json(&keystore, "password")?;
+```
+
+#### Pattern 3: Multiple Wallet Management
+```rust
+use sol_safekey::KeyManager;
+use std::collections::HashMap;
+
+let mut wallets: HashMap<String, String> = HashMap::new();
+let password = "master_password";
+
+// Create multiple wallets
+for i in 0..3 {
+    let keypair = KeyManager::generate_keypair();
+    let encrypted = KeyManager::encrypt_with_password(
+        &keypair.to_base58_string(),
+        password
+    )?;
+    wallets.insert(format!("wallet_{}", i), encrypted);
+}
+```
+
+## 📋 CLI Command Reference
 
 ### 🔐 Triple-Factor 2FA Commands (Recommended)
 

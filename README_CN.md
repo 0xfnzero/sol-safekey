@@ -94,7 +94,123 @@ sol-safekey unlock-2fa-wallet -f my-secure-wallet.json
 
 ## 🚀 快速开始
 
-### 安装
+Sol SafeKey 提供三种使用方式：
+1. **命令行工具** - 用于管理 Solana 密钥的命令行界面
+2. **Rust 库** - 将加密功能集成到您自己的项目中
+3. **Bot 集成** - 基于 CLI 的简易 Bot 密钥管理（🔥 **推荐给 Bot 开发者**）
+
+### 🤖 Bot 集成（推荐给 Bot 开发者）
+
+完美适用于交易机器人、自动化工具等需要安全密钥管理的应用。
+
+#### 为什么用于 Bot？
+- ✅ **无需实现 CLI** - 只需调用 `BotKeyManager`
+- ✅ **交互式密码输入** - 启动时安全的密码提示
+- ✅ **加密存储** - Keystore 文件始终保持加密
+- ✅ **简单 API** - 仅需 3 行代码解锁钱包
+
+#### Bot 快速示例
+
+```rust
+use sol_safekey::bot_helper::BotKeyManager;
+use solana_sdk::signature::Keypair;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manager = BotKeyManager::new();
+
+    // 交互式解锁（提示用户输入密码）
+    let private_key = manager.unlock_keystore_interactive("bot_wallet.json")?;
+    let keypair = Keypair::from_base58_string(&private_key);
+
+    println!("🚀 Bot 已启动，钱包地址: {}", keypair.pubkey());
+    // 您的 Bot 逻辑...
+
+    Ok(())
+}
+```
+
+#### 完整 Bot 示例
+
+查看 [`examples/simple_bot.rs`](./examples/simple_bot.rs) 获取完整的工作示例：
+
+```bash
+# 运行 Bot 示例
+cargo run --example simple_bot
+```
+
+示例包含：
+- 首次钱包生成
+- 交互式密码输入
+- 安全钱包解锁
+- Bot 操作（余额查询、交易模拟）
+
+#### 在您的 Bot 中使用
+
+在 `Cargo.toml` 中添加：
+```toml
+[dependencies]
+sol-safekey = "0.1.0"
+solana-sdk = "3.0"
+```
+
+在 Bot 代码中使用：
+```rust
+use sol_safekey::bot_helper::BotKeyManager;
+
+let manager = BotKeyManager::new();
+
+// 首次运行：生成钱包
+let pubkey = manager.generate_keystore_interactive("wallet.json")?;
+
+// 每次运行：解锁钱包
+let private_key = manager.unlock_keystore_interactive("wallet.json")?;
+let keypair = Keypair::from_base58_string(&private_key);
+```
+
+### 📦 库集成（开发者）
+
+直接将加密功能集成到您的项目中。
+
+在 `Cargo.toml` 中添加：
+```toml
+[dependencies]
+sol-safekey = "0.1.0"
+```
+
+或不包含 CLI 功能：
+```toml
+[dependencies]
+sol-safekey = { version = "0.1.0", default-features = false }
+```
+
+#### 基本使用示例
+
+```rust
+use sol_safekey::KeyManager;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 生成密钥对
+    let keypair = KeyManager::generate_keypair();
+    println!("公钥: {}", keypair.pubkey());
+
+    // 使用密码加密
+    let private_key = keypair.to_base58_string();
+    let encrypted = KeyManager::encrypt_with_password(&private_key, "password")?;
+
+    // 解密
+    let decrypted = KeyManager::decrypt_with_password(&encrypted, "password")?;
+
+    // 创建加密的 JSON keystore
+    let keystore = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
+
+    // 从 keystore 恢复
+    let restored = KeyManager::keypair_from_encrypted_json(&keystore, "password")?;
+
+    Ok(())
+}
+```
+
+### 🔧 命令行工具安装
 
 ```bash
 # 克隆仓库
@@ -111,7 +227,7 @@ cargo build --release
 cargo install --path .
 ```
 
-### 基本使用（简单模式）
+### 基本 CLI 使用
 
 ```bash
 # 查看帮助
@@ -120,14 +236,15 @@ sol-safekey --help
 # 生成 keypair 格式
 sol-safekey gen-keypair -o my-wallet.json
 
-# 生成字符串格式，分 3 段显示
-sol-safekey gen-key -s 3 -o my-keys.json
+# 生成加密 keystore（交互式密码输入）
+sol-safekey gen-keystore -o secure-wallet.json
 
-# 生成加密 keystore 文件
-sol-safekey gen-keystore -p mypassword -o secure-keys.json
+# 解锁 keystore（交互式密码输入）
+sol-safekey unlock -f secure-wallet.json
 
-# 解锁加密文件
-sol-safekey unlock -f secure-keys.json -p mypassword
+# 或提供密码参数用于非交互式使用
+sol-safekey gen-keystore -o secure-wallet.json -p mypassword
+sol-safekey unlock -f secure-wallet.json -p mypassword
 ```
 
 ### 高级使用（三因子 2FA 模式）
@@ -159,7 +276,101 @@ sol-safekey unlock-2fa-wallet -f my-wallet.json
 # - 来自认证器应用的当前 2FA 验证码
 ```
 
-## 📋 命令参考
+## 📚 库 API 参考
+
+当作为库使用 sol-safekey 时，主要接口是 `KeyManager` 结构体：
+
+### 核心函数
+
+#### `KeyManager::generate_keypair()`
+生成新的 Solana 密钥对。
+
+```rust
+let keypair = KeyManager::generate_keypair();
+```
+
+#### `KeyManager::encrypt_with_password(private_key, password)`
+使用密码加密私钥。
+
+```rust
+let encrypted = KeyManager::encrypt_with_password(&private_key, "password")?;
+```
+
+#### `KeyManager::decrypt_with_password(encrypted_data, password)`
+解密加密的私钥。
+
+```rust
+let decrypted = KeyManager::decrypt_with_password(&encrypted, "password")?;
+```
+
+#### `KeyManager::get_public_key(private_key)`
+从私钥派生公钥。
+
+```rust
+let public_key = KeyManager::get_public_key(&private_key)?;
+```
+
+#### `KeyManager::keypair_to_encrypted_json(keypair, password)`
+从密钥对创建加密的 keystore JSON。
+
+```rust
+let json = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
+```
+
+#### `KeyManager::keypair_from_encrypted_json(json_data, password)`
+从加密的 JSON 恢复密钥对。
+
+```rust
+let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
+```
+
+### 使用模式
+
+#### 模式 1：简单加密
+```rust
+use sol_safekey::KeyManager;
+
+let keypair = KeyManager::generate_keypair();
+let encrypted = KeyManager::encrypt_with_password(
+    &keypair.to_base58_string(),
+    "password"
+)?;
+```
+
+#### 模式 2：Keystore 管理
+```rust
+use sol_safekey::KeyManager;
+
+// 保存到 keystore
+let keypair = KeyManager::generate_keypair();
+let keystore = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
+std::fs::write("wallet.json", keystore)?;
+
+// 从 keystore 加载
+let keystore = std::fs::read_to_string("wallet.json")?;
+let keypair = KeyManager::keypair_from_encrypted_json(&keystore, "password")?;
+```
+
+#### 模式 3：多钱包管理
+```rust
+use sol_safekey::KeyManager;
+use std::collections::HashMap;
+
+let mut wallets: HashMap<String, String> = HashMap::new();
+let password = "master_password";
+
+// 创建多个钱包
+for i in 0..3 {
+    let keypair = KeyManager::generate_keypair();
+    let encrypted = KeyManager::encrypt_with_password(
+        &keypair.to_base58_string(),
+        password
+    )?;
+    wallets.insert(format!("wallet_{}", i), encrypted);
+}
+```
+
+## 📋 CLI 命令参考
 
 ### 🔐 三因子 2FA 命令（推荐）
 

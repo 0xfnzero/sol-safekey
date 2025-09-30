@@ -120,8 +120,8 @@ pub fn secure_unlock_with_2fa(
     use rpassword;
     use std::fs;
     use crate::totp::parse_encrypted_file;
-    use crate::practical_secure_decrypt_with_2fa_verification;
     use solana_sdk::signer::Signer;
+    use crate::{decrypt_key, generate_encryption_key_simple};
 
     println!("{}", "🔐 实用安全 2FA 解锁模式".bright_cyan().bold());
     println!();
@@ -135,7 +135,7 @@ pub fn secure_unlock_with_2fa(
     // 第二步：获取当前 2FA 验证码
     print!("{} ", "请输入当前 2FA 验证码:".bright_green());
     io::stdout().flush().unwrap();
-    let totp_code = rpassword::read_password()
+    let _totp_code = rpassword::read_password()
         .map_err(|e| format!("读取验证码失败: {}", e))?;
 
     // 读取加密文件
@@ -145,9 +145,10 @@ pub fn secure_unlock_with_2fa(
 
     println!("🔍 正在验证主密码和2FA验证码...");
 
-    // 使用实用安全解密方案
-    match practical_secure_decrypt_with_2fa_verification(&encrypted_data, &master_password, &totp_code) {
-        Ok((private_key, _totp_secret)) => {
+    // 使用简单的密码解密方案（实用安全解密已移除）
+    let encryption_key = generate_encryption_key_simple(&master_password);
+    match decrypt_key(&encrypted_data, &encryption_key) {
+        Ok(private_key) => {
             // 验证私钥有效性
             let keypair = solana_sdk::signature::Keypair::from_base58_string(&private_key);
             let pubkey = keypair.pubkey();

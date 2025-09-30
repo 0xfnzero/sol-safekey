@@ -51,9 +51,9 @@ enum Commands {
         /// 输出文件路径
         #[arg(short = 'o', long, default_value = "keystore.json")]
         output: String,
-        /// 密码（最多10位）
+        /// 密码（可选，不提供则交互式输入）
         #[arg(short = 'p', long)]
-        password: String,
+        password: Option<String>,
     },
     /// 加密私钥
     Encrypt {
@@ -78,9 +78,9 @@ enum Commands {
         /// 文件路径
         #[arg(short = 'f', long)]
         file_path: String,
-        /// 密码
+        /// 密码（可选，不提供则交互式输入）
         #[arg(short = 'p', long)]
-        password: String,
+        password: Option<String>,
     },
     /// 查看私钥对应的钱包地址
     Address {
@@ -477,8 +477,21 @@ fn main() {
             }
         }
         Commands::GenKeystore { output, password } => {
+            // 获取密码（交互式或参数）
+            let password = match password {
+                Some(p) => p.clone(),
+                None => {
+                    print!("📝 Please enter password: ");
+                    io::stdout().flush().unwrap();
+                    rpassword::read_password().unwrap_or_else(|_| {
+                        eprintln!("❌ Failed to read password");
+                        process::exit(1);
+                    })
+                }
+            };
+
             // 检查密码强度
-            if let Err(e) = check_password_strength(password) {
+            if let Err(e) = check_password_strength(&password) {
                 eprintln!("❌ 密码强度不足: {}", e);
                 process::exit(1);
             }
@@ -497,7 +510,7 @@ fn main() {
             println!();
 
             // 加密私钥
-            match encrypt_private_key(&private_key, password) {
+            match encrypt_private_key(&private_key, &password) {
                 Ok(encrypted_data) => {
                     println!("🔒 加密私钥已生成但不在终端显示（安全考虑）");
                     println!();
@@ -585,6 +598,19 @@ fn main() {
             }
         }
         Commands::Unlock { file_path, password } => {
+            // 获取密码（交互式或参数）
+            let password = match password {
+                Some(p) => p.clone(),
+                None => {
+                    print!("🔑 Please enter your password: ");
+                    io::stdout().flush().unwrap();
+                    rpassword::read_password().unwrap_or_else(|_| {
+                        eprintln!("❌ Failed to read password");
+                        process::exit(1);
+                    })
+                }
+            };
+
             // 验证密码长度
             if password.len() > 10 {
                 eprintln!("❌ 错误: 密码长度不能超过10位");
@@ -592,7 +618,7 @@ fn main() {
             }
 
             // 读取文件内容
-            let file_content = match fs::read_to_string(file_path) {
+            let file_content = match fs::read_to_string(&file_path) {
                 Ok(content) => content,
                 Err(e) => {
                     eprintln!("❌ 读取文件失败: {}", e);
@@ -622,7 +648,7 @@ fn main() {
             }
 
             // 解密私钥
-            match decrypt_private_key(&encrypted_data, password) {
+            match decrypt_private_key(&encrypted_data, &password) {
                 Ok(decrypted_key) => {
                     // 尝试验证解密后的私钥是否为有效的Solana私钥
                     let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
