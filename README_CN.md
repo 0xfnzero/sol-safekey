@@ -42,6 +42,27 @@
 
 ---
 
+## 📚 文档导航
+
+| 文档 | 说明 | 语言 |
+|------|------|------|
+| [README_CN.md](./README_CN.md) | 完整项目概述、CLI 使用 | 中文 |
+| [README.md](./README.md) | Complete project overview, CLI usage | English |
+| [INTEGRATION_CN.md](./docs/INTEGRATION_CN.md) | 库集成指南 | 中文 |
+| [INTEGRATION.md](./docs/INTEGRATION.md) | Library integration guide | English |
+| [SOLANA_OPS_CN.md](./docs/SOLANA_OPS_CN.md) | Solana 操作（转账、余额查询） | 中文 |
+| [SOLANA_OPS.md](./docs/SOLANA_OPS.md) | Solana operations (transfer, balance) | English |
+| [LIBRARY_VS_CLI_CN.md](./docs/LIBRARY_VS_CLI_CN.md) | 库 vs CLI 对比 | 中文 |
+| [LIBRARY_VS_CLI.md](./docs/LIBRARY_VS_CLI.md) | Library vs CLI comparison | English |
+
+**快速导航：**
+- 🚀 第一次使用 Sol-SafeKey？ → 从 [README_CN.md](./README_CN.md) 开始
+- 📦 想集成到你的项目？ → 查看 [INTEGRATION_CN.md](./docs/INTEGRATION_CN.md)
+- 💰 需要 Solana 操作功能？ → 阅读 [SOLANA_OPS_CN.md](./docs/SOLANA_OPS_CN.md)
+- 🤔 库集成还是 CLI 工具？ → 参考 [LIBRARY_VS_CLI_CN.md](./docs/LIBRARY_VS_CLI_CN.md)
+
+---
+
 ## 📋 目录
 
 - [最新功能：三因子 2FA 安全机制](#-最新功能三因子-2fa-安全机制)

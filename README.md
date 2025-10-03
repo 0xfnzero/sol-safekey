@@ -42,14 +42,38 @@
 
 ---
 
+## 📚 Documentation
+
+| Document | Description | Language |
+|----------|-------------|----------|
+| [README.md](./README.md) | Complete project overview, CLI usage | English |
+| [README_CN.md](./README_CN.md) | 完整项目概述、CLI 使用 | 中文 |
+| [INTEGRATION.md](./docs/INTEGRATION.md) | Library integration guide | English |
+| [INTEGRATION_CN.md](./docs/INTEGRATION_CN.md) | 库集成指南 | 中文 |
+| [SOLANA_OPS.md](./docs/SOLANA_OPS.md) | Solana operations (transfer, balance) | English |
+| [SOLANA_OPS_CN.md](./docs/SOLANA_OPS_CN.md) | Solana 操作（转账、余额） | 中文 |
+| [LIBRARY_VS_CLI.md](./docs/LIBRARY_VS_CLI.md) | Library vs CLI comparison | English |
+| [LIBRARY_VS_CLI_CN.md](./docs/LIBRARY_VS_CLI_CN.md) | 库 vs CLI 对比 | 中文 |
+
+**Quick Navigation:**
+- 🚀 New to Sol-SafeKey? → Start with [README.md](./README.md)
+- 📦 Want to integrate into your project? → See [INTEGRATION.md](./docs/INTEGRATION.md)
+- 💰 Need Solana operations? → Check [SOLANA_OPS.md](./docs/SOLANA_OPS.md)
+- 🤔 Library or CLI? → Read [LIBRARY_VS_CLI.md](./docs/LIBRARY_VS_CLI.md)
+
+---
+
 ## 📋 Table of Contents
 
 - [What's New: Triple-Factor 2FA Security](#-whats-new-triple-factor-2fa-security)
 - [Features](#-features)
+- [Installation](#-installation)
+  - [As a Library (Recommended for Integration)](#as-a-library-recommended-for-integration)
+  - [As a CLI Tool](#as-a-cli-tool)
 - [Quick Start](#-quick-start)
   - [🤖 Bot Integration (Recommended for Bots)](#-bot-integration-recommended-for-bots)
   - [📦 Library Integration (For Developers)](#-library-integration-for-developers)
-  - [🔧 CLI Tool Installation](#-cli-tool-installation)
+  - [🔧 CLI Tool Usage](#-cli-tool-usage)
 - [Library API Reference](#-library-api-reference)
 - [CLI Command Reference](#-cli-command-reference)
   - [🔐 Triple-Factor 2FA Commands (Recommended)](#-triple-factor-2fa-commands-recommended)
@@ -98,6 +122,73 @@ sol-safekey unlock-2fa-wallet -f my-secure-wallet.json
 1. Generates a new Solana keypair
 2. Creates triple-factor encrypted wallet (device-bound)
 3. Automatically creates a keystore backup (recover private key cross-device using master password)
+
+## 📦 Installation
+
+### As a Library (Recommended for Integration)
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+sol-safekey = "0.1.0"
+```
+
+This installs the **minimal library** without CLI dependencies - perfect for integration into your Rust projects.
+
+**Optional features:**
+```toml
+# Enable 2FA features (hardware fingerprint, TOTP, etc.)
+sol-safekey = { version = "0.1.0", features = ["2fa"] }
+
+# Enable Solana operations (balance, transfer, etc.)
+sol-safekey = { version = "0.1.0", features = ["solana-ops"] }
+
+# Enable all features
+sol-safekey = { version = "0.1.0", features = ["full"] }
+```
+
+**Quick Example:**
+```rust
+use sol_safekey::KeyManager;
+
+fn main() {
+    // Generate new keypair
+    let keypair = KeyManager::generate_keypair();
+
+    // Encrypt with password
+    let encrypted = KeyManager::encrypt_with_password(
+        &keypair.to_base58_string(),
+        "your_password"
+    ).unwrap();
+
+    // Decrypt
+    let decrypted = KeyManager::decrypt_with_password(
+        &encrypted,
+        "your_password"
+    ).unwrap();
+}
+```
+
+👉 See [INTEGRATION.md](./INTEGRATION.md) for complete library integration guide.
+
+### As a CLI Tool
+
+For command-line usage, install with full features:
+
+```bash
+cargo install sol-safekey --features full
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/0xfnzero/sol-safekey.git
+cd sol-safekey
+cargo build --release --features full
+```
+
+The binary will be available at `target/release/sol-safekey`.
 
 ## ✨ Features
 
@@ -181,6 +272,10 @@ Add to your `Cargo.toml`:
 [dependencies]
 sol-safekey = "0.1.0"
 solana-sdk = "3.0"
+
+# Optional: For Solana operations (balance, transfer, etc.)
+sol-safekey = { version = "0.1.0", features = ["solana-ops"] }
+tokio = { version = "1.0", features = ["full"] }
 ```
 
 Then use in your bot code:
@@ -194,8 +289,43 @@ let pubkey = manager.generate_keystore_interactive("wallet.json")?;
 
 // Every run: Unlock wallet
 let private_key = manager.unlock_keystore_interactive("wallet.json")?;
-let keypair = Keypair::from_base58_string(&private_key);
 ```
+
+#### Solana Operations (Optional)
+
+If you need to perform Solana operations (check balance, transfer, etc.), enable the `solana-ops` feature:
+
+```toml
+[dependencies]
+sol-safekey = { version = "0.1.0", features = ["solana-ops"] }
+```
+
+**Example - Check Balance:**
+```rust
+use sol_safekey::{KeyManager, solana_utils::*};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Load wallet
+    let keypair = KeyManager::keypair_from_encrypted_json(&json, password)?;
+
+    // Create Solana client
+    let client = SolanaClient::new("https://api.mainnet-beta.solana.com".to_string());
+
+    // Check balance
+    let balance = client.get_sol_balance(&keypair.pubkey()).await?;
+    println!("Balance: {} SOL", lamports_to_sol(balance));
+
+    Ok(())
+}
+```
+
+📖 **Complete Solana Operations Guide:** See [SOLANA_OPS.md](./SOLANA_OPS.md) for detailed documentation including:
+- CLI usage for all operations
+- Library integration examples
+- Transfer SOL and tokens
+- Wrap/Unwrap SOL
+- API reference
 
 ### 📦 Library Integration (For Developers)
 

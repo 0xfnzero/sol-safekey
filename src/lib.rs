@@ -34,14 +34,26 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use ring::digest;
 
-// Re-export modules for advanced usage
+// Re-export modules for advanced usage (conditional compilation)
+#[cfg(feature = "2fa")]
 pub mod totp;
+
+#[cfg(feature = "2fa")]
 pub mod secure_totp;
+
+#[cfg(feature = "2fa")]
 pub mod hardware_fingerprint;
+
+#[cfg(feature = "2fa")]
 pub mod security_question;
 
 // Bot helper module for easy CLI integration
+#[cfg(feature = "cli")]
 pub mod bot_helper;
+
+// Solana utilities for token operations
+#[cfg(feature = "solana-ops")]
+pub mod solana_utils;
 
 // Re-export commonly used types
 pub use solana_sdk::signature::{Keypair, Signer};
@@ -97,14 +109,42 @@ pub fn decrypt_key(encrypted_data: &str, encryption_key: &[u8; 32]) -> Result<St
         .map_err(|_| "Invalid UTF-8 data in decrypted content".to_string())
 }
 
-/// Generate a 32-byte encryption key from a password using SHA-256
+/// Minimum password length for encryption/decryption
+pub const MIN_PASSWORD_LENGTH: usize = 10;
+
+/// Maximum password length for encryption/decryption
+pub const MAX_PASSWORD_LENGTH: usize = 20;
+
+/// Fixed salt for password hashing
+/// This prevents rainbow table attacks and ensures consistent key derivation
+const PASSWORD_SALT: &[u8] = b"sol-safekey-v1-salt-2025";
+
+/// Generate a 16-byte encryption key from a password using SHA-256
 ///
-/// This is a simple key derivation suitable for basic encryption.
-/// For production use, consider using PBKDF2 with proper salt and iterations.
+/// This function:
+/// 1. Combines password with fixed salt
+/// 2. Hashes using SHA-256 (produces 32 bytes)
+/// 3. Takes the first 16 bytes of the hash as the encryption key
+///
+/// Password requirements:
+/// - Minimum length: 10 characters
+/// - Maximum length: 20 characters
 pub fn generate_encryption_key_simple(password: &str) -> [u8; 32] {
-    let context = digest::digest(&digest::SHA256, password.as_bytes());
+    // Combine password with fixed salt
+    let mut salted_password = password.as_bytes().to_vec();
+    salted_password.extend_from_slice(PASSWORD_SALT);
+
+    // Hash the salted password using SHA-256
+    let hash = digest::digest(&digest::SHA256, &salted_password);
+
+    // Take the first 16 bytes of the hash
     let mut key = [0u8; 32];
-    key.copy_from_slice(context.as_ref());
+    key[0..16].copy_from_slice(&hash.as_ref()[0..16]);
+
+    // Fill the remaining 16 bytes by repeating the first 16 bytes
+    // This ensures we have a 32-byte key for compatibility
+    key[16..32].copy_from_slice(&hash.as_ref()[0..16]);
+
     key
 }
 
@@ -274,6 +314,11 @@ impl KeyManager {
 // Advanced 2FA Functions (CLI 工具使用，库集成可选)
 // ============================================================================
 
+// ============================================================================
+// 2FA Functions (only available with "2fa" feature)
+// ============================================================================
+
+#[cfg(feature = "2fa")]
 /// Derive a TOTP secret from password
 ///
 /// This is used internally for deterministic 2FA key generation.
@@ -299,6 +344,7 @@ fn derive_totp_secret_from_password(password: &str, account: &str, issuer: &str)
     Ok(BASE32_NOPAD.encode(&secret))
 }
 
+#[cfg(feature = "2fa")]
 /// Derive TOTP secret from hardware fingerprint and password
 ///
 /// This creates a deterministic 2FA key bound to specific hardware.
@@ -329,6 +375,7 @@ pub fn derive_totp_secret_from_hardware_and_password(
     Ok(BASE32_NOPAD.encode(&secret))
 }
 
+#[cfg(feature = "2fa")]
 /// Verify a TOTP code
 fn verify_current_totp_code(totp_secret: &str, current_code: &str) -> Result<(), String> {
     use crate::totp::{TOTPConfig, TOTPManager};
@@ -352,9 +399,10 @@ fn verify_current_totp_code(totp_secret: &str, current_code: &str) -> Result<(),
 }
 
 // ============================================================================
-// Triple-Factor Encryption (高级功能，CLI 工具专用)
+// Triple-Factor Encryption (only available with "2fa" feature)
 // ============================================================================
 
+#[cfg(feature = "2fa")]
 /// Generate a triple-factor encryption key
 ///
 /// Combines hardware fingerprint + master password + security answer
@@ -388,6 +436,7 @@ pub fn generate_triple_factor_key(
     key
 }
 
+#[cfg(feature = "2fa")]
 /// Encrypt with triple-factor authentication
 ///
 /// Used by CLI for maximum security with device binding.
@@ -424,6 +473,7 @@ pub fn encrypt_with_triple_factor(
     Ok(encrypted)
 }
 
+#[cfg(feature = "2fa")]
 /// Decrypt with triple-factor authentication and verify 2FA code
 ///
 /// Used by CLI for unlocking triple-factor encrypted wallets.

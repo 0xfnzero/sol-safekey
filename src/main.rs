@@ -156,6 +156,16 @@ enum Commands {
         #[arg(short = 'f', long)]
         file_path: String,
     },
+    /// Solana 操作命令（使用加密私钥）
+    #[command(name = "sol-ops")]
+    SolOps {
+        /// 加密钱包文件路径
+        #[arg(short = 'f', long)]
+        file_path: String,
+
+        #[command(subcommand)]
+        command: sol_safekey::solana_utils::SolanaOpsCommand,
+    },
 }
 
 
@@ -197,6 +207,16 @@ fn print_colored_help() {
     println!("    {} {}", "unlock-2fa-wallet".bright_green(), "  解锁三因子钱包（需要主密码 + 安全问题 + 2FA验证码）".white());
     println!();
 
+    // Solana 操作命令部分
+    println!("  {} {}", "💰 Solana 操作命令 | Solana Operations (with encrypted key):".bright_red().bold(), "");
+    println!("    {} {}", "sol-ops".bright_green(), " balance        查询 SOL 余额".white());
+    println!("    {} {}", "sol-ops".bright_green(), " token-balance  查询 Token 余额".white());
+    println!("    {} {}", "sol-ops".bright_green(), " transfer       转账 SOL".white());
+    println!("    {} {}", "sol-ops".bright_green(), " transfer-token 转账 Token".white());
+    println!("    {} {}", "sol-ops".bright_green(), " wrap-sol       SOL 转 WSOL".white());
+    println!("    {} {}", "sol-ops".bright_green(), " unwrap-sol     WSOL 转 SOL".white());
+    println!();
+
     // 使用示例
     println!("  {} {}", "📖 使用示例 | Usage Examples:".bright_red().bold(), "");
     println!("    {} {}", "sol-safekey".bright_green(), "gen-keypair -o wallet.json".bright_white());
@@ -215,6 +235,15 @@ fn print_colored_help() {
     println!("    {} {}", "   输出:".bright_blue(), "wallet.json (三因子) + <地址前缀>_keystore.json (跨设备备份)".bright_white());
     println!("    {} {}", "3a. sol-safekey".bright_green(), "unlock-2fa-wallet -f wallet.json  # 解锁三因子钱包".bright_white());
     println!("    {} {}", "3b. sol-safekey".bright_green(), "unlock -f <前缀>_keystore.json -p <密码>  # 跨设备解锁备份".bright_white());
+    println!();
+
+    println!("  {} {}", "💰 Solana 操作示例 | Solana Operations Examples:".bright_magenta().bold(), "");
+    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json balance".bright_white());
+    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json token-balance -m <TOKEN_MINT>".bright_white());
+    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json transfer -t <TO_ADDRESS> -a 0.1".bright_white());
+    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json transfer-token -m <MINT> -t <TO> -a 1000".bright_white());
+    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json wrap-sol -a 0.5".bright_white());
+    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json unwrap-sol".bright_white());
     println!();
 
     // 常用选项
@@ -259,8 +288,18 @@ fn decrypt_private_key(encrypted_data: &str, password: &str) -> Result<String, S
 
 /// 检查密码强度
 fn check_password_strength(password: &str) -> Result<(), String> {
-    if password.len() < 8 {
-        return Err("密码长度至少需要8位".to_string());
+    // 检查密码长度下限
+    if password.len() < sol_safekey::MIN_PASSWORD_LENGTH {
+        return Err(format!("密码长度至少需要{}位", sol_safekey::MIN_PASSWORD_LENGTH));
+    }
+
+    // 检查密码长度上限
+    if password.len() > sol_safekey::MAX_PASSWORD_LENGTH {
+        return Err(format!(
+            "密码长度必须在{}-{}位之间",
+            sol_safekey::MIN_PASSWORD_LENGTH,
+            sol_safekey::MAX_PASSWORD_LENGTH
+        ));
     }
 
     let has_upper = password.chars().any(|c| c.is_uppercase());
@@ -563,12 +602,6 @@ fn main() {
             }
         }
         Commands::Decrypt { encrypted_key, password } => {
-            // 验证密码长度
-            if password.len() > 10 {
-                eprintln!("❌ 错误: 密码长度不能超过10位");
-                process::exit(1);
-            }
-
             // 验证加密数据
             if encrypted_key.is_empty() {
                 eprintln!("❌ 错误: 加密密钥不能为空");
@@ -610,12 +643,6 @@ fn main() {
                     })
                 }
             };
-
-            // 验证密码长度
-            if password.len() > 10 {
-                eprintln!("❌ 错误: 密码长度不能超过10位");
-                process::exit(1);
-            }
 
             // 读取文件内容
             let file_content = match fs::read_to_string(&file_path) {
@@ -679,12 +706,6 @@ fn main() {
                 // 解密加密的私钥
                 match password {
                     Some(pwd) => {
-                        // 验证密码长度
-                        if pwd.len() > 10 {
-                            eprintln!("❌ 错误: 密码长度不能超过10位");
-                            process::exit(1);
-                        }
-
                         match decrypt_private_key(ek, pwd) {
                             Ok(decrypted) => decrypted,
                             Err(e) => {
@@ -725,12 +746,6 @@ fn main() {
 
                             match password {
                                 Some(pwd) => {
-                                    // 验证密码长度
-                                    if pwd.len() > 10 {
-                                        eprintln!("❌ 错误: 密码长度不能超过10位");
-                                        process::exit(1);
-                                    }
-
                                     match decrypt_private_key(&encrypted_data, pwd) {
                                         Ok(decrypted) => decrypted,
                                         Err(e) => {
@@ -1611,6 +1626,21 @@ fn main() {
                     eprintln!("  • 安全问题答案错误");
                     eprintln!("  • 2FA验证码错误或已过期");
                     eprintln!("  • 硬件指纹不匹配（设备不同）");
+                    process::exit(1);
+                }
+            }
+        }
+        Commands::SolOps { file_path, command } => {
+            // Run Solana operations with encrypted keypair
+            let args = sol_safekey::solana_utils::SolanaOpsArgs {
+                command: command.clone(),
+            };
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            match runtime.block_on(sol_safekey::solana_utils::execute_solana_ops(args, file_path)) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("{} Operation failed: {}", "❌".red(), e);
                     process::exit(1);
                 }
             }
