@@ -3,6 +3,14 @@ name = "sol-safekey"
 version = "0.1.0"
 edition = "2021"
 default-run = "sol-safekey"
+description = "A powerful command-line tool for secure Solana key management with Triple-Factor 2FA"
+license = "MIT"
+repository = "https://github.com/0xfnzero/sol-safekey"
+documentation = "https://docs.rs/sol-safekey"
+homepage = "https://github.com/0xfnzero/sol-safekey"
+readme = "README.md"
+keywords = ["solana", "encryption", "2fa", "wallet", "security"]
+categories = ["cryptography", "command-line-utilities"]
 
 # Core dependencies (always required)
 [dependencies]
