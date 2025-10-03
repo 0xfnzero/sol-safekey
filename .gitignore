@@ -16,6 +16,7 @@ target
 sol-safekey
 open-source
 build-cache
+keystore.json
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
