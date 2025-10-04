@@ -24,10 +24,12 @@ data-encoding = "2.4"
 anyhow = "1.0"
 hex = "0.4"
 
+# Interactive UI dependencies (needed for bot integration)
+colored = "3.0.0"
+rpassword = "7.0"
+
 # Optional: CLI-only dependencies
 clap = { version = "4.5", features = ["derive"], optional = true }
-colored = { version = "3.0.0", optional = true }
-rpassword = { version = "7.0", optional = true }
 qrcode = { version = "0.14", optional = true }
 
 # Optional: 2FA/TOTP features
@@ -44,7 +46,7 @@ openssl = { version = "0.10.73", features = ["vendored"], optional = true }
 
 [features]
 default = []
-cli = ["clap", "colored", "rpassword", "qrcode", "totp-rs", "rand"]
+cli = ["clap", "qrcode", "totp-rs", "rand"]
 2fa = ["totp-rs", "rand"]
 solana-ops = ["solana-client", "tokio"]
 full = ["cli", "2fa", "solana-ops", "dotenv", "openssl"]

@@ -3,11 +3,10 @@ use sol_safekey::{
     encrypt_key, decrypt_key, generate_encryption_key_simple,
     encrypt_with_triple_factor, decrypt_with_triple_factor_and_2fa,
     derive_totp_secret_from_hardware_and_password,
-    totp::*, hardware_fingerprint::*, security_question::*
+    totp::*, hardware_fingerprint::*, security_question::*,
 };
 use solana_sdk::signer::Signer;
 use std::{fs, process, io::{self, Write}};
-use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json;
 use colored::*;
 use rpassword;
@@ -28,135 +27,30 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// 生成keypair格式私钥
-    GenKeypair {
-        /// 输出文件路径
-        #[arg(short = 'o', long, default_value = "keypair.json")]
-        output: String,
-    },
-    /// 生成字符串格式私钥（可选加密）
-    GenKey {
-        /// 输出文件路径
-        #[arg(short = 'o', long, default_value = "keystore.json")]
-        output: String,
-        /// 分段数量
-        #[arg(short = 's', long, default_value = "1")]
-        segments: usize,
-        /// 密码（可选，最多10位）- 提供密码则生成加密私钥
-        #[arg(short = 'p', long)]
-        password: Option<String>,
-    },
-    /// 生成加密的keystore文件
-    GenKeystore {
-        /// 输出文件路径
-        #[arg(short = 'o', long, default_value = "keystore.json")]
-        output: String,
-        /// 密码（可选，不提供则交互式输入）
-        #[arg(short = 'p', long)]
-        password: Option<String>,
-    },
-    /// 加密私钥
-    Encrypt {
-        /// 私钥字符串
-        #[arg(short = 'k', long)]
-        private_key: String,
-        /// 密码（最多10位）
-        #[arg(short = 'p', long)]
-        password: String,
-    },
-    /// 解密私钥
-    Decrypt {
-        /// 加密数据
-        #[arg(short = 'e', long)]
-        encrypted_key: String,
-        /// 密码
-        #[arg(short = 'p', long)]
-        password: String,
-    },
-    /// 解锁文件中的私钥
-    Unlock {
-        /// 文件路径
-        #[arg(short = 'f', long)]
-        file_path: String,
-        /// 密码（可选，不提供则交互式输入）
-        #[arg(short = 'p', long)]
-        password: Option<String>,
-    },
-    /// 查看私钥对应的钱包地址
-    Address {
-        /// 私钥字符串（明文私钥）
-        #[arg(short = 'k', long, group = "input")]
-        private_key: Option<String>,
-        /// 加密的私钥字符串
-        #[arg(short = 'e', long, group = "input")]
-        encrypted_key: Option<String>,
-        /// 文件路径（包含私钥的文件）
-        #[arg(short = 'f', long, group = "input")]
-        file_path: Option<String>,
-        /// 密码（解密加密私钥时需要）
-        #[arg(short = 'p', long)]
-        password: Option<String>,
-    },
-    /// 设置 TOTP 2FA 认证
-    SetupTotp {
-        /// 账户名称
-        #[arg(short = 'a', long, default_value = "master-key")]
-        account: String,
-        /// 输出配置文件路径
-        #[arg(short = 'o', long, default_value = "totp-config.json")]
-        output: String,
-    },
-    /// 生成 TOTP 验证码
-    GenerateTotp {
-        /// TOTP 配置文件路径
-        #[arg(short = 'c', long, default_value = "totp-config.json")]
-        config_file: String,
-    },
-    /// 使用 TOTP 生成加密私钥
-    GenSecureTotp {
-        /// 输出文件路径
-        #[arg(short = 'o', long, default_value = "keystore.json")]
-        output: String,
-        /// TOTP 配置文件路径
-        #[arg(short = 'c', long, default_value = "totp-config.json")]
-        totp_config: String,
-    },
-    /// 使用 TOTP 解锁私钥
-    UnlockTotp {
-        /// 加密文件路径
-        #[arg(short = 'f', long)]
-        file_path: String,
-        /// TOTP 配置文件路径
-        #[arg(short = 'c', long, default_value = "totp-config.json")]
-        totp_config: String,
-    },
-    /// 调试 TOTP 时间窗口
-    DebugTotp {
-        /// TOTP 配置文件路径
-        #[arg(short = 'c', long, default_value = "totp-config.json")]
-        totp_config: String,
-        /// 要检查的时间窗口数量
-        #[arg(short = 'w', long, default_value = "5")]
-        windows: i32,
-    },
-    /// 设置 2FA 认证（硬件指纹 + 主密码 + 安全问题）
+    /// 启动交互式菜单 | Start interactive menu (create/encrypt/decrypt keys)
+    Start,
+
+    /// 设置 2FA 认证（硬件指纹 + 主密码 + 安全问题）| Setup 2FA authentication
     #[command(name = "setup-2fa")]
     Setup2FA,
-    /// 使用三因子加密生成安全钱包
+
+    /// 使用三因子加密生成安全钱包 | Generate 2FA wallet
     #[command(name = "gen-2fa-wallet")]
     Gen2FAWallet {
         /// 输出文件路径
         #[arg(short = 'o', long, default_value = "secure-wallet.json")]
         output: String,
     },
-    /// 使用三因子 + 2FA 验证码解锁钱包
+
+    /// 使用三因子 + 2FA 验证码解锁钱包 | Unlock 2FA wallet
     #[command(name = "unlock-2fa-wallet")]
     Unlock2FAWallet {
         /// 加密文件路径
         #[arg(short = 'f', long)]
         file_path: String,
     },
-    /// Solana 操作命令（使用加密私钥）
+
+    /// Solana 操作命令（使用加密私钥）| Solana operations with encrypted keys
     #[command(name = "sol-ops")]
     SolOps {
         /// 加密钱包文件路径
@@ -169,124 +63,90 @@ enum Commands {
 }
 
 
+/// Print colored help message with bilingual content
 fn print_colored_help() {
-    println!("{}", "Solana安全密钥管理工具 | Solana Security Key Management Tool".bright_cyan().bold());
+    println!("{}", "=".repeat(60).cyan());
+    println!("{}", "  Sol-SafeKey - Solana 密钥管理工具".cyan().bold());
+    println!("{}", "  Solana Security Key Management Tool".cyan());
+    println!("{}", "=".repeat(60).cyan());
     println!();
 
     println!("{}", "Usage:".bright_yellow().bold());
-    println!("  {} {}", "sol-safekey".bright_green(), "<COMMAND>".bright_white());
+    println!("  {} {}", "sol-safekey".bright_green(), "start               # 启动交互式菜单（推荐）".bright_white());
+    println!("  {} {}", "sol-safekey".bright_green(), "<COMMAND>           # 运行特定命令".bright_white());
     println!();
 
-    println!("{}", "Commands:".bright_yellow().bold());
-
-    // 生成命令部分
-    println!("  {} {}", "🔑 生成命令 | Generation Commands:".bright_red().bold(), "");
-    println!("    {} {}", "gen-keypair".bright_green(), " 生成keypair格式私钥".white());
-    println!("    {} {}", "gen-key".bright_green(), "     生成字符串格式私钥（可选加密）".white());
-    println!("    {} {}", "gen-keystore".bright_green(), "生成加密的keystore文件".white());
-    println!("    {} {}", "unlock".bright_green(), "      从加密文件中解锁私钥".white());
+    println!("{}", "核心命令 | Core Commands:".bright_yellow().bold());
+    println!();
+    println!("  {} {}", "start".bright_green().bold(), "启动交互式菜单 (创建/加密/解密私钥)".white());
+    println!("        Start interactive menu (create/encrypt/decrypt keys)");
+    println!("        {} 无需记忆命令，选择语言后跟随提示操作即可", "→".bright_cyan());
+    println!("        {} No commands to remember, just follow the prompts", "→".bright_cyan());
     println!();
 
-    // 加密解密命令部分
-    println!("  {} {}", "🔐 加密/解密命令 | Encryption/Decryption Commands:".bright_red().bold(), "");
-    println!("    {} {}", "encrypt".bright_green(), "     加密已有私钥（需要提供私钥字符串）".white());
-    println!("    {} {}", "decrypt".bright_green(), "     解密加密的私钥字符串".white());
+    println!("{}", "高级命令 | Advanced Commands:".bright_yellow().bold());
+    println!();
+    println!("  {} {}", "setup-2fa".bright_green().bold(), "设置 2FA 三因子认证".white());
+    println!("            Setup 2FA triple-factor authentication");
+    println!("            硬件指纹 + 主密码 + 安全问题 + 2FA验证码");
     println!();
 
-    // 查询命令部分
-    println!("  {} {}", "🔍 查询命令 | Query Commands:".bright_red().bold(), "");
-    println!("    {} {}", "address".bright_green(), "     查看私钥对应的钱包地址".white());
+    println!("  {} {}", "gen-2fa-wallet".bright_green().bold(), "生成 2FA 加密钱包".white());
+    println!("                 Generate 2FA encrypted wallet");
+    println!("                 生成两个文件: 三因子钱包 + 跨设备备份");
     println!();
 
-
-    // 2FA 命令部分
-    println!("  {} {}", "🔐 2FA 三因子安全命令 | 2FA Triple-Factor Security:".bright_red().bold(), "");
-    println!("    {} {}", "setup-2fa".bright_green(), "        设置 2FA（硬件指纹 + 主密码 + 安全问题）".white());
-    println!("    {} {}", "gen-2fa-wallet".bright_green(), "    生成三因子钱包 + keystore备份".white());
-    println!("                       生成两个文件: 1) 三因子钱包(仅当前设备) 2) keystore备份(跨设备)");
-    println!("    {} {}", "unlock-2fa-wallet".bright_green(), "  解锁三因子钱包（需要主密码 + 安全问题 + 2FA验证码）".white());
+    println!("  {} {}", "unlock-2fa-wallet".bright_green().bold(), "解锁 2FA 钱包".white());
+    println!("                    Unlock 2FA wallet");
     println!();
 
-    // Solana 操作命令部分
-    println!("  {} {}", "💰 Solana 操作命令 | Solana Operations (with encrypted key):".bright_red().bold(), "");
-    println!("    {} {}", "sol-ops".bright_green(), " balance        查询 SOL 余额".white());
-    println!("    {} {}", "sol-ops".bright_green(), " token-balance  查询 Token 余额".white());
-    println!("    {} {}", "sol-ops".bright_green(), " transfer       转账 SOL".white());
-    println!("    {} {}", "sol-ops".bright_green(), " transfer-token 转账 Token".white());
-    println!("    {} {}", "sol-ops".bright_green(), " wrap-sol       SOL 转 WSOL".white());
-    println!("    {} {}", "sol-ops".bright_green(), " unwrap-sol     WSOL 转 SOL".white());
+    println!("  {} {}", "sol-ops".bright_green().bold(), "Solana 链上操作 (转账/查询余额等)".white());
+    println!("          Solana operations (transfer/check balance)");
     println!();
 
-    // 使用示例
-    println!("  {} {}", "📖 使用示例 | Usage Examples:".bright_red().bold(), "");
-    println!("    {} {}", "sol-safekey".bright_green(), "gen-keypair -o wallet.json".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "gen-key -s 3 -o keys.json".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "gen-keystore -p mypass -o keystore.json".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "unlock -f keystore.json -p mypass".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "encrypt -k YOUR_PRIVATE_KEY -p mypass".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "decrypt -e ENCRYPTED_KEY -p mypass".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "address -k YOUR_PRIVATE_KEY".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "address -e ENCRYPTED_KEY -p mypass".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "address -f keys.json".bright_white());
+    println!("{}", "使用示例 | Usage Examples:".bright_cyan().bold());
     println!();
-    println!("  {} {}", "🔥 2FA 三因子工作流程 | 2FA Triple-Factor Workflow:".bright_magenta().bold(), "");
-    println!("    {} {}", "1. sol-safekey".bright_green(), "setup-2fa                        # 首次设置（扫描二维码 + 设置安全问题）".bright_white());
-    println!("    {} {}", "2. sol-safekey".bright_green(), "gen-2fa-wallet -o wallet.json     # 生成钱包（两个文件）".bright_white());
-    println!("    {} {}", "   输出:".bright_blue(), "wallet.json (三因子) + <地址前缀>_keystore.json (跨设备备份)".bright_white());
-    println!("    {} {}", "3a. sol-safekey".bright_green(), "unlock-2fa-wallet -f wallet.json  # 解锁三因子钱包".bright_white());
-    println!("    {} {}", "3b. sol-safekey".bright_green(), "unlock -f <前缀>_keystore.json -p <密码>  # 跨设备解锁备份".bright_white());
+    println!("  {} 交互式模式（推荐新手使用）:", "1.".bright_yellow());
+    println!("     {} {}", "$".bright_white(), "sol-safekey start".bright_green());
     println!();
 
-    println!("  {} {}", "💰 Solana 操作示例 | Solana Operations Examples:".bright_magenta().bold(), "");
-    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json balance".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json token-balance -m <TOKEN_MINT>".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json transfer -t <TO_ADDRESS> -a 0.1".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json transfer-token -m <MINT> -t <TO> -a 1000".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json wrap-sol -a 0.5".bright_white());
-    println!("    {} {}", "sol-safekey".bright_green(), "sol-ops -f wallet.json unwrap-sol".bright_white());
+    println!("  {} 2FA 三因子安全钱包:", "2.".bright_yellow());
+    println!("     {} {}", "$".bright_white(), "sol-safekey setup-2fa".bright_green());
+    println!("     {} {}", "$".bright_white(), "sol-safekey gen-2fa-wallet -o wallet.json".bright_green());
+    println!("     {} {}", "$".bright_white(), "sol-safekey unlock-2fa-wallet -f wallet.json".bright_green());
     println!();
 
-    // 常用选项
-    println!("  {} {}", "📝 常用选项 | Common Options:".bright_red().bold(), "");
-    println!("    {} {}", "-o, --output".bright_magenta(), "     输出文件路径（gen命令使用）".white());
-    println!("    {} {}", "-s, --segments".bright_magenta(), "   私钥分段数量".white());
-    println!("    {} {}", "-p, --password".bright_magenta(), "   密码（最多10位）".white());
-    println!("    {} {}", "-k, --private-key".bright_magenta(), " 私钥字符串（encrypt命令使用）".white());
-    println!("    {} {}", "-e, --encrypted-key".bright_magenta(), " 加密数据（decrypt命令使用）".white());
-    println!("    {} {}", "-f, --file-path".bright_magenta(), "  文件路径（unlock命令使用）".white());
+    println!("  {} Solana 操作:", "3.".bright_yellow());
+    println!("     {} {}", "$".bright_white(), "sol-safekey sol-ops -f wallet.json balance".bright_green());
+    println!("     {} {}", "$".bright_white(), "sol-safekey sol-ops -f wallet.json transfer -t <地址> -a 0.1".bright_green());
     println!();
 
-    // 重要说明
-    println!("{} {}", "🔑 2FA 主密码说明 | Master Password Info:".bright_cyan().bold(), "");
-    println!("{} {}", "  • 主密码:".bright_white(), "您自己设置的强密码，用于派生 2FA 密钥".white());
-    println!("{} {}", "  • 输入方式:".bright_white(), "程序会提示时输入，输入时不显示字符（安全输入）".white());
-    println!("{} {}", "  • 重要性:".bright_white(), "主密码丢失将无法恢复，请务必记住".bright_red());
-    println!("{} {}", "  • 一致性:".bright_white(), "相同主密码总是生成相同的 2FA 密钥".white());
+    println!("{}", "选项 | Options:".bright_yellow().bold());
+    println!("  {} {}", "-h, --help".bright_magenta(), "     显示帮助信息 | Show help information".white());
+    println!("  {} {}", "-V, --version".bright_magenta(), "  显示版本信息 | Show version information".white());
     println!();
 
-    // 提示信息
-    println!("{} {}", "💡 提示 | Tip:".bright_yellow().bold(), "使用 'sol-safekey <command> --help' 查看具体命令的详细选项".bright_white());
-    println!("{} {}", " ".repeat(13), "Use 'sol-safekey <command> --help' for detailed options of specific commands".bright_white());
+    println!("{}", "💡 提示:".bright_green().bold());
+    println!("   - 大多数用户只需要 {} 命令", "start".bright_cyan().bold());
+    println!("   - 运行 {} 查看某个命令的详细说明", "sol-safekey <COMMAND> --help".bright_white());
     println!();
-
-    // 选项
-    println!("{}", "Options:".bright_yellow().bold());
-    println!("  {} {}", "-h, --help".bright_magenta(), "     Print help".white());
-    println!("  {} {}", "-V, --version".bright_magenta(), "  Print version".white());
 }
 
 
+/// Encrypt private key with password
 fn encrypt_private_key(private_key: &str, password: &str) -> Result<String, String> {
     let encryption_key = generate_encryption_key_simple(password);
     encrypt_key(private_key, &encryption_key)
 }
 
+/// Decrypt private key with password
+#[allow(dead_code)]
 fn decrypt_private_key(encrypted_data: &str, password: &str) -> Result<String, String> {
     let encryption_key = generate_encryption_key_simple(password);
     decrypt_key(encrypted_data, &encryption_key)
 }
 
-/// 检查密码强度
+/// Check password strength (min 10 chars, at least 3 types of: upper/lower/digit/special)
 fn check_password_strength(password: &str) -> Result<(), String> {
     // 检查密码长度下限
     if password.len() < sol_safekey::MIN_PASSWORD_LENGTH {
@@ -319,6 +179,7 @@ fn check_password_strength(password: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Generate new Solana keypair and return as (private_key, public_key) strings
 fn generate_new_keypair() -> (String, String) {
     let keypair = solana_sdk::signature::Keypair::new();
     let private_key = keypair.to_base58_string();
@@ -326,6 +187,8 @@ fn generate_new_keypair() -> (String, String) {
     (private_key, public_key)
 }
 
+/// Split private key into segments for distributed storage
+#[allow(dead_code)]
 fn split_private_key_into_segments(private_key: &str, segments: usize) -> Vec<String> {
     // 如果segments <= 1，返回完整的私钥作为单一段
     if segments <= 1 {
@@ -354,6 +217,8 @@ fn split_private_key_into_segments(private_key: &str, segments: usize) -> Vec<St
     result
 }
 
+/// Save keypair to JSON file (Solana standard format)
+#[allow(dead_code)]
 fn save_keypair_to_file(keypair: &solana_sdk::signature::Keypair, file_path: &str) -> Result<(), String> {
     let private_key_bytes = keypair.to_bytes();
     let data = serde_json::json!(private_key_bytes.to_vec());
@@ -362,6 +227,8 @@ fn save_keypair_to_file(keypair: &solana_sdk::signature::Keypair, file_path: &st
         .map_err(|e| format!("无法保存文件: {}", e))
 }
 
+/// Save private key as string with segments to JSON file
+#[allow(dead_code)]
 fn save_private_key_string_to_file(private_key: &str, public_key: &str, segments: &[String], file_path: &str) -> Result<(), String> {
     let data = serde_json::json!({
         "private_key": private_key,
@@ -374,6 +241,8 @@ fn save_private_key_string_to_file(private_key: &str, public_key: &str, segments
         .map_err(|e| format!("无法保存文件: {}", e))
 }
 
+/// Save encrypted key with segments to JSON file
+#[allow(dead_code)]
 fn save_encrypted_key_to_file(encrypted_data: &str, public_key: &str, segments: &[String], file_path: &str) -> Result<(), String> {
     let data = serde_json::json!({
         "encrypted_private_key": encrypted_data,
@@ -386,6 +255,8 @@ fn save_encrypted_key_to_file(encrypted_data: &str, public_key: &str, segments: 
         .map_err(|e| format!("无法保存文件: {}", e))
 }
 
+/// Save encrypted keystore to JSON file (standard format)
+#[allow(dead_code)]
 fn save_keystore_to_file(encrypted_data: &str, public_key: &str, file_path: &str) -> Result<(), String> {
     let data = serde_json::json!({
         "encrypted_private_key": encrypted_data,
@@ -400,746 +271,17 @@ fn save_keystore_to_file(encrypted_data: &str, public_key: &str, file_path: &str
 fn main() {
     let cli = Cli::parse();
 
-    // 如果用户请求帮助或没有提供命令，显示彩色帮助
-    if cli.help || cli.command.is_none() {
+    // Show help if no command or help flag
+    if cli.command.is_none() || cli.help {
         print_colored_help();
         return;
     }
 
-    let command = cli.command.unwrap();
-    match &command {
-        Commands::GenKeypair { output } => {
-            println!("🔑 正在生成新的Solana keypair...");
-            println!();
-
-            // 生成新的密钥对
-            let keypair = solana_sdk::signature::Keypair::new();
-            let public_key = keypair.pubkey().to_string();
-
-            // 显示结果
-            println!("✅ 成功生成新的Solana keypair!");
-            println!();
-            println!("🆔 公钥地址:");
-            println!("{}", public_key);
-            println!();
-
-            // 保存到文件
-            match save_keypair_to_file(&keypair, output) {
-                Ok(()) => {
-                    println!("💾 Keypair已保存到文件: {}", output);
-                    println!("⚠️  警告: 请妥善保管你的keypair文件，不要泄露给他人！");
-                }
-                Err(e) => {
-                    eprintln!("❌ 保存文件失败: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::GenKey { output, segments, password } => {
-            // 生成新的密钥对
-            let (private_key, public_key) = generate_new_keypair();
-
-            match password {
-                Some(pwd) => {
-                    println!("🔑 正在生成新的加密Solana私钥...");
-                    println!();
-
-                    // 显示公钥
-                    println!("✅ 成功生成新的Solana密钥对!");
-                    println!();
-                    println!("🆔 公钥地址:");
-                    println!("{}", public_key);
-                    println!();
-
-                    // 加密私钥
-                    match encrypt_private_key(&private_key, pwd) {
-                        Ok(encrypted_data) => {
-                            // 分段处理加密数据
-                            let encrypted_segments = split_private_key_into_segments(&encrypted_data, *segments);
-
-                            println!("🔒 加密私钥已生成但不在终端显示（安全考虑）");
-                            if *segments > 1 {
-                                println!("📄 加密私钥将分{}段保存到文件中", segments);
-                            }
-                            println!();
-
-                            // 保存到文件
-                            match save_encrypted_key_to_file(&encrypted_data, &public_key, &encrypted_segments, output) {
-                                Ok(()) => {
-                                    println!("💾 加密私钥已保存到文件: {}", output);
-                                    println!("⚠️  警告: 请妥善保管你的加密私钥文件和密码！");
-                                }
-                                Err(e) => {
-                                    eprintln!("❌ 保存文件失败: {}", e);
-                                    process::exit(1);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("❌ 加密失败: {}", e);
-                            process::exit(1);
-                        }
-                    }
-                }
-                None => {
-                    println!("🔑 正在生成新的Solana私钥字符串...");
-                    println!();
-
-                    // 显示结果
-                    println!("✅ 成功生成新的Solana私钥字符串!");
-                    println!();
-                    println!("🆔 公钥地址:");
-                    println!("{}", public_key);
-                    println!();
-
-                    // 分段处理
-                    let key_segments = split_private_key_into_segments(&private_key, *segments);
-
-                    println!("🔒 私钥已生成但不在终端显示（安全考虑）");
-                    if *segments > 1 {
-                        println!("📄 私钥将分{}段保存到文件中", segments);
-                    }
-                    println!();
-
-                    // 保存到文件
-                    match save_private_key_string_to_file(&private_key, &public_key, &key_segments, output) {
-                        Ok(()) => {
-                            println!("💾 私钥字符串已保存到文件: {}", output);
-                            println!("⚠️  警告: 请妥善保管你的私钥文件，不要泄露给他人！");
-                        }
-                        Err(e) => {
-                            eprintln!("❌ 保存文件失败: {}", e);
-                            process::exit(1);
-                        }
-                    }
-                }
-            }
-        }
-        Commands::GenKeystore { output, password } => {
-            // 获取密码（交互式或参数）
-            let password = match password {
-                Some(p) => p.clone(),
-                None => {
-                    print!("📝 Please enter password: ");
-                    io::stdout().flush().unwrap();
-                    rpassword::read_password().unwrap_or_else(|_| {
-                        eprintln!("❌ Failed to read password");
-                        process::exit(1);
-                    })
-                }
-            };
-
-            // 检查密码强度
-            if let Err(e) = check_password_strength(&password) {
-                eprintln!("❌ 密码强度不足: {}", e);
+    match cli.command.unwrap() {
+        Commands::Start => {
+            if let Err(e) = sol_safekey::interactive::show_main_menu() {
+                eprintln!("❌ {}", e);
                 process::exit(1);
-            }
-
-            // 生成新的密钥对
-            let (private_key, public_key) = generate_new_keypair();
-
-            println!("🔑 正在生成新的加密Solana私钥...");
-            println!();
-
-            // 显示公钥
-            println!("✅ 成功生成新的Solana密钥对!");
-            println!();
-            println!("🆔 公钥地址:");
-            println!("{}", public_key);
-            println!();
-
-            // 加密私钥
-            match encrypt_private_key(&private_key, &password) {
-                Ok(encrypted_data) => {
-                    println!("🔒 加密私钥已生成但不在终端显示（安全考虑）");
-                    println!();
-
-                    // 保存到文件
-                    match save_keystore_to_file(&encrypted_data, &public_key, output) {
-                        Ok(()) => {
-                            println!("💾 加密私钥已保存到文件: {}", output);
-                            println!("⚠️  警告: 请妥善保管你的加密私钥文件和密码！");
-                        }
-                        Err(e) => {
-                            eprintln!("❌ 保存文件失败: {}", e);
-                            process::exit(1);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("❌ 加密失败: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::Encrypt { private_key, password } => {
-            // 检查密码强度
-            if let Err(e) = check_password_strength(password) {
-                eprintln!("❌ 密码强度不足: {}", e);
-                process::exit(1);
-            }
-
-            // 验证私钥格式
-            if private_key.is_empty() {
-                eprintln!("❌ 错误: 私钥不能为空");
-                process::exit(1);
-            }
-
-            // 加密私钥
-            match encrypt_private_key(private_key, password) {
-                Ok(encrypted_data) => {
-                    println!("✅ 加密成功!");
-                    println!();
-                    println!("🔐 加密后的完整密钥:");
-                    println!("{}", encrypted_data);
-                    println!();
-                    println!("💡 提示: 请妥善保存这个加密密钥，解密时需要用到");
-                }
-                Err(e) => {
-                    eprintln!("❌ 加密失败: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::Decrypt { encrypted_key, password } => {
-            // 验证加密数据
-            if encrypted_key.is_empty() {
-                eprintln!("❌ 错误: 加密密钥不能为空");
-                process::exit(1);
-            }
-
-            // 解密私钥
-            match decrypt_private_key(encrypted_key, password) {
-                Ok(decrypted_key) => {
-                    // 尝试验证解密后的私钥是否为有效的Solana私钥
-                    let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
-                    let pubkey = keypair.pubkey();
-
-                    println!("✅ 解密成功!");
-                    println!();
-                    println!("🔑 解密后的私钥:");
-                    println!("{}", decrypted_key);
-                    println!();
-                    println!("🆔 对应的公钥:");
-                    println!("{}", pubkey);
-                }
-                Err(e) => {
-                    eprintln!("❌ 解密失败: {}", e);
-                    eprintln!("💡 可能的原因: 密码错误或加密数据已损坏");
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::Unlock { file_path, password } => {
-            // 获取密码（交互式或参数）
-            let password = match password {
-                Some(p) => p.clone(),
-                None => {
-                    print!("🔑 Please enter your password: ");
-                    io::stdout().flush().unwrap();
-                    rpassword::read_password().unwrap_or_else(|_| {
-                        eprintln!("❌ Failed to read password");
-                        process::exit(1);
-                    })
-                }
-            };
-
-            // 读取文件内容
-            let file_content = match fs::read_to_string(&file_path) {
-                Ok(content) => content,
-                Err(e) => {
-                    eprintln!("❌ 读取文件失败: {}", e);
-                    process::exit(1);
-                }
-            };
-
-            // 尝试解析JSON文件
-            let encrypted_data = match serde_json::from_str::<serde_json::Value>(&file_content) {
-                Ok(json) => {
-                    if let Some(encrypted_key) = json.get("encrypted_private_key") {
-                        encrypted_key.as_str().unwrap_or("").to_string()
-                    } else {
-                        eprintln!("❌ 错误: 文件格式不正确，缺少encrypted_private_key字段");
-                        process::exit(1);
-                    }
-                }
-                Err(_) => {
-                    // 如果不是JSON格式，尝试直接作为加密数据使用
-                    file_content.trim().to_string()
-                }
-            };
-
-            if encrypted_data.is_empty() {
-                eprintln!("❌ 错误: 文件中没有找到有效的加密数据");
-                process::exit(1);
-            }
-
-            // 解密私钥
-            match decrypt_private_key(&encrypted_data, &password) {
-                Ok(decrypted_key) => {
-                    // 尝试验证解密后的私钥是否为有效的Solana私钥
-                    let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
-                    let pubkey = keypair.pubkey();
-
-                    println!("✅ 文件解密成功!");
-                    println!();
-                    println!("📄 文件路径: {}", file_path);
-                    println!();
-                    println!("🔑 解密后的私钥:");
-                    println!("{}", decrypted_key);
-                    println!();
-                    println!("🆔 对应的公钥:");
-                    println!("{}", pubkey);
-                }
-                Err(e) => {
-                    eprintln!("❌ 解密失败: {}", e);
-                    eprintln!("💡 可能的原因: 密码错误或加密数据已损坏");
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::Address { private_key, encrypted_key, file_path, password } => {
-            let final_private_key = if let Some(pk) = private_key {
-                // 直接使用明文私钥
-                pk.clone()
-            } else if let Some(ek) = encrypted_key {
-                // 解密加密的私钥
-                match password {
-                    Some(pwd) => {
-                        match decrypt_private_key(ek, pwd) {
-                            Ok(decrypted) => decrypted,
-                            Err(e) => {
-                                eprintln!("❌ 解密失败: {}", e);
-                                eprintln!("💡 可能的原因: 密码错误或加密数据已损坏");
-                                process::exit(1);
-                            }
-                        }
-                    }
-                    None => {
-                        eprintln!("❌ 错误: 解密加密私钥需要提供密码 (-p)");
-                        process::exit(1);
-                    }
-                }
-            } else if let Some(fp) = file_path {
-                // 从文件读取私钥
-                let file_content = match fs::read_to_string(fp) {
-                    Ok(content) => content,
-                    Err(e) => {
-                        eprintln!("❌ 读取文件失败: {}", e);
-                        process::exit(1);
-                    }
-                };
-
-                // 尝试解析JSON文件
-                match serde_json::from_str::<serde_json::Value>(&file_content) {
-                    Ok(json) => {
-                        if let Some(private_key_value) = json.get("private_key") {
-                            // 普通私钥文件
-                            private_key_value.as_str().unwrap_or("").to_string()
-                        } else if let Some(encrypted_key_value) = json.get("encrypted_private_key") {
-                            // 加密私钥文件
-                            let encrypted_data = encrypted_key_value.as_str().unwrap_or("").to_string();
-                            if encrypted_data.is_empty() {
-                                eprintln!("❌ 错误: 文件中没有找到有效的加密数据");
-                                process::exit(1);
-                            }
-
-                            match password {
-                                Some(pwd) => {
-                                    match decrypt_private_key(&encrypted_data, pwd) {
-                                        Ok(decrypted) => decrypted,
-                                        Err(e) => {
-                                            eprintln!("❌ 解密失败: {}", e);
-                                            eprintln!("💡 可能的原因: 密码错误或加密数据已损坏");
-                                            process::exit(1);
-                                        }
-                                    }
-                                }
-                                None => {
-                                    eprintln!("❌ 错误: 解密加密私钥文件需要提供密码 (-p)");
-                                    process::exit(1);
-                                }
-                            }
-                        } else if json.is_array() {
-                            // Keypair格式文件（字节数组）
-                            let bytes_vec: Vec<u8> = json.as_array()
-                                .and_then(|arr| {
-                                    arr.iter()
-                                        .map(|v| v.as_u64().and_then(|n| if n <= 255 { Some(n as u8) } else { None }))
-                                        .collect::<Option<Vec<u8>>>()
-                                })
-                                .unwrap_or_else(|| {
-                                    eprintln!("❌ 错误: 无效的keypair字节数组格式");
-                                    process::exit(1);
-                                });
-
-                            if bytes_vec.len() != 64 {
-                                eprintln!("❌ 错误: keypair字节数组长度应为64，实际为{}", bytes_vec.len());
-                                process::exit(1);
-                            }
-
-                            // 从字节数组重建keypair并获取私钥
-                            let mut bytes_array = [0u8; 64];
-                            bytes_array.copy_from_slice(&bytes_vec);
-
-                            // 前32字节是私钥，后32字节是公钥
-                            let secret_key: [u8; 32] = bytes_array[0..32].try_into().unwrap();
-                            let keypair = solana_sdk::signature::Keypair::new_from_array(secret_key);
-                            keypair.to_base58_string()
-                        } else {
-                            eprintln!("❌ 错误: 文件格式不正确，缺少private_key、encrypted_private_key字段或不是有效的keypair格式");
-                            process::exit(1);
-                        }
-                    }
-                    Err(_) => {
-                        eprintln!("❌ 错误: 无法解析JSON文件");
-                        process::exit(1);
-                    }
-                }
-            } else {
-                eprintln!("❌ 错误: 请提供私钥 (-k)、加密私钥 (-e) 或文件路径 (-f)");
-                process::exit(1);
-            };
-
-            // 验证私钥并获取公钥地址
-            let keypair = solana_sdk::signature::Keypair::from_base58_string(&final_private_key);
-            let pubkey = keypair.pubkey();
-            println!("✅ 私钥验证成功!");
-            println!();
-            println!("🆔 钱包地址:");
-            println!("{}", pubkey);
-        }
-        Commands::SetupTotp { account, output } => {
-            println!("{}", "🔐 设置 TOTP 2FA 认证...".bright_cyan().bold());
-            println!();
-
-            // 生成新的密钥
-            let secret = TOTPManager::generate_secret();
-            let config = TOTPConfig {
-                secret: secret.clone(),
-                account: account.clone(),
-                ..Default::default()
-            };
-
-            let totp_manager = TOTPManager::new(config.clone());
-
-            // 显示 QR 码
-            println!("{}", "📱 请使用谷歌认证器、Authy 或其他 TOTP 应用扫描以下 QR 码：".bright_yellow());
-            println!();
-            match totp_manager.generate_qr_code() {
-                Ok(qr_code) => {
-                    println!("{}", qr_code);
-                }
-                Err(e) => {
-                    eprintln!("{} QR 码生成失败: {}", "❌".red(), e);
-                    println!("{}", "📝 请手动输入以下信息：".bright_yellow());
-                    println!("{}", totp_manager.get_manual_setup_info());
-                }
-            }
-
-            println!();
-            println!("{} 或者手动输入密钥: {}", "🔑".bright_cyan(), secret.bright_white());
-            println!();
-
-            // 验证设置
-            loop {
-                print!("{} ", "请输入认证器显示的 6 位验证码以确认设置:".bright_yellow());
-                io::stdout().flush().unwrap();
-                let mut input = String::new();
-                io::stdin().read_line(&mut input).unwrap();
-                let code = input.trim();
-
-                match totp_manager.verify_code(code) {
-                    Ok(true) => {
-                        println!("{}", "✅ TOTP 设置成功！".bright_green());
-                        break;
-                    }
-                    Ok(false) => {
-                        println!("{}", "❌ 验证码不正确，请重试".red());
-                        continue;
-                    }
-                    Err(e) => {
-                        eprintln!("{} 验证失败: {}", "❌".red(), e);
-                        continue;
-                    }
-                }
-            }
-
-            // 保存配置
-            match save_totp_config(&config, output) {
-                Ok(()) => {
-                    println!("{} TOTP 配置已保存到: {}", "💾".bright_green(), output);
-                    println!("{} 警告: 请安全备份此配置文件和您的认证器应用！", "⚠️".bright_yellow());
-                }
-                Err(e) => {
-                    eprintln!("{} 保存配置失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::GenerateTotp { config_file } => {
-            let config = match load_totp_config(config_file) {
-                Ok(config) => config,
-                Err(e) => {
-                    eprintln!("{} {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            };
-            let totp_manager = TOTPManager::new(config);
-
-            match totp_manager.generate_current_code() {
-                Ok(code) => {
-                    println!("{} 当前 TOTP 验证码: {}", "🔢".bright_cyan(), code.bright_white().bold());
-
-                    // 显示剩余有效时间
-                    let remaining = totp_manager.get_remaining_time();
-                    println!("{} 剩余有效时间: {} 秒", "⏰".bright_yellow(), remaining.to_string().bright_white());
-                }
-                Err(e) => {
-                    eprintln!("{} 生成验证码失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::GenSecureTotp { output, totp_config } => {
-            let config = match load_totp_config(totp_config) {
-                Ok(config) => config,
-                Err(e) => {
-                    eprintln!("{} {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            };
-            let totp_manager = TOTPManager::new(config);
-
-            // 提示用户输入 TOTP 验证码
-            print!("{} ", "请输入 TOTP 验证码:".bright_yellow());
-            io::stdout().flush().unwrap();
-            let code = rpassword::read_password().unwrap();
-
-            // 验证 TOTP 码
-            match totp_manager.verify_code(&code) {
-                Ok(true) => {
-                    // 生成密钥对
-                    let (private_key, public_key) = generate_new_keypair();
-
-                    // 使用 TOTP 码作为密码进行加密
-                    match encrypt_private_key(&private_key, &code) {
-                        Ok(encrypted_data) => {
-                            println!("{}", "✅ 密钥生成成功！".bright_green());
-                            println!("{} 公钥地址: {}", "🆔".bright_cyan(), public_key);
-
-                            // 保存加密私钥
-                            if let Err(e) = save_encrypted_key_to_file(&encrypted_data, &public_key, &[], output) {
-                                eprintln!("{} 保存文件失败: {}", "❌".red(), e);
-                                process::exit(1);
-                            }
-                            println!("{} 加密私钥已保存到: {}", "💾".bright_green(), output);
-                            println!("{} 使用 TOTP 验证码解锁时，请确保在同一个 30 秒时间窗口内！", "⚠️".bright_yellow());
-                        }
-                        Err(e) => {
-                            eprintln!("{} 加密失败: {}", "❌".red(), e);
-                            process::exit(1);
-                        }
-                    }
-                }
-                Ok(false) => {
-                    eprintln!("{}", "❌ 2FA 验证码不正确".red());
-                    process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("{} 2FA 验证失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::UnlockTotp { file_path, totp_config } => {
-            let config = match load_totp_config(totp_config) {
-                Ok(config) => config,
-                Err(e) => {
-                    eprintln!("{} {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            };
-            let totp_manager = TOTPManager::new(config);
-
-            // 读取加密文件
-            let file_content = match fs::read_to_string(file_path) {
-                Ok(content) => content,
-                Err(e) => {
-                    eprintln!("{} 读取文件失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            };
-
-            let encrypted_data = match parse_encrypted_file(&file_content) {
-                Ok(data) => data,
-                Err(e) => {
-                    eprintln!("{} {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            };
-
-            // 提示用户输入 TOTP 验证码
-            print!("{} ", "请输入 TOTP 验证码解锁:".bright_yellow());
-            io::stdout().flush().unwrap();
-            let code = rpassword::read_password().unwrap();
-
-            // 首先尝试标准验证（±30秒窗口）
-            match totp_manager.verify_code(&code) {
-                Ok(true) => {
-                    match decrypt_private_key(&encrypted_data, &code) {
-                        Ok(decrypted_key) => {
-                            // 验证私钥有效性
-                            let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
-                            let pubkey = keypair.pubkey();
-
-                            println!("{}", "✅ 解锁成功！".bright_green());
-                            println!("{} 私钥: {}", "🔑".bright_cyan(), decrypted_key);
-                            println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
-                        }
-                        Err(e) => {
-                            eprintln!("{} 标准解密失败: {}", "❌".red(), e);
-                            println!("{} 尝试扩展时间窗口解锁...", "🔄".bright_yellow());
-
-                            // 尝试扩展时间窗口
-                            if let Ok((is_valid, debug_info)) = totp_manager.verify_code_extended(&code) {
-                                if is_valid {
-                                    println!("{} 扩展验证通过，尝试解密安全时间窗口的验证码...", "✅".bright_green());
-
-                                    // 尝试解密多个时间窗口的验证码
-                                    if let Ok(codes) = totp_manager.get_codes_for_windows(1) {
-                                        for (timestamp, window_code) in codes {
-                                            if let Ok(decrypted_key) = decrypt_private_key(&encrypted_data, &window_code) {
-                                                // 验证私钥有效性
-                                                let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
-                                                let pubkey = keypair.pubkey();
-
-                                                println!("{}", "✅ 解锁成功！(使用历史时间窗口)".bright_green());
-                                                println!("{} 使用的时间戳: {}", "⏰".bright_blue(), timestamp);
-                                                println!("{} 使用的验证码: {}", "🔢".bright_blue(), window_code);
-                                                println!("{} 私钥: {}", "🔑".bright_cyan(), decrypted_key);
-                                                println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
-                                                return;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                eprintln!("{} 所有时间窗口解密都失败了", "❌".red());
-                                eprintln!("{} 调试信息:", "🔍".bright_blue());
-                                eprintln!("{}", debug_info);
-                            }
-
-                            eprintln!("{} 可能的解决方案:", "💡".bright_blue());
-                            eprintln!("  1. 确保系统时间准确（安全时间窗口：±30秒）");
-                            eprintln!("  2. 检查 TOTP 配置文件是否正确");
-                            eprintln!("  3. 使用 debug-totp 命令查看当前可用的验证码");
-                            eprintln!("  4. 重新生成加密私钥");
-                            process::exit(1);
-                        }
-                    }
-                }
-                Ok(false) => {
-                    println!("{} 标准验证失败，尝试扩展时间窗口...", "⚠️".bright_yellow());
-
-                    // 尝试扩展验证
-                    match totp_manager.verify_code_extended(&code) {
-                        Ok((true, _debug_info)) => {
-                            println!("{} 扩展验证通过！", "✅".bright_green());
-                            // 已经通过验证，但标准解密可能失败，尝试多窗口解密
-                            if let Ok(codes) = totp_manager.get_codes_for_windows(1) {
-                                for (_timestamp, window_code) in codes {
-                                    if window_code == code {
-                                        if let Ok(decrypted_key) = decrypt_private_key(&encrypted_data, &window_code) {
-                                            let keypair = solana_sdk::signature::Keypair::from_base58_string(&decrypted_key);
-                                            let pubkey = keypair.pubkey();
-
-                                            println!("{}", "✅ 解锁成功！".bright_green());
-                                            println!("{} 私钥: {}", "🔑".bright_cyan(), decrypted_key);
-                                            println!("{} 公钥: {}", "🆔".bright_cyan(), pubkey);
-                                            return;
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        Ok((false, debug_info)) => {
-                            eprintln!("{}", "❌ 扩展验证也失败了".red());
-                            eprintln!("{} 调试信息:", "🔍".bright_blue());
-                            eprintln!("{}", debug_info);
-                        }
-                        Err(e) => {
-                            eprintln!("{} 扩展验证出错: {}", "❌".red(), e);
-                        }
-                    }
-
-                    eprintln!("{}", "❌ 2FA 验证码不正确".red());
-                    eprintln!("{} 请使用 debug-totp 命令查看当前可用的验证码（时间窗口已优化为±30秒）", "💡".bright_blue());
-                    process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("{} 2FA 验证失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::DebugTotp { totp_config, windows } => {
-            let config = match load_totp_config(totp_config) {
-                Ok(config) => config,
-                Err(e) => {
-                    eprintln!("{} {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            };
-            let totp_manager = TOTPManager::new(config);
-
-            println!("{}", "🔍 TOTP 时间窗口调试信息".bright_cyan().bold());
-            println!();
-
-            // 显示当前验证码
-            match totp_manager.generate_current_code() {
-                Ok(current_code) => {
-                    println!("{} 当前 TOTP 验证码: {}", "🔢".bright_green(), current_code.bright_white().bold());
-                    let remaining = totp_manager.get_remaining_time();
-                    println!("{} 剩余有效时间: {} 秒", "⏰".bright_yellow(), remaining.to_string().bright_white());
-                    println!();
-                }
-                Err(e) => {
-                    eprintln!("{} 生成当前验证码失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
-            }
-
-            // 显示多个时间窗口的验证码
-            match totp_manager.get_codes_for_windows(*windows) {
-                Ok(codes) => {
-                    println!("{} 时间窗口验证码列表（窗口数: {}）:", "📋".bright_blue(), windows);
-                    println!();
-
-                    for (timestamp, code) in codes {
-                        let time_diff = timestamp as i64 - SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-                        let status = if time_diff.abs() <= 30 {
-                            "🟢 当前"
-                        } else if time_diff.abs() <= 90 {
-                            "🟡 最近"
-                        } else {
-                            "🔴 较远"
-                        };
-
-                        println!("{} 时间戳: {} | 验证码: {} | 时差: {}秒",
-                                status,
-                                timestamp,
-                                code.bright_white().bold(),
-                                time_diff);
-                    }
-                    println!();
-                    println!("{} 建议使用 🟢 或 🟡 标记的验证码进行解锁", "💡".bright_blue());
-                }
-                Err(e) => {
-                    eprintln!("{} 生成时间窗口验证码失败: {}", "❌".red(), e);
-                    process::exit(1);
-                }
             }
         }
         Commands::Setup2FA => {
@@ -1409,7 +551,7 @@ fn main() {
                         "created_at": chrono::Utc::now().to_rfc3339()
                     });
 
-                    match fs::write(output, serde_json::to_string_pretty(&data).unwrap()) {
+                    match fs::write(&output, serde_json::to_string_pretty(&data).unwrap()) {
                         Ok(()) => {
                             println!("{} 钱包已保存: {}", "✅".bright_green(), output.bright_white());
                             println!();
@@ -1637,7 +779,7 @@ fn main() {
             };
 
             let runtime = tokio::runtime::Runtime::new().unwrap();
-            match runtime.block_on(sol_safekey::solana_utils::execute_solana_ops(args, file_path)) {
+            match runtime.block_on(sol_safekey::solana_utils::execute_solana_ops(args, &file_path)) {
                 Ok(_) => {}
                 Err(e) => {
                     eprintln!("{} Operation failed: {}", "❌".red(), e);

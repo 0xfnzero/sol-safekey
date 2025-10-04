@@ -1,391 +1,137 @@
 //! Bot Helper Module
 //!
-//! This module provides easy-to-use functions for bot integration.
-//! It allows bots to call the CLI tool for key management without implementing their own CLI.
+//! Provides easy-to-use functions for bot integration with sol-safekey.
+//! Bots can integrate the interactive key management tool with just 1 line of code.
+//! **No CLI dependency required** - uses the library directly.
+//!
+//! # Quick Start
+//!
+//! ```no_run
+//! use sol_safekey::bot_helper;
+//!
+//! let keypair = bot_helper::ensure_wallet_ready("wallet.json").unwrap();
+//! ```
 
-use std::process::{Command, Stdio};
 use std::path::Path;
+use std::fs;
+use std::io::Write;
+use serde_json::Value;
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
+use crate::{decrypt_key, generate_encryption_key_simple, interactive};
 
 /// Result type for bot helper operations
-pub type BotResult<T> = Result<T, String>;
+pub type Result<T> = std::result::Result<T, String>;
 
-/// Bot Key Manager - High-level wrapper for CLI operations
+/// Ensure wallet is ready to use - creates or unlocks interactively
 ///
-/// This struct provides simple methods to interact with the sol-safekey CLI
-/// from your bot application.
-pub struct BotKeyManager {
-    cli_path: String,
-}
-
-impl BotKeyManager {
-    /// Create a new BotKeyManager
-    ///
-    /// # Arguments
-    ///
-    /// * `cli_path` - Path to the sol-safekey CLI binary (default: "sol-safekey")
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// // Use system-installed CLI
-    /// let manager = BotKeyManager::new();
-    ///
-    /// // Or use custom path
-    /// let manager = BotKeyManager::with_path("./target/release/sol-safekey");
-    /// ```
-    pub fn new() -> Self {
-        Self {
-            cli_path: "sol-safekey".to_string(),
-        }
-    }
-
-    /// Create a BotKeyManager with custom CLI path
-    pub fn with_path(cli_path: &str) -> Self {
-        Self {
-            cli_path: cli_path.to_string(),
-        }
-    }
-
-    /// Generate a keystore file (will prompt for password interactively)
-    ///
-    /// This calls `sol-safekey gen-keystore` and prompts the user for a password.
-    ///
-    /// # Arguments
-    ///
-    /// * `output_path` - Where to save the keystore file
-    ///
-    /// # Returns
-    ///
-    /// The public key of the generated wallet
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// let manager = BotKeyManager::new();
-    /// let public_key = manager.generate_keystore_interactive("wallet.json")?;
-    /// println!("Generated wallet with public key: {}", public_key);
-    /// # Ok::<(), String>(())
-    /// ```
-    pub fn generate_keystore_interactive(&self, output_path: &str) -> BotResult<String> {
-        println!("🔐 Generating new encrypted keystore...");
-        println!("📝 You will be prompted to enter a password.\n");
-
-        let output = Command::new(&self.cli_path)
-            .arg("gen-keystore")
-            .arg("-o")
-            .arg(output_path)
-            .stdin(Stdio::inherit())  // Allow interactive password input
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("Failed to execute CLI: {}. Make sure sol-safekey is installed.", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to generate keystore: {}", stderr));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // Extract public key from output
-        for line in stdout.lines() {
-            if line.contains("Public Key:") || line.contains("公钥:") {
-                if let Some(pubkey) = line.split(':').nth(1) {
-                    return Ok(pubkey.trim().to_string());
-                }
-            }
-        }
-
-        // Fallback: read from generated file
-        self.get_public_key_from_file(output_path)
-    }
-
-    /// Unlock a keystore file (will prompt for password interactively)
-    ///
-    /// This calls `sol-safekey unlock` and prompts the user for a password.
-    /// Returns the decrypted private key in base58 format.
-    ///
-    /// # Arguments
-    ///
-    /// * `keystore_path` - Path to the keystore file
-    ///
-    /// # Returns
-    ///
-    /// The decrypted private key as a base58 string
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// let manager = BotKeyManager::new();
-    /// let private_key = manager.unlock_keystore_interactive("wallet.json")?;
-    /// println!("Wallet unlocked successfully!");
-    /// # Ok::<(), String>(())
-    /// ```
-    pub fn unlock_keystore_interactive(&self, keystore_path: &str) -> BotResult<String> {
-        if !Path::new(keystore_path).exists() {
-            return Err(format!("Keystore file not found: {}", keystore_path));
-        }
-
-        println!("🔓 Unlocking keystore: {}", keystore_path);
-        println!("🔑 Please enter your password:\n");
-
-        let output = Command::new(&self.cli_path)
-            .arg("unlock")
-            .arg("-f")
-            .arg(keystore_path)
-            .stdin(Stdio::inherit())  // Allow interactive password input
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("Failed to execute CLI: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to unlock keystore: {}", stderr));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // Extract private key from output
-        // The CLI prints the key on a separate line after "🔑 解密后的私钥:" or "🔑 Private Key:"
-        let lines: Vec<&str> = stdout.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            if line.contains("解密后的私钥") || line.contains("Private Key") || line.contains("🔑 私钥:") {
-                // The private key is on the next line
-                if i + 1 < lines.len() {
-                    let key = lines[i + 1].trim();
-                    if !key.is_empty() && key.len() > 30 {  // Basic validation
-                        return Ok(key.to_string());
-                    }
-                }
-            }
-        }
-
-        Err("Could not extract private key from CLI output".to_string())
-    }
-
-    /// Unlock keystore with password provided programmatically (non-interactive)
-    ///
-    /// Use this when you already have the password in your bot code.
-    ///
-    /// # Arguments
-    ///
-    /// * `keystore_path` - Path to the keystore file
-    /// * `password` - The password to decrypt
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// let manager = BotKeyManager::new();
-    /// let private_key = manager.unlock_keystore_with_password(
-    ///     "wallet.json",
-    ///     "my_password"
-    /// )?;
-    /// # Ok::<(), String>(())
-    /// ```
-    pub fn unlock_keystore_with_password(&self, keystore_path: &str, password: &str) -> BotResult<String> {
-        if !Path::new(keystore_path).exists() {
-            return Err(format!("Keystore file not found: {}", keystore_path));
-        }
-
-        let output = Command::new(&self.cli_path)
-            .arg("unlock")
-            .arg("-f")
-            .arg(keystore_path)
-            .arg("-p")
-            .arg(password)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("Failed to execute CLI: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to unlock keystore: {}", stderr));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // Extract private key from output
-        // The CLI prints the key on a separate line after "🔑 解密后的私钥:" or "🔑 Private Key:"
-        let lines: Vec<&str> = stdout.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            if line.contains("解密后的私钥") || line.contains("Private Key") || line.contains("🔑 私钥:") {
-                // The private key is on the next line
-                if i + 1 < lines.len() {
-                    let key = lines[i + 1].trim();
-                    if !key.is_empty() && key.len() > 30 {  // Basic validation
-                        return Ok(key.to_string());
-                    }
-                }
-            }
-        }
-
-        Err("Could not extract private key from CLI output".to_string())
-    }
-
-    /// Get public key from a keystore file without unlocking
-    ///
-    /// # Arguments
-    ///
-    /// * `keystore_path` - Path to the keystore file
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// let manager = BotKeyManager::new();
-    /// let pubkey = manager.get_public_key_from_file("wallet.json")?;
-    /// println!("Wallet public key: {}", pubkey);
-    /// # Ok::<(), String>(())
-    /// ```
-    pub fn get_public_key_from_file(&self, keystore_path: &str) -> BotResult<String> {
-        use std::fs;
-        use serde_json::Value;
-
-        let content = fs::read_to_string(keystore_path)
-            .map_err(|e| format!("Failed to read keystore: {}", e))?;
-
-        let data: Value = serde_json::from_str(&content)
-            .map_err(|e| format!("Invalid keystore format: {}", e))?;
-
-        data["public_key"]
-            .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| "Public key not found in keystore".to_string())
-    }
-
-    /// Check if the CLI binary is available
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// let manager = BotKeyManager::new();
-    /// if manager.check_cli_available() {
-    ///     println!("✅ sol-safekey CLI is available");
-    /// } else {
-    ///     println!("❌ sol-safekey CLI not found");
-    /// }
-    /// ```
-    pub fn check_cli_available(&self) -> bool {
-        Command::new(&self.cli_path)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    }
-
-    /// Generate a new keystore with password from environment variable
-    ///
-    /// Reads password from the specified environment variable.
-    /// Useful for automated deployment.
-    ///
-    /// # Arguments
-    ///
-    /// * `output_path` - Where to save the keystore
-    /// * `password_env_var` - Name of environment variable containing password
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sol_safekey::bot_helper::BotKeyManager;
-    ///
-    /// // Set environment variable first:
-    /// // export WALLET_PASSWORD="my_secure_password"
-    ///
-    /// let manager = BotKeyManager::new();
-    /// let pubkey = manager.generate_keystore_from_env(
-    ///     "wallet.json",
-    ///     "WALLET_PASSWORD"
-    /// )?;
-    /// # Ok::<(), String>(())
-    /// ```
-    pub fn generate_keystore_from_env(&self, output_path: &str, password_env_var: &str) -> BotResult<String> {
-        let password = std::env::var(password_env_var)
-            .map_err(|_| format!("Environment variable {} not found", password_env_var))?;
-
-        let output = Command::new(&self.cli_path)
-            .arg("gen-keystore")
-            .arg("-o")
-            .arg(output_path)
-            .arg("-p")
-            .arg(&password)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("Failed to execute CLI: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to generate keystore: {}", stderr));
-        }
-
-        self.get_public_key_from_file(output_path)
-    }
-}
-
-impl Default for BotKeyManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Quick helper function to unlock a keystore interactively
+/// Main function for bot integration:
+/// - If wallet exists: prompts for password and unlocks
+/// - If wallet doesn't exist: launches interactive creation, then unlocks
 ///
-/// This is a convenience function for the most common use case.
+/// # Arguments
+///
+/// * `wallet_path` - Path to the encrypted wallet file
 ///
 /// # Example
 ///
 /// ```no_run
-/// use sol_safekey::bot_helper::unlock_keystore;
+/// use sol_safekey::bot_helper;
+/// use solana_sdk::signer::Signer;
 ///
-/// let private_key = unlock_keystore("wallet.json")?;
+/// let keypair = bot_helper::ensure_wallet_ready("wallet.json")?;
+/// println!("Wallet ready: {}", keypair.pubkey());
 /// # Ok::<(), String>(())
 /// ```
-pub fn unlock_keystore(keystore_path: &str) -> BotResult<String> {
-    BotKeyManager::new().unlock_keystore_interactive(keystore_path)
+pub fn ensure_wallet_ready(wallet_path: &str) -> Result<Keypair> {
+    if wallet_exists(wallet_path) {
+        println!("✅ Wallet found at: {}", wallet_path);
+        println!("🔓 Starting interactive wallet unlock...\n");
+        unlock_wallet(wallet_path)
+    } else {
+        println!("⚠️  Wallet not found at: {}", wallet_path);
+        println!("📝 Starting interactive wallet creation...\n");
+        create_wallet(wallet_path)?;
+
+        println!("\nNow unlocking the newly created wallet...\n");
+        unlock_wallet(wallet_path)
+    }
 }
 
-/// Quick helper function to generate a keystore interactively
-///
-/// # Example
-///
-/// ```no_run
-/// use sol_safekey::bot_helper::generate_keystore;
-///
-/// let public_key = generate_keystore("wallet.json")?;
-/// println!("Generated wallet: {}", public_key);
-/// # Ok::<(), String>(())
-/// ```
-pub fn generate_keystore(output_path: &str) -> BotResult<String> {
-    BotKeyManager::new().generate_keystore_interactive(output_path)
+/// Check if a wallet file exists at the given path
+pub fn wallet_exists(path: &str) -> bool {
+    Path::new(path).exists()
 }
 
-/// Quick helper to check if CLI is available
+/// Get public key from wallet without unlocking
 ///
-/// # Example
+/// # Arguments
 ///
-/// ```no_run
-/// use sol_safekey::bot_helper::check_cli;
-///
-/// if !check_cli() {
-///     eprintln!("Please install sol-safekey CLI first!");
-///     std::process::exit(1);
-/// }
-/// ```
-pub fn check_cli() -> bool {
-    BotKeyManager::new().check_cli_available()
+/// * `wallet_path` - Path to the encrypted wallet file
+pub fn get_wallet_pubkey(wallet_path: &str) -> Result<String> {
+    let content = fs::read_to_string(wallet_path)
+        .map_err(|e| format!("Failed to read wallet: {}", e))?;
+
+    let data: Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid wallet format: {}", e))?;
+
+    data["public_key"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| "Public key not found in wallet file".to_string())
+}
+
+/// Create wallet interactively
+fn create_wallet(output_path: &str) -> Result<()> {
+    println!("🔐 Interactive Wallet Creation");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("\nYou will be guided through the wallet creation process.");
+    println!("The wallet will be saved to: {}\n", output_path);
+
+    interactive::show_main_menu()?;
+
+    if !wallet_exists(output_path) {
+        println!("\n⚠️  Note: Wallet was not saved to the expected path.");
+        println!("   Expected: {}", output_path);
+        println!("   Please make sure to save your wallet to this location.");
+        return Err(format!("Wallet not created at expected path: {}", output_path));
+    }
+
+    println!("\n✅ Wallet created successfully!");
+    println!("📁 Location: {}", output_path);
+    Ok(())
+}
+
+/// Unlock wallet interactively (prompts for password)
+fn unlock_wallet(wallet_path: &str) -> Result<Keypair> {
+    if !wallet_exists(wallet_path) {
+        return Err(format!("Wallet file not found: {}", wallet_path));
+    }
+
+    println!("🔓 Unlocking wallet: {}", wallet_path);
+
+    let content = fs::read_to_string(wallet_path)
+        .map_err(|e| format!("Failed to read wallet: {}", e))?;
+
+    let data: Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid wallet format: {}", e))?;
+
+    let encrypted_key = data["encrypted_private_key"]
+        .as_str()
+        .ok_or_else(|| "Encrypted private key not found in wallet file".to_string())?;
+
+    print!("🔑 Enter wallet password: ");
+    std::io::stdout().flush().unwrap();
+
+    let password = rpassword::read_password()
+        .map_err(|e| format!("Failed to read password: {}", e))?;
+
+    let encryption_key = generate_encryption_key_simple(&password);
+    let private_key = decrypt_key(encrypted_key, &encryption_key)?;
+    let keypair = Keypair::from_base58_string(&private_key);
+
+    println!("✅ Wallet unlocked successfully!");
+    println!("📍 Address: {}", keypair.pubkey());
+
+    Ok(keypair)
 }

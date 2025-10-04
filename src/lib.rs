@@ -47,8 +47,10 @@ pub mod hardware_fingerprint;
 #[cfg(feature = "2fa")]
 pub mod security_question;
 
-// Bot helper module for easy CLI integration
-#[cfg(feature = "cli")]
+// Interactive menu module - needed for bot integration
+pub mod interactive;
+
+// Bot helper module for easy bot integration (no CLI dependency)
 pub mod bot_helper;
 
 // Solana utilities for token operations
