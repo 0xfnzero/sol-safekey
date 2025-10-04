@@ -60,14 +60,19 @@ async fn main() -> Result<()> {
 fn setup_wallet() -> Result<Keypair> {
     println!("🔑 Setting up wallet...");
 
-    // 尝试从环境变量加载
+    // ⚠️ 不推荐：从环境变量加载（仅用于演示）
+    // 生产环境请使用 bot_helper::ensure_wallet_ready()
     if let Ok(wallet_path) = env::var("WALLET_PATH") {
         println!("📂 Loading from: {}", wallet_path);
         let json = fs::read_to_string(&wallet_path)?;
 
-        // 尝试从环境变量获取密码，否则使用默认密码
+        // ⚠️ 警告：从环境变量读取密码是不安全的！
+        // 这里仅用于演示目的，生产环境请使用交互式密码提示
         let password = env::var("WALLET_PASSWORD")
-            .unwrap_or_else(|_| "example_password".to_string());
+            .unwrap_or_else(|_| {
+                println!("⚠️  WALLET_PASSWORD not set, using default (INSECURE!)");
+                "example_password".to_string()
+            });
 
         return Ok(KeyManager::keypair_from_encrypted_json(&json, &password)?);
     }

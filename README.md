@@ -42,6 +42,19 @@
 
 ---
 
+> ## ⚠️ SECURITY NOTICE
+>
+> **This is an open-source educational tool with known security limitations.** The encryption code is publicly visible, making it vulnerable to offline brute-force attacks if your keystore file is compromised.
+>
+> - ✅ **Use for**: Development, testing, small bot operations
+> - ❌ **DON'T use for**: Large cryptocurrency holdings
+> - 🔐 **Critical**: Use 20+ character random passwords ONLY
+> - 📖 **READ**: The "Security Limitations" section below before use
+>
+> **For large holdings, use hardware wallets (Ledger, Trezor) instead.**
+
+---
+
 ## 📚 Documentation
 
 | Document | Description | Language |
@@ -53,12 +66,12 @@
 
 ## ✨ Features
 
-✅ **Interactive Menu** - Choose your language, select operations with simple numbers
-🔐 **Strong Encryption** - Password-based encryption with SHA-256 key derivation
-🌍 **Multi-language** - Full English and Chinese support
-📦 **Keystore Format** - Standard Solana wallet-compatible format
-🛡️ **Security First** - Hidden password input, never exposes sensitive data unnecessarily
-⚡ **3 Simple Operations** - Create plain key, create encrypted key, decrypt key
+- ✅ **Interactive Menu** - Choose your language, select operations with simple numbers
+- 🔐 **Strong Encryption** - Password-based encryption with SHA-256 key derivation
+- 🌍 **Multi-language** - Full English and Chinese support
+- 📦 **Keystore Format** - Standard Solana wallet-compatible format
+- 🛡️ **Security First** - Hidden password input, never exposes sensitive data unnecessarily
+- ⚡ **3 Simple Operations** - Create plain key, create encrypted key, decrypt key
 
 ---
 
@@ -68,7 +81,7 @@
 
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/0xfnzero/sol-safekey.git
 cd sol-safekey
 
 # Build
@@ -312,19 +325,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Load from Environment Variables
 
+> ⚠️ **Security Warning: NOT RECOMMENDED for Production**
+>
+> Storing passwords in environment variables is **insecure** and should **only be used for development/testing**:
+> - Environment variables are visible in process listings (`ps aux`, `htop`)
+> - They may be logged in system logs or crash dumps
+> - They can be accessed by other processes on the same system
+> - They persist in shell history files
+>
+> **Recommended approach**: Use the interactive password prompt (`bot_helper::ensure_wallet_ready()`) which never stores the password anywhere.
+
 ```bash
+# ⚠️ NOT RECOMMENDED - Only for development/testing
 # In your .env or environment
 WALLET_KEYSTORE_PATH=./wallet.json
-WALLET_PASSWORD=your_secure_password
+WALLET_PASSWORD=your_secure_password  # INSECURE! Avoid in production
 ```
 
 ```rust
+// ⚠️ NOT RECOMMENDED - Only for development/testing
 // In your code
 let keystore_path = std::env::var("WALLET_KEYSTORE_PATH")?;
-let password = std::env::var("WALLET_PASSWORD")?;
+let password = std::env::var("WALLET_PASSWORD")?;  // INSECURE! Avoid in production
 
 let keystore_json = std::fs::read_to_string(keystore_path)?;
 let keypair = KeyManager::keypair_from_encrypted_json(&keystore_json, &password)?;
+```
+
+**For production, use the interactive approach instead:**
+
+```rust
+// ✅ RECOMMENDED - Secure interactive password prompt
+let keypair = sol_safekey::bot_helper::ensure_wallet_ready("wallet.json")?;
+// Password is prompted securely and never stored
 ```
 
 ---
@@ -353,13 +386,108 @@ Standard Solana keypair format (64-byte array).
 
 ---
 
-## 🛡️ Security Best Practices
+## 🔒 Security Limitations (IMPORTANT - READ THIS!)
 
-1. ✅ **Strong Passwords**: Use 10+ characters with uppercase, lowercase, numbers, and symbols
-2. ✅ **Backup Keystores**: Store in multiple secure locations (USB drives, encrypted cloud)
-3. ✅ **Never Share**: Don't share passwords or private keys with anyone
-4. ✅ **Delete Plaintext**: Remove decrypted key files immediately after use
-5. ✅ **Test First**: Verify you can decrypt before funding the wallet
+> ⚠️ **THIS IS AN OPEN-SOURCE PROJECT WITH KNOWN SECURITY LIMITATIONS**
+>
+> Because this is open-source software with publicly visible encryption code, there are inherent security limitations you MUST understand:
+
+### Encryption Method & Vulnerabilities
+
+**What We Use:**
+- Password-based XOR encryption with SHA-256 key derivation
+- Simple, transparent, and auditable implementation
+
+**Known Limitations:**
+
+1. **🔓 Password is the ONLY protection**
+   - If someone gets your encrypted keystore file, they can attempt unlimited password guesses offline
+   - No rate limiting, no account lockout (impossible in offline encryption)
+   - Weak passwords can be cracked in seconds/minutes with modern hardware
+
+2. **🔓 Brute-force attacks are possible**
+   - With the keystore file, attackers can try millions of passwords per second
+   - Common passwords, dictionary words, or personal info = high risk
+   - GPU/ASIC acceleration makes brute-forcing even faster
+
+3. **🔓 Source code is public**
+   - Encryption algorithm is visible to everyone
+   - No "security through obscurity"
+   - Attackers know exactly how to decrypt if they crack your password
+
+4. **🔓 No advanced protection features**
+   - No PBKDF2 iteration slowing (for performance reasons)
+   - No hardware security module (HSM) integration
+   - No key stretching beyond single SHA-256 hash
+   - No salt randomization per keystore (uses fixed salt)
+
+### What This Means for You
+
+**❌ NOT SUITABLE FOR:**
+- Storing large amounts of cryptocurrency (use hardware wallets)
+- High-security production environments
+- Situations where keystore file might be exposed
+- Users who tend to use weak passwords
+
+**✅ SUITABLE FOR:**
+- Development and testing purposes
+- Small amounts for bot operations
+- Educational purposes and learning
+- Situations with additional security layers (air-gapped machines, etc.)
+
+### Real-World Attack Scenario
+
+```
+1. Attacker obtains your wallet.json file (malware, backup leak, etc.)
+2. Attacker runs brute-force tool with rockyou.txt wordlist
+3. If password is weak: CRACKED in minutes
+4. If password is medium: CRACKED in hours/days
+5. If password is strong (20+ random chars): Still theoretically crackable
+```
+
+**Example: Weak password like "MyWallet2024" could be cracked in < 1 hour**
+
+---
+
+## 🛡️ Security Best Practices (CRITICAL)
+
+Given the limitations above, if you choose to use this tool:
+
+1. ✅ **VERY Strong Passwords**:
+   - Minimum 20+ characters
+   - Mix uppercase, lowercase, numbers, symbols
+   - Use a password manager to generate random passwords
+   - **Example GOOD**: `K9$mP2@vX#nL5qR8wT!eY3zA`
+   - **Example BAD**: `MyPassword123`, `Wallet2024`, `Solana123!`
+
+2. ✅ **Protect Your Keystore File**:
+   - Never upload to cloud services (Google Drive, Dropbox, etc.)
+   - Never commit to GitHub/GitLab
+   - Encrypt your backup drives
+   - Use full-disk encryption on your computers
+
+3. ✅ **Limit Exposure**:
+   - Only store small amounts for bot operations
+   - Transfer profits to hardware wallet regularly
+   - Assume if keystore is leaked, funds are at risk
+
+4. ✅ **Multiple Layers**:
+   - Use this tool on dedicated, air-gapped machines for large amounts
+   - Combine with hardware wallet for signing if possible
+   - Consider using the 2FA triple-factor mode for maximum protection
+
+5. ✅ **Monitor and Rotate**:
+   - Regularly change passwords
+   - Monitor wallet activity
+   - If you suspect compromise, immediately transfer funds
+
+### Better Alternatives for Large Holdings
+
+For significant cryptocurrency holdings, consider:
+- 🔐 **Hardware Wallets**: Ledger, Trezor (true cold storage)
+- 🔐 **Multisig Wallets**: Squads, Goki (requires multiple approvals)
+- 🔐 **Paper Wallets**: Generated offline on air-gapped machines
+- 🔐 **HSM Solutions**: Enterprise-grade hardware security modules
 
 ---
 
@@ -376,6 +504,15 @@ A: **It depends on the keystore type:**
 
 **Q: What encryption algorithm is used?**
 A: XOR encryption with SHA-256 key derivation from your password.
+
+**Q: Is the encryption secure? Can hackers crack it?**
+A: **Read the "Security Limitations" section above carefully!** The encryption itself is sound, BUT:
+- ✅ Strong password (20+ random chars) = Very difficult to crack
+- ⚠️ Medium password (12-15 chars) = Can be cracked with time/resources
+- ❌ Weak password (< 12 chars or common) = Can be cracked quickly
+- The keystore file is vulnerable to offline brute-force attacks
+- Since this is open-source, attackers know exactly how to attack
+- **Bottom line**: Password strength is EVERYTHING. Use a 20+ character random password or don't use this for large amounts.
 
 **Q: Is it safe to commit wallet.json to version control?**
 A: The encrypted keystore is relatively safe, but we recommend adding it to `.gitignore` and using environment-specific keystores.
