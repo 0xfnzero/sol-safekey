@@ -47,7 +47,7 @@ impl SolanaClient {
     }
 
     /// Get SOL balance for an account
-    pub async fn get_sol_balance(&self, pubkey: &Pubkey) -> Result<u64> {
+    pub fn get_sol_balance(&self, pubkey: &Pubkey) -> Result<u64> {
         let client = RpcClient::new(self.rpc_url.clone());
 
         let balance = client.get_balance(pubkey)?;
@@ -55,7 +55,7 @@ impl SolanaClient {
     }
 
     /// Get SPL token balance for an account
-    pub async fn get_token_balance(&self, owner: &Pubkey, mint: &Pubkey) -> Result<u64> {
+    pub fn get_token_balance(&self, owner: &Pubkey, mint: &Pubkey) -> Result<u64> {
         let client = RpcClient::new(self.rpc_url.clone());
 
         let token_program = Pubkey::from_str(TOKEN_PROGRAM_ID)?;
@@ -73,7 +73,7 @@ impl SolanaClient {
     }
 
     /// Transfer SOL from one account to another
-    pub async fn transfer_sol(
+    pub fn transfer_sol(
         &self,
         from: &Keypair,
         to: &Pubkey,
@@ -85,7 +85,7 @@ impl SolanaClient {
             return Err(anyhow!("Transfer amount cannot be zero"));
         }
 
-        let balance = self.get_sol_balance(&from.pubkey()).await?;
+        let balance = self.get_sol_balance(&from.pubkey())?;
         if balance < amount {
             return Err(anyhow!(
                 "Insufficient balance. Have: {} lamports, Need: {} lamports",
@@ -109,7 +109,7 @@ impl SolanaClient {
     }
 
     /// Transfer SPL tokens from one account to another
-    pub async fn transfer_token(
+    pub fn transfer_token(
         &self,
         from: &Keypair,
         to: &Pubkey,
@@ -160,7 +160,7 @@ impl SolanaClient {
     }
 
     /// Wrap SOL to WSOL
-    pub async fn wrap_sol(&self, keypair: &Keypair, amount: u64) -> Result<Signature> {
+    pub fn wrap_sol(&self, keypair: &Keypair, amount: u64) -> Result<Signature> {
         let client = RpcClient::new(self.rpc_url.clone());
 
         if amount == 0 {
@@ -206,7 +206,7 @@ impl SolanaClient {
     }
 
     /// Unwrap WSOL to SOL
-    pub async fn unwrap_sol(&self, keypair: &Keypair) -> Result<Signature> {
+    pub fn unwrap_sol(&self, keypair: &Keypair) -> Result<Signature> {
         let client = RpcClient::new(self.rpc_url.clone());
 
         let wsol_mint = Pubkey::from_str(WSOL_MINT)?;
@@ -236,6 +236,75 @@ impl SolanaClient {
 
         let signature = client.send_and_confirm_transaction(&transaction)?;
         Ok(signature)
+    }
+
+    /// Create a durable nonce account
+    /// Returns the nonce account pubkey and transaction signature
+    pub fn create_nonce_account(&self, payer: &Keypair) -> Result<(Pubkey, Signature)> {
+        let client = RpcClient::new(self.rpc_url.clone());
+
+        // Generate a new keypair for the nonce account
+        let nonce_account = Keypair::new();
+        let nonce_pubkey = nonce_account.pubkey();
+
+        // Calculate rent-exempt balance for nonce account
+        // Nonce account size: 80 bytes
+        let rent_exemption = client.get_minimum_balance_for_rent_exemption(80)?;
+
+        let system_program = Pubkey::from_str(SYSTEM_PROGRAM_ID)?;
+
+        // Create nonce account instructions
+        let mut instructions = vec![];
+
+        // 1. Create account
+        let create_account_ix = Instruction {
+            program_id: system_program,
+            accounts: vec![
+                solana_sdk::instruction::AccountMeta::new(payer.pubkey(), true),
+                solana_sdk::instruction::AccountMeta::new(nonce_pubkey, true),
+            ],
+            data: {
+                let mut data = vec![0, 0, 0, 0]; // CreateAccount instruction
+                data.extend_from_slice(&rent_exemption.to_le_bytes());
+                data.extend_from_slice(&80u64.to_le_bytes()); // space
+                data.extend_from_slice(system_program.as_ref());
+                data
+            },
+        };
+        instructions.push(create_account_ix);
+
+        // 2. Initialize nonce account
+        let initialize_nonce_ix = Instruction {
+            program_id: system_program,
+            accounts: vec![
+                solana_sdk::instruction::AccountMeta::new(nonce_pubkey, false),
+                solana_sdk::instruction::AccountMeta::new_readonly(
+                    solana_sdk::sysvar::recent_blockhashes::ID,
+                    false,
+                ),
+                solana_sdk::instruction::AccountMeta::new_readonly(
+                    solana_sdk::sysvar::rent::ID,
+                    false,
+                ),
+            ],
+            data: {
+                let mut data = vec![6, 0, 0, 0]; // InitializeNonceAccount instruction
+                data.extend_from_slice(payer.pubkey().as_ref());
+                data
+            },
+        };
+        instructions.push(initialize_nonce_ix);
+
+        let recent_blockhash = client.get_latest_blockhash()?;
+        let transaction = Transaction::new_signed_with_payer(
+            &instructions,
+            Some(&payer.pubkey()),
+            &[payer, &nonce_account],
+            recent_blockhash,
+        );
+
+        let signature = client.send_and_confirm_transaction(&transaction)?;
+        Ok((nonce_pubkey, signature))
     }
 }
 

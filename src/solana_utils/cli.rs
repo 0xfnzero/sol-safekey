@@ -167,7 +167,7 @@ fn load_triple_factor_keypair(encrypted_data: &str) -> Result<Keypair> {
 }
 
 /// Execute Solana operations CLI
-pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<()> {
+pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<()> {
     match args.command {
         SolanaOpsCommand::Balance { rpc_url, address } => {
             let client = SolanaClient::new(rpc_url);
@@ -180,7 +180,7 @@ pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Re
             };
 
             println!("\n{}", "📊 Checking SOL balance...".cyan());
-            let balance = client.get_sol_balance(&pubkey).await?;
+            let balance = client.get_sol_balance(&pubkey)?;
             let sol_amount = lamports_to_sol(balance);
 
             println!("\n{}", "Balance Information:".green().bold());
@@ -200,7 +200,7 @@ pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Re
             };
 
             println!("\n{}", "📊 Checking token balance...".cyan());
-            let balance = client.get_token_balance(&owner, &mint_pubkey).await?;
+            let balance = client.get_token_balance(&owner, &mint_pubkey)?;
 
             println!("\n{}", "Token Balance Information:".green().bold());
             println!("Address: {}", owner.to_string().yellow());
@@ -234,7 +234,7 @@ pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Re
             }
 
             println!("\n{}", "🚀 Sending transaction...".cyan());
-            let signature = client.transfer_sol(&keypair, &to_pubkey, lamports).await?;
+            let signature = client.transfer_sol(&keypair, &to_pubkey, lamports)?;
 
             println!("\n{}", "✅ Transfer successful!".green().bold());
             println!("Signature: {}", signature.to_string().yellow());
@@ -266,7 +266,7 @@ pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Re
             }
 
             println!("\n{}", "🚀 Sending transaction...".cyan());
-            let signature = client.transfer_token(&keypair, &to_pubkey, &mint_pubkey, amount).await?;
+            let signature = client.transfer_token(&keypair, &to_pubkey, &mint_pubkey, amount)?;
 
             println!("\n{}", "✅ Transfer successful!".green().bold());
             println!("Signature: {}", signature.to_string().yellow());
@@ -295,7 +295,7 @@ pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Re
             }
 
             println!("\n{}", "🚀 Sending transaction...".cyan());
-            let signature = client.wrap_sol(&keypair, lamports).await?;
+            let signature = client.wrap_sol(&keypair, lamports)?;
 
             println!("\n{}", "✅ Wrap successful!".green().bold());
             println!("Signature: {}", signature.to_string().yellow());
@@ -321,7 +321,7 @@ pub async fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Re
             }
 
             println!("\n{}", "🚀 Sending transaction...".cyan());
-            let signature = client.unwrap_sol(&keypair).await?;
+            let signature = client.unwrap_sol(&keypair)?;
 
             println!("\n{}", "✅ Unwrap successful!".green().bold());
             println!("Signature: {}", signature.to_string().yellow());

@@ -53,6 +53,9 @@ pub mod interactive;
 // Bot helper module for easy bot integration (no CLI dependency)
 pub mod bot_helper;
 
+// Solana operations interactive menu
+pub mod operations;
+
 // Solana utilities for token operations
 #[cfg(feature = "solana-ops")]
 pub mod solana_utils;

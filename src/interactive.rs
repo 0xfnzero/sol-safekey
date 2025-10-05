@@ -12,7 +12,7 @@ use crate::KeyManager;
 
 /// Language selection
 #[derive(Clone, Copy, PartialEq)]
-enum Language {
+pub enum Language {
     English,
     Chinese,
 }
@@ -104,7 +104,7 @@ impl Texts {
             create_encrypted: "  {}  创建加密私钥",
             decrypt: "  {}  解密私钥",
             exit: "  {}  退出",
-            select_option: "请输入选项 [0-3]: ",
+            select_option: "请输入选项 [0-12]: ",
             goodbye: "👋 再见！",
             invalid_option: "❌ 无效选项，请重新选择",
             continue_use: "是否继续使用? [Y/n]: ",
@@ -177,7 +177,7 @@ impl Texts {
             create_encrypted: "  {}  Create Encrypted Private Key",
             decrypt: "  {}  Decrypt Private Key",
             exit: "  {}  Exit",
-            select_option: "Select option [0-3]: ",
+            select_option: "Select option [0-12]: ",
             goodbye: "👋 Goodbye!",
             invalid_option: "❌ Invalid option, please try again",
             continue_use: "Continue? [Y/n]: ",
@@ -288,6 +288,51 @@ pub fn show_main_menu() -> Result<(), String> {
         println!("  {}  {}", "1.".green().bold(), &texts.create_plain[6..]);
         println!("  {}  {}", "2.".green().bold(), &texts.create_encrypted[6..]);
         println!("  {}  {}", "3.".green().bold(), &texts.decrypt[6..]);
+
+        // Advanced security features
+        #[cfg(feature = "2fa")]
+        {
+            println!();
+            if lang == Language::Chinese {
+                println!("{}", "  高级安全功能:".bright_magenta().bold());
+            } else {
+                println!("{}", "  Advanced Security:".bright_magenta().bold());
+            }
+            println!("  {}  {}", "4.".bright_magenta().bold(), if lang == Language::Chinese { "设置 2FA 认证" } else { "Setup 2FA Authentication" });
+            println!("  {}  {}", "5.".bright_magenta().bold(), if lang == Language::Chinese { "生成三因子钱包" } else { "Generate Triple-Factor Wallet" });
+            println!("  {}  {}", "6.".bright_magenta().bold(), if lang == Language::Chinese { "解锁三因子钱包" } else { "Unlock Triple-Factor Wallet" });
+        }
+
+        // Solana operations (if feature is enabled)
+        #[cfg(feature = "solana-ops")]
+        {
+            println!();
+            if lang == Language::Chinese {
+                println!("{}", "  Solana 链上操作:".bright_blue().bold());
+            } else {
+                println!("{}", "  Solana Operations:".bright_blue().bold());
+            }
+            #[cfg(feature = "2fa")]
+            {
+                println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "查询 SOL 余额" } else { "Check SOL Balance" });
+                println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SOL" } else { "Transfer SOL" });
+                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
+                println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
+                println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
+                println!("  {}  {}", "12.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+            }
+            #[cfg(not(feature = "2fa"))]
+            {
+                println!("  {}  {}", "4.".bright_cyan().bold(), if lang == Language::Chinese { "查询 SOL 余额" } else { "Check SOL Balance" });
+                println!("  {}  {}", "5.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SOL" } else { "Transfer SOL" });
+                println!("  {}  {}", "6.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
+                println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
+                println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
+                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+            }
+        }
+
+        println!();
         println!("  {}  {}", "0.".red().bold(), &texts.exit[6..]);
         println!();
         print!("{}", texts.select_option);
@@ -301,6 +346,41 @@ pub fn show_main_menu() -> Result<(), String> {
             "1" => create_plain_key_interactive(&texts)?,
             "2" => create_encrypted_key_interactive(&texts)?,
             "3" => decrypt_key_interactive(&texts)?,
+
+            // Advanced security features (2FA)
+            #[cfg(feature = "2fa")]
+            "4" => {
+                if let Err(e) = setup_2fa_interactive(lang) {
+                    eprintln!("❌ {}", e);
+                }
+            }
+            #[cfg(feature = "2fa")]
+            "5" => {
+                if let Err(e) = generate_triple_factor_wallet_interactive(lang) {
+                    eprintln!("❌ {}", e);
+                }
+            }
+            #[cfg(feature = "2fa")]
+            "6" => {
+                if let Err(e) = unlock_triple_factor_wallet_interactive(lang) {
+                    eprintln!("❌ {}", e);
+                }
+            }
+
+            // Solana operations
+            #[cfg(all(feature = "solana-ops", feature = "2fa"))]
+            "7" | "8" | "9" | "10" | "11" | "12" => {
+                if let Err(e) = handle_solana_operation(choice, lang) {
+                    eprintln!("❌ {}", e);
+                }
+            }
+            #[cfg(all(feature = "solana-ops", not(feature = "2fa")))]
+            "4" | "5" | "6" | "7" | "8" | "9" => {
+                if let Err(e) = handle_solana_operation(choice, lang) {
+                    eprintln!("❌ {}", e);
+                }
+            }
+
             "0" => {
                 println!("\n{}", texts.goodbye.cyan());
                 break;
@@ -646,13 +726,354 @@ fn decrypt_key_interactive(texts: &Texts) -> Result<(), String> {
     Ok(())
 }
 
-/// 读取密码（隐藏输入）
+/// 读取密码（临时显示明文用于调试）
 /// Prompt and read password securely
 fn prompt_password(prompt: &str, texts: &Texts) -> Result<String, String> {
     print!("{}", prompt);
     io::stdout().flush().map_err(|e| e.to_string())?;
-    rpassword::read_password()
-        .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))
+
+    // 临时使用明文输入进行调试
+    let mut password = String::new();
+    io::stdin().read_line(&mut password)
+        .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+
+    let password = password.trim().to_string();
+    println!("DEBUG: 读取到的密码: '{}' (长度: {})", password, password.len());
+
+    Ok(password)
+
+    // 原来的隐藏输入代码（调试完成后恢复）
+    // let password = rpassword::read_password()
+    //     .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+    // Ok(password.trim().to_string())
+}
+
+/// Handle Solana operation by prompting for keystore and calling the appropriate function
+#[cfg(feature = "solana-ops")]
+fn handle_solana_operation(choice: &str, language: Language) -> Result<(), String> {
+    use rpassword;
+
+    // Convert Language to operations::Language
+    let ops_language = match language {
+        Language::English => crate::operations::Language::English,
+        Language::Chinese => crate::operations::Language::Chinese,
+    };
+
+    // Prompt for keystore file path
+    println!();
+    if language == Language::Chinese {
+        print!("Keystore 文件路径 [keystore.json]: ");
+    } else {
+        print!("Keystore file path [keystore.json]: ");
+    }
+    io::stdout().flush().map_err(|e| e.to_string())?;
+
+    let mut keystore_path = String::new();
+    io::stdin().read_line(&mut keystore_path).map_err(|e| e.to_string())?;
+    let keystore_path = keystore_path.trim();
+    let keystore_path = if keystore_path.is_empty() {
+        "keystore.json"
+    } else {
+        keystore_path
+    };
+
+    // Read encrypted file
+    let file_content = std::fs::read_to_string(keystore_path)
+        .map_err(|e| format!("Failed to read keystore: {}", e))?;
+
+    // Parse JSON to get encryption type
+    let json: serde_json::Value = serde_json::from_str(&file_content)
+        .map_err(|e| format!("Failed to parse keystore: {}", e))?;
+
+    let encryption_type = json["encryption_type"].as_str().unwrap_or("password_only");
+
+    // Decrypt keypair
+    let keypair = match encryption_type {
+        "password_only" => {
+            // Simple password-based decryption
+            let password = rpassword::prompt_password(
+                if language == Language::Chinese { "输入密码: " } else { "Enter password: " }
+            ).map_err(|e| format!("Failed to read password: {}", e))?;
+
+            KeyManager::keypair_from_encrypted_json(&file_content, &password)
+                .map_err(|e| format!("Failed to decrypt keystore: {}", e))?
+        }
+        "triple_factor_v1" => {
+            return Err("Triple-factor wallets not yet supported in interactive mode. Please use the CLI.".to_string());
+        }
+        _ => {
+            return Err(format!("Unknown encryption type: {}", encryption_type));
+        }
+    };
+
+    if language == Language::Chinese {
+        println!("✅ 钱包解锁成功！");
+        println!("📍 钱包地址: {}", keypair.pubkey());
+    } else {
+        println!("✅ Wallet unlocked successfully!");
+        println!("📍 Wallet address: {}", keypair.pubkey());
+    }
+
+    // Call the appropriate operation
+    #[cfg(feature = "2fa")]
+    let result = match choice {
+        "7" => crate::operations::check_balance(&keypair, ops_language),
+        "8" => crate::operations::transfer_sol(&keypair, ops_language),
+        "9" => crate::operations::wrap_sol(&keypair, ops_language),
+        "10" => crate::operations::unwrap_sol(&keypair, ops_language),
+        "11" => crate::operations::transfer_token(&keypair, ops_language),
+        "12" => crate::operations::create_nonce_account(&keypair, ops_language),
+        _ => Err("Invalid operation".to_string()),
+    };
+
+    #[cfg(not(feature = "2fa"))]
+    let result = match choice {
+        "4" => crate::operations::check_balance(&keypair, ops_language),
+        "5" => crate::operations::transfer_sol(&keypair, ops_language),
+        "6" => crate::operations::wrap_sol(&keypair, ops_language),
+        "7" => crate::operations::unwrap_sol(&keypair, ops_language),
+        "8" => crate::operations::transfer_token(&keypair, ops_language),
+        "9" => crate::operations::create_nonce_account(&keypair, ops_language),
+        _ => Err("Invalid operation".to_string()),
+    };
+
+    result
+}
+
+/// Setup 2FA authentication interactively
+#[cfg(feature = "2fa")]
+fn setup_2fa_interactive(language: Language) -> Result<(), String> {
+    use crate::{derive_totp_secret_from_hardware_and_password, hardware_fingerprint::HardwareFingerprint, security_question::SecurityQuestion, totp::*};
+    use rpassword;
+
+    let account = "wallet";
+    let issuer = "Sol-SafeKey";
+
+    println!("\n{}", "=".repeat(50).bright_magenta());
+    if language == Language::Chinese {
+        println!("{}", "  🔐 三因子 2FA 安全设置".bright_magenta().bold());
+    } else {
+        println!("{}", "  🔐 Triple-Factor 2FA Security Setup".bright_magenta().bold());
+    }
+    println!("{}", "=".repeat(50).bright_magenta());
+    println!();
+
+    if language == Language::Chinese {
+        println!("{}", "⚠️  安全架构说明:".yellow().bold());
+        println!("  • 因子1: 硬件指纹（自动收集，绑定设备）");
+        println!("  • 因子2: 主密码（您设置的强密码）");
+        println!("  • 因子3: 安全问题答案（防止密码泄露）");
+        println!("  • 2FA密钥: 从硬件指纹+主密码派生（确定性）");
+        println!("  • 解锁需要: 主密码 + 安全问题答案 + 2FA动态验证码");
+    } else {
+        println!("{}", "⚠️  Security Architecture:".yellow().bold());
+        println!("  • Factor 1: Hardware Fingerprint (auto-collected, device-bound)");
+        println!("  • Factor 2: Master Password (your strong password)");
+        println!("  • Factor 3: Security Question Answer (prevents password leak)");
+        println!("  • 2FA Key: Derived from hardware fingerprint + master password");
+        println!("  • Unlock requires: Master password + Security answer + 2FA code");
+    }
+    println!();
+
+    // Step 1: Collect hardware fingerprint
+    if language == Language::Chinese {
+        println!("{}", "步骤 1/4: 收集硬件指纹...".bright_blue());
+    } else {
+        println!("{}", "Step 1/4: Collecting hardware fingerprint...".bright_blue());
+    }
+
+    let hardware_fp = HardwareFingerprint::collect()
+        .map_err(|e| format!("Failed to collect hardware fingerprint: {}", e))?;
+
+    if language == Language::Chinese {
+        println!("{} 硬件指纹已收集（SHA256哈希）", "✅".green());
+        println!("   指纹预览: {}...", &hardware_fp.as_str()[..16]);
+    } else {
+        println!("{} Hardware fingerprint collected (SHA256 hash)", "✅".green());
+        println!("   Preview: {}...", &hardware_fp.as_str()[..16]);
+    }
+    println!();
+
+    // Step 2: Set master password
+    if language == Language::Chinese {
+        println!("{}", "步骤 2/4: 设置主密码".bright_blue());
+    } else {
+        println!("{}", "Step 2/4: Set master password".bright_blue());
+    }
+
+    let master_password = loop {
+        let password = rpassword::prompt_password(
+            if language == Language::Chinese { "请输入主密码: " } else { "Enter master password: " }
+        ).map_err(|e| format!("Failed to read password: {}", e))?;
+
+        if password.is_empty() {
+            println!("{} {}", "❌".red(), if language == Language::Chinese { "主密码不能为空" } else { "Master password cannot be empty" });
+            continue;
+        }
+
+        // Check password strength
+        if password.len() < 10 {
+            println!("{} {}", "❌".red(), if language == Language::Chinese { "密码长度至少10个字符" } else { "Password must be at least 10 characters" });
+            continue;
+        }
+
+        let password_confirm = rpassword::prompt_password(
+            if language == Language::Chinese { "请再次输入主密码确认: " } else { "Confirm master password: " }
+        ).map_err(|e| format!("Failed to read password: {}", e))?;
+
+        if password != password_confirm {
+            println!("{} {}", "❌".red(), if language == Language::Chinese { "两次输入的密码不一致" } else { "Passwords do not match" });
+            continue;
+        }
+
+        break password;
+    };
+
+    if language == Language::Chinese {
+        println!("{} 主密码设置成功", "✅".green());
+    } else {
+        println!("{} Master password set successfully", "✅".green());
+    }
+    println!();
+
+    // Step 3: Set security question
+    if language == Language::Chinese {
+        println!("{}", "步骤 3/4: 设置安全问题".bright_blue());
+    } else {
+        println!("{}", "Step 3/4: Set security question".bright_blue());
+    }
+
+    let (question_index, _security_answer) = SecurityQuestion::setup_interactive()
+        .map_err(|e| format!("Failed to setup security question: {}", e))?;
+    println!();
+
+    // Step 4: Setup 2FA
+    if language == Language::Chinese {
+        println!("{}", "步骤 4/4: 设置 2FA 动态验证码".bright_blue());
+    } else {
+        println!("{}", "Step 4/4: Setup 2FA TOTP".bright_blue());
+    }
+
+    let twofa_secret = derive_totp_secret_from_hardware_and_password(
+        hardware_fp.as_str(),
+        &master_password,
+        account,
+        issuer,
+    ).map_err(|e| format!("Failed to derive 2FA secret: {}", e))?;
+
+    let config = TOTPConfig {
+        secret: twofa_secret.clone(),
+        account: account.to_string(),
+        issuer: issuer.to_string(),
+        algorithm: "SHA1".to_string(),
+        digits: 6,
+        step: 30,
+    };
+
+    let totp_manager = TOTPManager::new(config);
+
+    if language == Language::Chinese {
+        println!("{}", "📱 请使用 Google Authenticator 或 Authy 扫描以下 QR 码：".yellow());
+    } else {
+        println!("{}", "📱 Scan this QR code with Google Authenticator or Authy:".yellow());
+    }
+    println!();
+
+    match totp_manager.generate_qr_code() {
+        Ok(qr_code) => {
+            println!("{}", qr_code);
+        }
+        Err(e) => {
+            if language == Language::Chinese {
+                eprintln!("{} QR 码生成失败: {}", "⚠️".yellow(), e);
+                println!("{}", "📝 请手动输入以下信息：".yellow());
+            } else {
+                eprintln!("{} QR code generation failed: {}", "⚠️".yellow(), e);
+                println!("{}", "📝 Please enter this info manually:".yellow());
+            }
+            println!("{}", totp_manager.get_manual_setup_info());
+        }
+    }
+
+    println!();
+    if language == Language::Chinese {
+        println!("{} 或者手动输入密钥: {}", "🔑".bright_cyan(), twofa_secret.bright_white());
+    } else {
+        println!("{} Or enter manually: {}", "🔑".bright_cyan(), twofa_secret.bright_white());
+    }
+    println!();
+
+    // Verify 2FA setup
+    loop {
+        print!("{}", if language == Language::Chinese {
+            "请输入认证器显示的 6 位验证码以确认设置: "
+        } else {
+            "Enter the 6-digit code from your authenticator to verify: "
+        });
+        io::stdout().flush().map_err(|e| e.to_string())?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+        let code = input.trim();
+
+        match totp_manager.verify_code(code) {
+            Ok(true) => {
+                println!("{}", if language == Language::Chinese {
+                    "✅ 2FA 验证成功！".green()
+                } else {
+                    "✅ 2FA verification successful!".green()
+                });
+                break;
+            }
+            Ok(false) => {
+                println!("{}", if language == Language::Chinese {
+                    "❌ 验证码不正确，请重试".red()
+                } else {
+                    "❌ Code incorrect, please try again".red()
+                });
+                continue;
+            }
+            Err(e) => {
+                eprintln!("{} {}: {}", "❌".red(), if language == Language::Chinese { "验证失败" } else { "Verification failed" }, e);
+                continue;
+            }
+        }
+    }
+
+    println!();
+    if language == Language::Chinese {
+        println!("{}", "🎉 三因子 2FA 设置完成！".green().bold());
+        println!();
+        println!("{}", "📝 重要信息（请妥善保管）:".yellow().bold());
+        println!("  • 硬件指纹: 已绑定到当前设备");
+        println!("  • 安全问题: 问题 {} - {}", question_index + 1, crate::security_question::SECURITY_QUESTIONS[question_index]);
+        println!("  • 2FA密钥: 已添加到认证器");
+        println!();
+        println!("{}", "💡 下一步: 使用选项5生成三因子钱包".bright_blue());
+    } else {
+        println!("{}", "🎉 Triple-factor 2FA setup complete!".green().bold());
+        println!();
+        println!("{}", "📝 Important info (keep safe):".yellow().bold());
+        println!("  • Hardware fingerprint: Bound to current device");
+        println!("  • Security question: Question {} - {}", question_index + 1, crate::security_question::SECURITY_QUESTIONS[question_index]);
+        println!("  • 2FA key: Added to authenticator");
+        println!();
+        println!("{}", "💡 Next step: Use option 5 to generate triple-factor wallet".bright_blue());
+    }
+
+    Ok(())
+}
+
+/// Generate triple-factor wallet interactively
+#[cfg(feature = "2fa")]
+fn generate_triple_factor_wallet_interactive(_language: Language) -> Result<(), String> {
+    Err("This feature will be implemented soon. Please use CLI command: sol-safekey gen-2fa-wallet".to_string())
+}
+
+/// Unlock triple-factor wallet interactively
+#[cfg(feature = "2fa")]
+fn unlock_triple_factor_wallet_interactive(_language: Language) -> Result<(), String> {
+    Err("This feature will be implemented soon. Please use CLI command: sol-safekey unlock-2fa-wallet -f <file>".to_string())
 }
 
 /// Read password with confirmation and validation

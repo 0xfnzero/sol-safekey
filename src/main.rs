@@ -778,8 +778,7 @@ fn main() {
                 command: command.clone(),
             };
 
-            let runtime = tokio::runtime::Runtime::new().unwrap();
-            match runtime.block_on(sol_safekey::solana_utils::execute_solana_ops(args, &file_path)) {
+            match sol_safekey::solana_utils::execute_solana_ops(args, &file_path) {
                 Ok(_) => {}
                 Err(e) => {
                     eprintln!("{} Operation failed: {}", "❌".red(), e);

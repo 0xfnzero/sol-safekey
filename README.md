@@ -1,10 +1,10 @@
 <div align="center">
-    <h1>🔧 Sol-SafeKey</h1>
-    <h3><em>Secure Solana Key Management Tool with Interactive Multi-language Interface</em></h3>
+    <h1>🔐 Sol-SafeKey</h1>
+    <h3><em>Solana Private Key Management Tool - Simple, Secure, Professional</em></h3>
 </div>
 
 <p align="center">
-    <strong>Securely generate, manage, and encrypt Solana private keys with an easy-to-use interactive menu. No commands to remember!</strong>
+    <strong>Interactive multi-language menu | Password encryption | Triple-factor 2FA | Solana operations | Bot integration</strong>
 </p>
 
 <p align="center">
@@ -14,64 +14,43 @@
     <a href="https://docs.rs/sol-safekey">
         <img src="https://docs.rs/sol-safekey/badge.svg" alt="Documentation">
     </a>
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+    <a href="./LICENSE">
         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
-    </a>
-    <a href="https://github.com/0xfnzero/sol-safekey">
-        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
-    </a>
-    <a href="https://github.com/0xfnzero/sol-safekey/network">
-        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
     </a>
 </p>
 
 <p align="center">
     <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
     <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
-    <img src="https://img.shields.io/badge/Security-FF6B6B?style=for-the-badge&logo=shield&logoColor=white" alt="Security">
     <img src="https://img.shields.io/badge/2FA-4CAF50?style=for-the-badge&logo=google-authenticator&logoColor=white" alt="2FA">
 </p>
 
 <p align="center">
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
-    <a href="https://fnzero.dev/">Website</a> |
-    <a href="https://t.me/fnzero_group">Telegram</a> |
-    <a href="https://discord.gg/ckf5UHxz">Discord</a>
+    <a href="./README.md">English</a> |
+    <a href="./README_CN.md">中文</a>
 </p>
 
 ---
 
 > ## ⚠️ SECURITY NOTICE
 >
-> **This is an open-source educational tool with known security limitations.** The encryption code is publicly visible, making it vulnerable to offline brute-force attacks if your keystore file is compromised.
+> **Open-source encryption tool with known limitations.** The encryption algorithm is publicly visible.
 >
-> - ✅ **Use for**: Development, testing, small bot operations
-> - ❌ **DON'T use for**: Large cryptocurrency holdings
-> - 🔐 **Critical**: Use 20+ character random passwords ONLY
-> - 📖 **READ**: The "Security Limitations" section below before use
->
-> **For large holdings, use hardware wallets (Ledger, Trezor) instead.**
+> - ✅ **Recommended**: Development, testing, bots, medium wallets with 2FA ($1k-$10k)
+> - ❌ **Not recommended**: Large holdings (>$10k) - use hardware wallets instead
+> - 🔐 **Must use**: 20+ character passwords + 2FA for important wallets
+> - 📖 **Read**: Security section below before use
 
 ---
 
-## 📚 Documentation
+## 📋 Table of Contents
 
-| Document | Description | Language |
-|----------|-------------|----------|
-| [README.md](./README.md) | Complete guide and usage | English |
-| [README_CN.md](./README_CN.md) | 完整使用指南 | 中文 |
-
----
-
-## ✨ Features
-
-- ✅ **Interactive Menu** - Choose your language, select operations with simple numbers
-- 🔐 **Strong Encryption** - Password-based encryption with SHA-256 key derivation
-- 🌍 **Multi-language** - Full English and Chinese support
-- 📦 **Keystore Format** - Standard Solana wallet-compatible format
-- 🛡️ **Security First** - Hidden password input, never exposes sensitive data unnecessarily
-- ⚡ **3 Simple Operations** - Create plain key, create encrypted key, decrypt key
+1. [Quick Start](#-quick-start)
+2. [Module 1: Simple Encryption/Decryption](#-module-1-simple-encryptiondecryption)
+3. [Module 2: Triple-Factor 2FA Encryption](#-module-2-triple-factor-2fa-encryption)
+4. [Module 3: Solana Wallet Operations](#-module-3-solana-wallet-operations)
+5. [Module 4: Bot Integration](#-module-4-bot-integration)
+6. [Security & Best Practices](#-security--best-practices)
 
 ---
 
@@ -84,555 +63,678 @@
 git clone https://github.com/0xfnzero/sol-safekey.git
 cd sol-safekey
 
-# Build
-cargo build --release
+# Build with all features
+cargo build --release --features full
 
-# Run (Interactive Mode - Recommended)
-./target/release/sol-safekey
+# Run interactive menu
+./target/release/sol-safekey start
 ```
 
-### Interactive Mode
+### Interactive Menu
 
-Simply run without any arguments:
-
-```bash
-./sol-safekey
-```
-
-**Step 1: Choose Language**
-```
-==================================================
-  Language / 语言选择
-==================================================
-
-  1.  English
-  2.  中文
-
-Select / 选择 [1/2]:
-```
-
-**Step 2: Select Operation**
 ```
 ==================================================
   Sol-SafeKey - Solana Key Management Tool
 ==================================================
 
-Core Functions (3 operations):
-
+Core Functions:
   1.  Create Plain Private Key
   2.  Create Encrypted Private Key
   3.  Decrypt Private Key
+
+Advanced Security:
+  4.  Setup 2FA Authentication
+  5.  Generate Triple-Factor Wallet
+  6.  Unlock Triple-Factor Wallet
+
+Solana Operations:
+  7.  Check SOL Balance
+  8.  Transfer SOL
+  9.  Wrap SOL → WSOL
+  10. Unwrap WSOL → SOL
+  11. Transfer SPL Token
+  12. Create Nonce Account
+
   0.  Exit
-
-Select option [0-3]:
-```
-
-**Step 3: Follow the prompts!**
-
----
-
-## 📖 Usage Examples
-
-### Example 1: Create Encrypted Keystore (Recommended)
-
-```bash
-./sol-safekey
-
-# Select:
-# Language: 1 (English)
-# Operation: 2 (Create Encrypted Private Key)
-# Method: 1 (Generate new keypair)
-# Password: [enter password, minimum 10 characters]
-# Confirm password: [enter again]
-# Output: 1 (Save as Keystore file)
-# File path: wallet.json (or press Enter for default)
-
-# ✅ Result: wallet.json created with encrypted private key
-```
-
-### Example 2: Decrypt Keystore
-
-```bash
-./sol-safekey
-
-# Select:
-# Language: 1 (English)
-# Operation: 3 (Decrypt Private Key)
-# Input: 1 (From Keystore file)
-# File path: wallet.json
-# Password: [enter your password]
-
-# ✅ Result: Private key displayed on screen
-# Optional: Save to file or just view
-```
-
-### Example 3: Import Existing Key and Encrypt
-
-```bash
-./sol-safekey
-
-# Select:
-# Language: 1 (English)
-# Operation: 2 (Create Encrypted Private Key)
-# Method: 2 (Import existing private key)
-# Private key: [paste your base58 private key]
-# Password: [enter password]
-# Output: 1 (Save as Keystore file)
-
-# ✅ Result: Your existing key is now encrypted
 ```
 
 ---
 
-## 💻 Command Line Mode (Advanced)
+## 🔑 Module 1: Simple Encryption/Decryption
 
-For scripts and automation:
+**For**: Quick setup, development, testing, personal wallets
+
+### 1.1 Create Encrypted Keystore
+
+**Interactive Mode:**
 
 ```bash
-# Generate encrypted keystore with password
-sol-safekey gen-keystore -o wallet.json -p "your_strong_password"
-
-# Decrypt keystore
-sol-safekey unlock -f wallet.json -p "your_password"
-
-# Encrypt existing private key
-sol-safekey encrypt -k "YOUR_PRIVATE_KEY" -p "your_password"
-
-# Decrypt encrypted string
-sol-safekey decrypt -e "ENCRYPTED_DATA" -p "your_password"
-
-# View wallet address
-sol-safekey address -f wallet.json -p "your_password"
-
-# Show all commands
-sol-safekey --help
+./sol-safekey start
+# Select option 2: Create Encrypted Private Key
 ```
 
----
+**CLI Mode:**
 
-## 🔧 Integration with Your Application
+```bash
+# Not available via CLI - use interactive mode
+```
 
-### Bot Integration (Just 1-2 Lines of Code!)
+**Process:**
 
-**No CLI dependency required** - integrates directly with the library!
+1. Choose method:
+   - Generate new keypair
+   - Import existing private key
 
-The easiest way to add wallet management to your Rust bot:
+2. Set password (10+ characters, 3 types):
+   - Uppercase, lowercase, numbers, special chars
 
-```rust
-// In your Cargo.toml
-// [dependencies]
-// sol-safekey = "0.1"
+3. Save as keystore file (JSON format)
 
-use sol_safekey::bot_helper;
-use solana_sdk::signer::Signer;
+**Output File (`keystore.json`):**
 
-fn main() {
-    let wallet_path = "config/wallet.json";
-
-    // That's it! One line to get a ready-to-use keypair:
-    let keypair = bot_helper::ensure_wallet_ready(wallet_path).unwrap();
-
-    println!("✅ Wallet ready!");
-    println!("📍 Address: {}", keypair.pubkey());
-
-    // Use keypair for your bot operations...
+```json
+{
+  "encrypted_private_key": "base64_encrypted_data",
+  "public_key": "7nWq3...",
+  "created_at": "2024-01-01T00:00:00Z"
 }
 ```
 
-**What `ensure_wallet_ready()` does:**
+### 1.2 Decrypt Keystore
 
-1. **If wallet file doesn't exist:**
-   - Launches interactive menu (with language selection)
-   - Guides user to create encrypted wallet
-   - Saves to specified path
-   - Prompts for password to unlock
-   - Returns ready-to-use keypair
+**Interactive Mode:**
 
-2. **If wallet file exists:**
-   - Prompts user to enter password
-   - Decrypts the wallet
-   - Returns ready-to-use keypair
-
-**Even simpler - just 1 line:**
-
-```rust
-let keypair = sol_safekey::bot_helper::ensure_wallet_ready("wallet.json").unwrap();
+```bash
+./sol-safekey start
+# Select option 3: Decrypt Private Key
 ```
 
-**Complete bot example:**
+**Process:**
 
-```rust
-use sol_safekey::bot_helper;
-use solana_sdk::signer::Signer;
+1. Choose input method:
+   - From keystore file
+   - Enter encrypted string
 
-fn main() {
-    // Get wallet from config
-    let wallet_path = std::env::var("WALLET_PATH")
-        .unwrap_or_else(|_| "wallet.json".to_string());
+2. Enter password
 
-    // Ensure wallet is ready (creates/unlocks as needed)
-    let keypair = match bot_helper::ensure_wallet_ready(&wallet_path) {
-        Ok(kp) => kp,
-        Err(e) => {
-            eprintln!("❌ Wallet setup failed: {}", e);
-            std::process::exit(1);
-        }
-    };
+3. View decrypted private key
 
-    println!("✅ Bot wallet ready: {}", keypair.pubkey());
-
-    // Your bot logic here...
-    // - Sign transactions with keypair
-    // - Monitor wallet balance
-    // - Execute trades, etc.
-}
-```
-
-**Features:**
-- ✅ No CLI dependency - uses library directly
-- ✅ Interactive language selection (English/Chinese)
-- ✅ Auto-creates wallet if missing
-- ✅ Auto-unlocks wallet if exists
-- ✅ Returns ready-to-use `Keypair`
-- ✅ All operations guided step-by-step
-
-### Using Library API (Advanced)
-
-For more control, use the library API directly:
+### 1.3 Use in Code
 
 ```rust
 use sol_safekey::KeyManager;
 use solana_sdk::signer::Signer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create encrypted keystore
-    let keypair = KeyManager::generate_keypair();
-    let password = "your_strong_password";
+    // Load encrypted keystore
+    let keypair = KeyManager::keypair_from_keystore_file(
+        "keystore.json",
+        "your-password"
+    )?;
 
-    let keystore_json = KeyManager::keypair_to_encrypted_json(&keypair, password)?;
-    std::fs::write("wallet.json", keystore_json)?;
-
-    println!("Wallet address: {}", keypair.pubkey());
-
-    // Later, decrypt it
-    let keystore_json = std::fs::read_to_string("wallet.json")?;
-    let keypair = KeyManager::keypair_from_encrypted_json(&keystore_json, password)?;
-
-    // Use keypair for signing transactions
+    println!("Wallet: {}", keypair.pubkey());
     Ok(())
 }
 ```
 
-### Load from Environment Variables
+### 1.4 Security Level
 
-> ⚠️ **Security Warning: NOT RECOMMENDED for Production**
->
-> Storing passwords in environment variables is **insecure** and should **only be used for development/testing**:
-> - Environment variables are visible in process listings (`ps aux`, `htop`)
-> - They may be logged in system logs or crash dumps
-> - They can be accessed by other processes on the same system
-> - They persist in shell history files
->
-> **Recommended approach**: Use the interactive password prompt (`bot_helper::ensure_wallet_ready()`) which never stores the password anywhere.
-
-```bash
-# ⚠️ NOT RECOMMENDED - Only for development/testing
-# In your .env or environment
-WALLET_KEYSTORE_PATH=./wallet.json
-WALLET_PASSWORD=your_secure_password  # INSECURE! Avoid in production
-```
-
-```rust
-// ⚠️ NOT RECOMMENDED - Only for development/testing
-// In your code
-let keystore_path = std::env::var("WALLET_KEYSTORE_PATH")?;
-let password = std::env::var("WALLET_PASSWORD")?;  // INSECURE! Avoid in production
-
-let keystore_json = std::fs::read_to_string(keystore_path)?;
-let keypair = KeyManager::keypair_from_encrypted_json(&keystore_json, &password)?;
-```
-
-**For production, use the interactive approach instead:**
-
-```rust
-// ✅ RECOMMENDED - Secure interactive password prompt
-let keypair = sol_safekey::bot_helper::ensure_wallet_ready("wallet.json")?;
-// Password is prompted securely and never stored
-```
+- **Encryption**: AES-256 + PBKDF2
+- **Security**: ⭐⭐⭐ (Medium)
+- **Portable**: ✅ Works on any device
+- **Best for**: Development, testing, small wallets (<$1k)
 
 ---
 
-## 📁 File Formats
+## 🛡️ Module 2: Triple-Factor 2FA Encryption
 
-### Encrypted Keystore File (wallet.json)
+**For**: Production bots, medium-value wallets, maximum security
 
-```json
-{
-  "encrypted_private_key": "base64_encrypted_data...",
-  "public_key": "YourWalletPublicKeyAddress...",
-  "encryption_type": "password",
-  "created_at": "2025-01-15T10:30:00Z",
-  "version": "1.0"
+### 2.1 What is Triple-Factor?
+
+```
+┌─────────────────────────────────────────┐
+│  Factor 1: Hardware Fingerprint         │
+│  - CPU ID, MAC address, hostname        │
+│  - Device-bound (not portable)          │
+├─────────────────────────────────────────┤
+│  Factor 2: Master Password              │
+│  - Strong password (10+ chars)          │
+│  - Never stored, only hashed            │
+├─────────────────────────────────────────┤
+│  Factor 3: Security Question            │
+│  - Pre-defined questions                │
+│  - Extra protection layer               │
+├─────────────────────────────────────────┤
+│  Factor 4: TOTP 2FA Code                │
+│  - 6-digit code (30s refresh)           │
+│  - Google Authenticator compatible      │
+└─────────────────────────────────────────┘
+```
+
+### 2.2 Setup 2FA (One-time)
+
+**Interactive Mode:**
+
+```bash
+./sol-safekey start
+# Select option 4: Setup 2FA Authentication
+```
+
+**CLI Mode:**
+
+```bash
+./sol-safekey setup-2fa
+```
+
+**Process:**
+
+```
+Step 1/4: Collect hardware fingerprint
+✅ Fingerprint collected: a3f7b2...
+
+Step 2/4: Set master password
+Enter password: ************
+Confirm: ************
+✅ Password set
+
+Step 3/4: Security question
+Select question from list
+Enter answer
+✅ Question set
+
+Step 4/4: Setup 2FA
+📱 Scan QR code with Google Authenticator
+Enter 6-digit code: 123456
+✅ 2FA verified!
+
+🎉 Setup complete!
+```
+
+### 2.3 Generate Triple-Factor Wallet
+
+**CLI Mode:**
+
+```bash
+./sol-safekey gen-2fa-wallet -o secure-wallet.json
+```
+
+**Process:**
+
+1. Collects hardware fingerprint (automatic)
+2. Enter master password
+3. Answer security question
+4. Enter 2FA code from authenticator
+5. Generates 2 files:
+   - `secure-wallet.json` (triple-factor, device-bound)
+   - `XXXXXX_keystore.json` (password-only backup)
+
+**Output Files:**
+
+```
+📁 secure-wallet.json
+   Security: ⭐⭐⭐⭐⭐ (Maximum)
+   Requires: Hardware + Password + Security + 2FA
+   Device: Current device only
+
+📁 XXXXXX_keystore.json
+   Security: ⭐⭐⭐ (Medium)
+   Requires: Password only
+   Device: Any device (emergency recovery)
+```
+
+### 2.4 Unlock Triple-Factor Wallet
+
+**CLI Mode:**
+
+```bash
+./sol-safekey unlock-2fa-wallet -f secure-wallet.json
+```
+
+**Process:**
+
+1. Verify hardware fingerprint (automatic)
+2. Enter master password
+3. Answer security question
+4. Enter 2FA code (from authenticator)
+5. ✅ Wallet unlocked!
+
+### 2.5 Use in Code
+
+```rust
+use sol_safekey::{decrypt_with_triple_factor_and_2fa, hardware_fingerprint::HardwareFingerprint};
+
+fn unlock_triple_wallet(
+    encrypted_data: &str,
+    master_password: &str,
+    security_answer: &str,
+    twofa_code: &str
+) -> Result<String, String> {
+    let hw_fp = HardwareFingerprint::collect()?;
+
+    let (private_key, _, _) = decrypt_with_triple_factor_and_2fa(
+        encrypted_data,
+        &hw_fp.fingerprint,
+        master_password,
+        security_answer,
+        twofa_code
+    )?;
+
+    Ok(private_key)
 }
 ```
 
-### Plain Keypair File (keypair.json)
+### 2.6 Security Level
 
-```json
-[1,2,3,4,5,...,64]
-```
-
-Standard Solana keypair format (64-byte array).
-
----
-
-## 🔒 Security Limitations (IMPORTANT - READ THIS!)
-
-> ⚠️ **THIS IS AN OPEN-SOURCE PROJECT WITH KNOWN SECURITY LIMITATIONS**
->
-> Because this is open-source software with publicly visible encryption code, there are inherent security limitations you MUST understand:
-
-### Encryption Method & Vulnerabilities
-
-**What We Use:**
-- Password-based XOR encryption with SHA-256 key derivation
-- Simple, transparent, and auditable implementation
-
-**Known Limitations:**
-
-1. **🔓 Password is the ONLY protection**
-   - If someone gets your encrypted keystore file, they can attempt unlimited password guesses offline
-   - No rate limiting, no account lockout (impossible in offline encryption)
-   - Weak passwords can be cracked in seconds/minutes with modern hardware
-
-2. **🔓 Brute-force attacks are possible**
-   - With the keystore file, attackers can try millions of passwords per second
-   - Common passwords, dictionary words, or personal info = high risk
-   - GPU/ASIC acceleration makes brute-forcing even faster
-
-3. **🔓 Source code is public**
-   - Encryption algorithm is visible to everyone
-   - No "security through obscurity"
-   - Attackers know exactly how to decrypt if they crack your password
-
-4. **🔓 No advanced protection features**
-   - No PBKDF2 iteration slowing (for performance reasons)
-   - No hardware security module (HSM) integration
-   - No key stretching beyond single SHA-256 hash
-   - No salt randomization per keystore (uses fixed salt)
-
-### What This Means for You
-
-**❌ NOT SUITABLE FOR:**
-- Storing large amounts of cryptocurrency (use hardware wallets)
-- High-security production environments
-- Situations where keystore file might be exposed
-- Users who tend to use weak passwords
-
-**✅ SUITABLE FOR:**
-- Development and testing purposes
-- Small amounts for bot operations
-- Educational purposes and learning
-- Situations with additional security layers (air-gapped machines, etc.)
-
-### Real-World Attack Scenario
-
-```
-1. Attacker obtains your wallet.json file (malware, backup leak, etc.)
-2. Attacker runs brute-force tool with rockyou.txt wordlist
-3. If password is weak: CRACKED in minutes
-4. If password is medium: CRACKED in hours/days
-5. If password is strong (20+ random chars): Still theoretically crackable
-```
-
-**Example: Weak password like "MyWallet2024" could be cracked in < 1 hour**
+- **Encryption**: AES-256 + PBKDF2 + Hardware binding + 2FA
+- **Security**: ⭐⭐⭐⭐⭐ (Maximum)
+- **Portable**: ❌ Device-bound (has backup file)
+- **Best for**: Production bots, medium wallets ($1k-$10k)
 
 ---
 
-## 🛡️ Security Best Practices (CRITICAL)
+## ⚡ Module 3: Solana Wallet Operations
 
-Given the limitations above, if you choose to use this tool:
+**For**: Managing SOL, tokens, and blockchain interactions
 
-1. ✅ **VERY Strong Passwords**:
-   - Minimum 20+ characters
-   - Mix uppercase, lowercase, numbers, symbols
-   - Use a password manager to generate random passwords
-   - **Example GOOD**: `K9$mP2@vX#nL5qR8wT!eY3zA`
-   - **Example BAD**: `MyPassword123`, `Wallet2024`, `Solana123!`
+All operations work with both simple keystores and 2FA wallets!
 
-2. ✅ **Protect Your Keystore File**:
-   - Never upload to cloud services (Google Drive, Dropbox, etc.)
-   - Never commit to GitHub/GitLab
-   - Encrypt your backup drives
-   - Use full-disk encryption on your computers
+### 3.1 Check SOL Balance
 
-3. ✅ **Limit Exposure**:
-   - Only store small amounts for bot operations
-   - Transfer profits to hardware wallet regularly
-   - Assume if keystore is leaked, funds are at risk
-
-4. ✅ **Multiple Layers**:
-   - Use this tool on dedicated, air-gapped machines for large amounts
-   - Combine with hardware wallet for signing if possible
-   - Consider using the 2FA triple-factor mode for maximum protection
-
-5. ✅ **Monitor and Rotate**:
-   - Regularly change passwords
-   - Monitor wallet activity
-   - If you suspect compromise, immediately transfer funds
-
-### Better Alternatives for Large Holdings
-
-For significant cryptocurrency holdings, consider:
-- 🔐 **Hardware Wallets**: Ledger, Trezor (true cold storage)
-- 🔐 **Multisig Wallets**: Squads, Goki (requires multiple approvals)
-- 🔐 **Paper Wallets**: Generated offline on air-gapped machines
-- 🔐 **HSM Solutions**: Enterprise-grade hardware security modules
-
----
-
-## ❓ FAQ
-
-**Q: I forgot my password, can I recover my wallet?**
-A: No. The password is required to decrypt the keystore. This is by design for security. Always keep password backups in a secure password manager.
-
-**Q: Can I use the same keystore on multiple computers?**
-A: **It depends on the keystore type:**
-- **Standard password-encrypted keystore** (created with interactive mode option 2): ✅ Yes! Fully portable. Copy `wallet.json` to any machine and use the same password.
-- **2FA triple-factor wallet** (created with `setup-2fa` and `gen-2fa-wallet`): ❌ No! Device-bound due to hardware fingerprint. Cannot be used on other machines.
-- **2FA backup keystore** (the `*_keystore.json` file generated alongside 2FA wallet): ✅ Yes! This is specifically for cross-device recovery.
-
-**Q: What encryption algorithm is used?**
-A: XOR encryption with SHA-256 key derivation from your password.
-
-**Q: Is the encryption secure? Can hackers crack it?**
-A: **Read the "Security Limitations" section above carefully!** The encryption itself is sound, BUT:
-- ✅ Strong password (20+ random chars) = Very difficult to crack
-- ⚠️ Medium password (12-15 chars) = Can be cracked with time/resources
-- ❌ Weak password (< 12 chars or common) = Can be cracked quickly
-- The keystore file is vulnerable to offline brute-force attacks
-- Since this is open-source, attackers know exactly how to attack
-- **Bottom line**: Password strength is EVERYTHING. Use a 20+ character random password or don't use this for large amounts.
-
-**Q: Is it safe to commit wallet.json to version control?**
-A: The encrypted keystore is relatively safe, but we recommend adding it to `.gitignore` and using environment-specific keystores.
-
-**Q: How do I change my password?**
-A: Decrypt the keystore to get the private key, then create a new keystore with the new password using operation 2.
-
-**Q: Does this work offline?**
-A: Yes! All key operations work completely offline. No internet connection required.
-
-**Q: What's the difference between regular keystore and 2FA wallet?**
-A:
-- **Regular keystore** (Interactive mode → Option 2):
-  - ✅ Portable (works on any computer)
-  - 🔐 Password-only encryption
-  - 📦 Single file (`wallet.json`)
-  - 👥 Recommended for most users
-
-- **2FA triple-factor wallet** (Advanced):
-  - ❌ Device-bound (hardware fingerprint)
-  - 🔐 Password + Security question + 2FA codes
-  - 📦 Two files (device-bound + portable backup)
-  - 🛡️ Maximum security for large holdings
-
----
-
-## 🔥 Advanced Features
-
-### 2FA Triple-Factor Authentication
-
-For maximum security, enable triple-factor authentication:
+**Interactive Mode:**
 
 ```bash
-# Step 1: Setup 2FA (one-time)
-sol-safekey setup-2fa
-
-# Step 2: Generate wallet with 2FA
-sol-safekey gen-2fa-wallet -o wallet.json
+./sol-safekey start
+# Select option 7: Check SOL Balance
 ```
 
-This combines:
-- 🖥️ **Hardware fingerprint** (device-bound, not portable)
-- 🔑 **Master password** (user-defined strong password)
-- ❓ **Security question** (additional verification layer)
-- 📱 **2FA verification codes** (Google Authenticator/Authy)
-
-**Important**: When you create a 2FA wallet, you get **TWO files**:
-1. `wallet.json` - Triple-factor encrypted (⚠️ **device-bound, cannot be used on other computers**)
-2. `<address_prefix>_keystore.json` - Password-only backup (✅ **portable, works on any computer**)
-
-The backup keystore is your safety net if:
-- Your device is damaged/lost
-- You need to access wallet from another computer
-- You reinstall your operating system
-
-### Solana Operations
-
-Execute Solana operations with encrypted keystores:
+**CLI Mode:**
 
 ```bash
-# Check SOL balance
-sol-safekey sol-ops -f wallet.json balance
-
-# Transfer SOL
-sol-safekey sol-ops -f wallet.json transfer -t <recipient_address> -a 0.1
-
-# Check token balance
-sol-safekey sol-ops -f wallet.json token-balance -m <token_mint_address>
-
-# Wrap SOL to WSOL
-sol-safekey sol-ops -f wallet.json wrap-sol -a 1.0
-
-# Unwrap WSOL to SOL
-sol-safekey sol-ops -f wallet.json unwrap-sol
+./sol-safekey sol-ops -f keystore.json balance --rpc-url https://api.mainnet-beta.solana.com
 ```
 
-The tool will prompt for your password to decrypt the keystore before executing operations.
+**Process:**
+
+1. Enter keystore path
+2. Enter password
+3. Select network (Mainnet/Devnet)
+4. View balance
+
+**Output:**
+
+```
+✅ Balance:
+  💰 1.5 SOL
+  📊 1500000000 lamports
+```
+
+### 3.2 Transfer SOL
+
+**Interactive Mode:**
+
+```bash
+./sol-safekey start
+# Select option 8: Transfer SOL
+```
+
+**CLI Mode:**
+
+```bash
+./sol-safekey sol-ops -f keystore.json transfer \
+  --to 7nWq3... \
+  --amount 0.1
+```
+
+**Process:**
+
+1. Enter keystore & password
+2. Select network
+3. Enter recipient address
+4. Enter amount (SOL)
+5. Confirm transaction
+6. ✅ Transaction sent!
+
+**Output:**
+
+```
+✅ Transfer successful!
+  📝 Signature: 5Kq7...
+  🔗 Explorer: https://solscan.io/tx/5Kq7...
+```
+
+### 3.3 Wrap SOL → WSOL
+
+**Use case**: Convert native SOL to wrapped SOL for DeFi
+
+```bash
+# Interactive
+./sol-safekey start → Option 9
+
+# CLI
+./sol-safekey sol-ops -f keystore.json wrap-sol --amount 1.0
+```
+
+### 3.4 Unwrap WSOL → SOL
+
+**Use case**: Convert wrapped SOL back to native SOL
+
+```bash
+# Interactive
+./sol-safekey start → Option 10
+
+# CLI
+./sol-safekey sol-ops -f keystore.json unwrap-sol
+```
+
+### 3.5 Transfer SPL Tokens
+
+```bash
+# Interactive
+./sol-safekey start → Option 11
+
+# CLI
+./sol-safekey sol-ops -f keystore.json transfer-token \
+  --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v \
+  --to 7nWq3... \
+  --amount 100
+```
+
+### 3.6 Create Nonce Account
+
+**Use case**: Durable transactions that don't expire
+
+```bash
+# Interactive
+./sol-safekey start → Option 12
+
+# CLI - use interactive mode
+```
+
+### 3.7 Use in Code
+
+```rust
+use sol_safekey::operations::*;
+use solana_sdk::signature::Keypair;
+
+fn example_check_balance(keypair: &Keypair) -> Result<(), String> {
+    // Check balance
+    check_balance(keypair, Language::English)?;
+
+    Ok(())
+}
+
+fn example_transfer(keypair: &Keypair) -> Result<(), String> {
+    // Transfer SOL
+    transfer_sol(keypair, Language::English)?;
+
+    Ok(())
+}
+```
 
 ---
 
-## 🌟 Why Choose Sol-SafeKey?
+## 🤖 Module 4: Bot Integration
 
-| Feature | Sol-SafeKey | Other Tools |
-|---------|-------------|-------------|
-| Interactive Menu | ✅ Yes | ❌ Command-line only |
-| Multi-language | ✅ English + Chinese | ❌ English only |
-| Encrypted Storage | ✅ Yes | ⚠️ Often plaintext |
-| No Dependencies | ✅ Single binary | ❌ Requires Node.js/Python |
-| Offline Support | ✅ Complete | ⚠️ Limited |
-| 2FA Support | ✅ Optional | ❌ No |
-| Open Source | ✅ MIT License | ✅ Varies |
+**For**: Integrating Sol-SafeKey into your Rust trading bots
+
+### 4.1 Add Dependency
+
+```toml
+# Cargo.toml
+[dependencies]
+sol-safekey = { path = "./sol-safekey", features = ["full"] }
+solana-sdk = "1.18"
+```
+
+### 4.2 Basic Integration
+
+```rust
+use sol_safekey::KeyManager;
+use solana_sdk::signer::Signer;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load wallet
+    let keypair = KeyManager::keypair_from_keystore_file(
+        "keystore.json",
+        "password"
+    )?;
+
+    println!("Bot wallet ready: {}", keypair.pubkey());
+
+    // Your bot logic here...
+
+    Ok(())
+}
+```
+
+### 4.3 Bot Helper (Auto Password Prompt)
+
+```rust
+use sol_safekey::bot_helper;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Automatically prompts for password if needed
+    let keypair = bot_helper::ensure_wallet_ready("keystore.json")?;
+
+    println!("✅ Wallet ready: {}", keypair.pubkey());
+
+    // Start bot
+    run_trading_bot(&keypair).await?;
+
+    Ok(())
+}
+
+async fn run_trading_bot(keypair: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
+    // Your bot logic
+    Ok(())
+}
+```
+
+### 4.4 Use with Trading Operations
+
+```rust
+use sol_safekey::KeyManager;
+use solana_client::rpc_client::RpcClient;
+use solana_sdk::{
+    signature::Keypair,
+    signer::Signer,
+    transaction::Transaction,
+};
+
+struct TradingBot {
+    keypair: Keypair,
+    rpc_client: RpcClient,
+}
+
+impl TradingBot {
+    pub fn new(keystore_path: &str, password: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let keypair = KeyManager::keypair_from_keystore_file(keystore_path, password)?;
+        let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com");
+
+        Ok(Self { keypair, rpc_client })
+    }
+
+    pub fn get_balance(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let balance = self.rpc_client.get_balance(&self.keypair.pubkey())?;
+        Ok(balance)
+    }
+
+    pub fn execute_trade(&self, tx: Transaction) -> Result<(), Box<dyn std::error::Error>> {
+        // Sign and send transaction
+        let signature = self.rpc_client.send_and_confirm_transaction(&tx)?;
+        println!("Trade executed: {}", signature);
+        Ok(())
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let bot = TradingBot::new("keystore.json", "your-password")?;
+
+    let balance = bot.get_balance()?;
+    println!("Bot balance: {} lamports", balance);
+
+    // Run bot logic...
+
+    Ok(())
+}
+```
+
+### 4.5 Environment Variables
+
+```rust
+use std::env;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load password from environment
+    let password = env::var("WALLET_PASSWORD")
+        .expect("WALLET_PASSWORD not set");
+
+    let keypair = KeyManager::keypair_from_keystore_file(
+        "keystore.json",
+        &password
+    )?;
+
+    // Bot logic...
+
+    Ok(())
+}
+```
+
+**.env file:**
+
+```bash
+WALLET_PASSWORD=your-strong-password-here
+```
+
+**Run bot:**
+
+```bash
+# Load .env and run
+source .env && cargo run --release
+```
+
+### 4.6 Bot Integration Checklist
+
+- ✅ Use strong passwords (20+ chars)
+- ✅ Store keystore outside of git repo
+- ✅ Use environment variables for passwords
+- ✅ Enable 2FA for production bots
+- ✅ Test on devnet first
+- ✅ Monitor wallet balance
+- ✅ Implement error handling
+- ✅ Log all transactions
 
 ---
 
-## 📄 License
+## 🔒 Security & Best Practices
 
-MIT License - Free for personal and commercial use.
+### Security Limitations
 
-See [LICENSE](./LICENSE) file for details.
+**Known Issues:**
+
+1. **Open-Source Encryption**
+   - Algorithm is public
+   - Vulnerable to offline brute-force if keystore stolen
+   - Mitigation: Use 20+ character passwords
+
+2. **Static Salt (Current)**
+   - Future versions will use random salts
+   - Mitigation: Use very strong passwords
+
+3. **No Rate Limiting**
+   - Unlimited decryption attempts possible
+   - Mitigation: Secure your keystore files
+
+### Best Practices
+
+✅ **Password Requirements:**
+
+```
+Minimum: 10 characters
+Recommended: 20+ characters
+Example: Xk9#mP2$vL8@qR5&wN3!tY7*uH4
+
+Must contain 3 of:
+- Uppercase (A-Z)
+- Lowercase (a-z)
+- Numbers (0-9)
+- Special (!@#$%^&*)
+```
+
+✅ **File Security:**
+
+```bash
+# Set proper permissions
+chmod 600 keystore.json
+
+# Never commit to git
+echo "*.json" >> .gitignore
+echo "keystore*" >> .gitignore
+
+# Backup securely
+gpg -c keystore.json  # Encrypt backup
+```
+
+✅ **2FA Setup:**
+
+- Use for wallets > $1,000
+- Keep backup keystore file safe
+- Store 2FA secret in password manager
+- Test recovery process
+
+✅ **When to Use What:**
+
+| Wallet Value | Recommended Method |
+|--------------|-------------------|
+| < $100 | Simple encryption |
+| $100 - $1k | Simple encryption + strong password |
+| $1k - $10k | Triple-factor 2FA |
+| > $10k | Hardware wallet (Ledger/Trezor) |
 
 ---
 
-## 🤝 Contributing
+## 📦 Build Features
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+```bash
+# Basic encryption only
+cargo build --release
+
+# With Solana operations
+cargo build --release --features solana-ops
+
+# With 2FA security
+cargo build --release --features 2fa
+
+# All features
+cargo build --release --features full
+```
+
+**Feature Flags:**
+- `solana-ops` - Wallet operations (balance, transfer, etc.)
+- `2fa` - Triple-factor authentication + TOTP
+- `cli` - Interactive menu (default)
+- `full` - All features
 
 ---
 
-## 💬 Community & Support
+## 📞 Support
 
-- 📧 **Issues**: [GitHub Issues](https://github.com/0xfnzero/sol-safekey/issues)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/0xfnzero/sol-safekey/issues)
 - 💬 **Telegram**: [Join our group](https://t.me/fnzero_group)
 - 🎮 **Discord**: [Join our server](https://discord.gg/ckf5UHxz)
 - 🌐 **Website**: [fnzero.dev](https://fnzero.dev/)
 
 ---
 
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file
+
+---
+
 <div align="center">
+    <p><strong>⭐ Star this repo if you find it helpful!</strong></p>
     <p>Made with ❤️ for the Solana community</p>
-    <p>
-        <a href="https://github.com/0xfnzero/sol-safekey">⭐ Star us on GitHub</a>
-    </p>
 </div>
