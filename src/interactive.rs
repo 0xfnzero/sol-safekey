@@ -101,7 +101,7 @@ impl Texts {
             title: "  Sol-SafeKey - Solana 密钥管理工具",
             core_functions: "核心功能 (只需3个操作):",
             create_plain: "  {}  创建明文私钥",
-            create_encrypted: "  {}  创建加密私钥",
+            create_encrypted: "  {}  创建加密私钥(bot)",
             decrypt: "  {}  解密私钥",
             exit: "  {}  退出",
             select_option: "请输入选项 [0-12]: ",
@@ -174,7 +174,7 @@ impl Texts {
             title: "  Sol-SafeKey - Solana Key Management Tool",
             core_functions: "Core Functions (3 operations):",
             create_plain: "  {}  Create Plain Private Key",
-            create_encrypted: "  {}  Create Encrypted Private Key",
+            create_encrypted: "  {}  Create Encrypted Private Key (Bot)",
             decrypt: "  {}  Decrypt Private Key",
             exit: "  {}  Exit",
             select_option: "Select option [0-12]: ",
@@ -269,6 +269,39 @@ fn select_language() -> Result<Language, String> {
     }
 }
 
+/// Session state to hold unlocked keypair
+struct SessionState {
+    keypair: Option<Keypair>,
+    keystore_path: Option<String>,
+}
+
+impl SessionState {
+    fn new() -> Self {
+        Self {
+            keypair: None,
+            keystore_path: None,
+        }
+    }
+
+    fn is_unlocked(&self) -> bool {
+        self.keypair.is_some()
+    }
+
+    fn unlock(&mut self, keypair: Keypair, path: String) {
+        self.keypair = Some(keypair);
+        self.keystore_path = Some(path);
+    }
+
+    fn get_keypair(&self) -> Option<&Keypair> {
+        self.keypair.as_ref()
+    }
+
+    fn lock(&mut self) {
+        self.keypair = None;
+        self.keystore_path = None;
+    }
+}
+
 /// 显示主菜单并处理用户选择
 pub fn show_main_menu() -> Result<(), String> {
     // 首先选择语言
@@ -277,6 +310,9 @@ pub fn show_main_menu() -> Result<(), String> {
         Language::Chinese => Texts::chinese(),
         Language::English => Texts::english(),
     };
+
+    // Create session state to hold unlocked keypair
+    let mut session = SessionState::new();
 
     loop {
         println!("\n{}", "=".repeat(50).cyan());
@@ -288,6 +324,26 @@ pub fn show_main_menu() -> Result<(), String> {
         println!("  {}  {}", "1.".green().bold(), &texts.create_plain[6..]);
         println!("  {}  {}", "2.".green().bold(), &texts.create_encrypted[6..]);
         println!("  {}  {}", "3.".green().bold(), &texts.decrypt[6..]);
+
+        // Show unlock/lock status
+        println!();
+        if session.is_unlocked() {
+            if lang == Language::Chinese {
+                println!("  🔓 {} {}", "钱包已解锁:".green().bold(), session.get_keypair().unwrap().pubkey().to_string().bright_white());
+                println!("  {}  {}", "L.".yellow().bold(), "锁定钱包".yellow());
+            } else {
+                println!("  🔓 {} {}", "Wallet Unlocked:".green().bold(), session.get_keypair().unwrap().pubkey().to_string().bright_white());
+                println!("  {}  {}", "L.".yellow().bold(), "Lock Wallet".yellow());
+            }
+        } else {
+            if lang == Language::Chinese {
+                println!("  🔒 {} {}", "钱包状态:".red(), "未解锁".red());
+                println!("  {}  {}", "U.".green().bold(), "解锁钱包（用于Solana操作）".green());
+            } else {
+                println!("  🔒 {} {}", "Wallet Status:".red(), "Locked".red());
+                println!("  {}  {}", "U.".green().bold(), "Unlock Wallet (for Solana Operations)".green());
+            }
+        }
 
         // Advanced security features
         #[cfg(feature = "2fa")]
@@ -342,10 +398,41 @@ pub fn show_main_menu() -> Result<(), String> {
         io::stdin().read_line(&mut choice).map_err(|e| e.to_string())?;
         let choice = choice.trim();
 
-        match choice {
+        match choice.to_lowercase().as_str() {
             "1" => create_plain_key_interactive(&texts)?,
             "2" => create_encrypted_key_interactive(&texts)?,
             "3" => decrypt_key_interactive(&texts)?,
+
+            // Unlock/Lock wallet
+            "u" => {
+                if session.is_unlocked() {
+                    if lang == Language::Chinese {
+                        println!("\n✅ 钱包已经解锁！");
+                    } else {
+                        println!("\n✅ Wallet already unlocked!");
+                    }
+                } else {
+                    if let Err(e) = unlock_wallet_interactive(&mut session, lang) {
+                        eprintln!("❌ {}", e);
+                    }
+                }
+            }
+            "l" => {
+                if session.is_unlocked() {
+                    session.lock();
+                    if lang == Language::Chinese {
+                        println!("\n🔒 钱包已锁定");
+                    } else {
+                        println!("\n🔒 Wallet locked");
+                    }
+                } else {
+                    if lang == Language::Chinese {
+                        println!("\n⚠️ 钱包未解锁");
+                    } else {
+                        println!("\n⚠️ Wallet not unlocked");
+                    }
+                }
+            }
 
             // Advanced security features (2FA)
             #[cfg(feature = "2fa")]
@@ -370,13 +457,13 @@ pub fn show_main_menu() -> Result<(), String> {
             // Solana operations
             #[cfg(all(feature = "solana-ops", feature = "2fa"))]
             "7" | "8" | "9" | "10" | "11" | "12" => {
-                if let Err(e) = handle_solana_operation(choice, lang) {
+                if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
             }
             #[cfg(all(feature = "solana-ops", not(feature = "2fa")))]
             "4" | "5" | "6" | "7" | "8" | "9" => {
-                if let Err(e) = handle_solana_operation(choice, lang) {
+                if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
             }
@@ -748,22 +835,16 @@ fn prompt_password(prompt: &str, texts: &Texts) -> Result<String, String> {
     // Ok(password.trim().to_string())
 }
 
-/// Handle Solana operation by prompting for keystore and calling the appropriate function
-#[cfg(feature = "solana-ops")]
-fn handle_solana_operation(choice: &str, language: Language) -> Result<(), String> {
+/// Unlock wallet interactively and store in session
+fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> Result<(), String> {
     use rpassword;
 
-    // Convert Language to operations::Language
-    let ops_language = match language {
-        Language::English => crate::operations::Language::English,
-        Language::Chinese => crate::operations::Language::Chinese,
-    };
-
-    // Prompt for keystore file path
     println!();
     if language == Language::Chinese {
+        println!("{}", "  解锁钱包".cyan().bold());
         print!("Keystore 文件路径 [keystore.json]: ");
     } else {
+        println!("{}", "  Unlock Wallet".cyan().bold());
         print!("Keystore file path [keystore.json]: ");
     }
     io::stdout().flush().map_err(|e| e.to_string())?;
@@ -806,12 +887,48 @@ fn handle_solana_operation(choice: &str, language: Language) -> Result<(), Strin
         }
     };
 
+    // Store in session
+    session.unlock(keypair, keystore_path.to_string());
+
     if language == Language::Chinese {
         println!("✅ 钱包解锁成功！");
-        println!("📍 钱包地址: {}", keypair.pubkey());
+        println!("📍 钱包地址: {}", session.get_keypair().unwrap().pubkey());
+        println!("💡 提示: 在本次会话中，Solana操作将使用此钱包，无需重复输入密码");
     } else {
         println!("✅ Wallet unlocked successfully!");
-        println!("📍 Wallet address: {}", keypair.pubkey());
+        println!("📍 Wallet address: {}", session.get_keypair().unwrap().pubkey());
+        println!("💡 Tip: Solana operations in this session will use this wallet without re-entering password");
+    }
+
+    Ok(())
+}
+
+/// Handle Solana operation using session keypair
+#[cfg(feature = "solana-ops")]
+fn handle_solana_operation(choice: &str, language: Language, session: &mut SessionState) -> Result<(), String> {
+    // Convert Language to operations::Language
+    let ops_language = match language {
+        Language::English => crate::operations::Language::English,
+        Language::Chinese => crate::operations::Language::Chinese,
+    };
+
+    // Check if wallet is unlocked
+    let keypair = if let Some(kp) = session.get_keypair() {
+        kp
+    } else {
+        // Wallet not unlocked, prompt user to unlock first
+        if language == Language::Chinese {
+            println!("\n⚠️  请先使用 'U' 选项解锁钱包");
+        } else {
+            println!("\n⚠️  Please unlock wallet first using 'U' option");
+        }
+        return Ok(());
+    };
+
+    if language == Language::Chinese {
+        println!("\n📍 使用钱包: {}", keypair.pubkey());
+    } else {
+        println!("\n📍 Using wallet: {}", keypair.pubkey());
     }
 
     // Call the appropriate operation
