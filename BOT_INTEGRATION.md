@@ -1,292 +1,392 @@
-# Bot Integration Guide | Bot 集成指南
+# Bot Integration Guide
 
-## Quick Start | 快速开始
+Complete guide for integrating sol-safekey into your Solana trading bot or application.
 
-### 1-Line Integration | 一行代码集成
+[中文文档](BOT_INTEGRATION_CN.md)
 
-**English:**
-```rust
-let keypair = sol_safekey::bot_helper::ensure_wallet_ready("wallet.json").unwrap();
-```
+## Why Sol-SafeKey?
 
-**中文:**
-```rust
-let keypair = sol_safekey::bot_helper::ensure_wallet_ready("wallet.json").unwrap();
-```
+Sol-SafeKey provides military-grade wallet security with simple integration - just 3 lines of code to add a complete interactive wallet management system to your bot.
 
----
+### Key Benefits
 
-## Complete Example | 完整示例
+- **🔐 Military-Grade Security**: AES-256 encryption with PBKDF2 key derivation
+- **🚀 Simple Integration**: 3 lines of code for complete wallet management
+- **🎯 Interactive CLI**: Built-in commands for all wallet operations
+- **💰 Solana Ready**: Native support for SOL, WSOL, SPL tokens, and durable nonce
+- **🔒 Secure by Default**: Password via stdin pipe (memory only, never environment variables)
 
-### Cargo.toml
+## Integration Steps
+
+### Step 1: Add Dependency
+
+Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sol-safekey = "0.1"
-solana-sdk = "3.0"
+sol-safekey = { path = "../sol-safekey" }
+
+[features]
+default = ["solana-ops"]
+solana-ops = ["sol-safekey/solana-ops"]
 ```
 
-### main.rs
+### Step 2: Add Safekey Command
+
+Add this code to your bot's `main()` function **before** your bot logic:
 
 ```rust
-use sol_safekey::bot_helper;
-use solana_sdk::signer::Signer;
+use anyhow::Result;
 
-fn main() {
-    // Get wallet path from environment or use default
-    // 从环境变量获取钱包路径或使用默认值
-    let wallet_path = std::env::var("WALLET_PATH")
-        .unwrap_or_else(|_| "wallet.json".to_string());
-
-    // Ensure wallet is ready (creates if missing, unlocks if exists)
-    // 确保钱包就绪（不存在则创建，存在则解锁）
-    let keypair = match bot_helper::ensure_wallet_ready(&wallet_path) {
-        Ok(kp) => kp,
-        Err(e) => {
-            eprintln!("❌ Wallet setup failed | 钱包设置失败: {}", e);
+fn main() -> Result<()> {
+    // Check if running in safekey interactive mode
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(|s| s.as_str()) == Some("safekey") {
+        // Launch sol-safekey interactive menu
+        if let Err(e) = sol_safekey::interactive::show_main_menu() {
+            eprintln!("❌ {}", e);
             std::process::exit(1);
         }
-    };
+        return Ok(());
+    }
 
-    println!("✅ Bot wallet ready | Bot 钱包就绪: {}", keypair.pubkey());
+    // Your bot logic starts here...
+    println!("🤖 Starting bot...");
 
-    // Your bot logic here...
-    // 你的 bot 逻辑...
-    // - Sign transactions | 签署交易
-    // - Check balance | 查询余额
-    // - Execute trades | 执行交易
+    Ok(())
 }
 ```
 
----
+That's it! Just 3 lines of actual integration code.
 
-## How It Works | 工作原理
+### Step 3: Build Your Bot
 
-### First Run (Wallet Doesn't Exist) | 首次运行（钱包不存在）
-
-**English:**
-```
-⚠️  Wallet not found at: wallet.json
-📝 Starting interactive wallet creation...
-
-==================================================
-  Language / 语言选择
-==================================================
-
-  1.  English
-  2.  中文
-
-Select / 选择 [1/2]: 2
-
-[User selects language and creates encrypted wallet through interactive prompts]
-
-✅ Wallet created successfully!
-📁 Location: wallet.json
-
-Now unlocking the newly created wallet...
-🔓 Unlocking wallet: wallet.json
-🔑 Enter wallet password: ********
-
-✅ Wallet unlocked successfully!
-📍 Address: [Your wallet address]
-```
-
-**中文:**
-```
-⚠️  钱包未找到: wallet.json
-📝 启动交互式钱包创建...
-
-==================================================
-  Language / 语言选择
-==================================================
-
-  1.  English
-  2.  中文
-
-Select / 选择 [1/2]: 2
-
-[用户通过交互式提示选择语言并创建加密钱包]
-
-✅ 钱包创建成功！
-📁 位置: wallet.json
-
-现在解锁新创建的钱包...
-🔓 解锁钱包: wallet.json
-🔑 输入钱包密码: ********
-
-✅ 钱包解锁成功！
-📍 地址: [你的钱包地址]
-```
-
-### Subsequent Runs (Wallet Exists) | 后续运行（钱包已存在）
-
-**English:**
-```
-✅ Wallet found at: wallet.json
-🔓 Starting interactive wallet unlock...
-
-🔓 Unlocking wallet: wallet.json
-🔑 Enter wallet password: ********
-
-✅ Wallet unlocked successfully!
-📍 Address: [Your wallet address]
-```
-
-**中文:**
-```
-✅ 找到钱包: wallet.json
-🔓 启动交互式钱包解锁...
-
-🔓 解锁钱包: wallet.json
-🔑 输入钱包密码: ********
-
-✅ 钱包解锁成功！
-📍 地址: [你的钱包地址]
-```
-
----
-
-## Features | 功能特性
-
-**English:**
-- ✅ **No CLI Dependency** - Uses library API directly
-- ✅ **Auto-Create** - Creates wallet if missing
-- ✅ **Auto-Unlock** - Unlocks wallet if exists
-- ✅ **Interactive** - User-friendly prompts
-- ✅ **Multi-Language** - English/Chinese support
-- ✅ **Secure** - Password-protected encryption
-
-**中文:**
-- ✅ **无需 CLI 依赖** - 直接使用库 API
-- ✅ **自动创建** - 钱包不存在时自动创建
-- ✅ **自动解锁** - 钱包存在时自动解锁
-- ✅ **交互式** - 用户友好的提示
-- ✅ **多语言** - 支持中文/英文
-- ✅ **安全** - 密码保护的加密
-
----
-
-## API Reference | API 参考
-
-### `ensure_wallet_ready(path: &str) -> Result<Keypair, String>`
-
-**English:**
-Main function for bot integration. Ensures wallet is ready to use.
-
-**Parameters:**
-- `path` - Path to wallet file
-
-**Returns:**
-- `Ok(Keypair)` - Ready-to-use keypair
-- `Err(String)` - Error message
-
-**Behavior:**
-- If file doesn't exist: launches interactive creation
-- If file exists: prompts for password to unlock
-
-**中文:**
-主要的 bot 集成函数。确保钱包可用。
-
-**参数:**
-- `path` - 钱包文件路径
-
-**返回:**
-- `Ok(Keypair)` - 可用的密钥对
-- `Err(String)` - 错误信息
-
-**行为:**
-- 如果文件不存在：启动交互式创建
-- 如果文件存在：提示输入密码解锁
-
----
-
-### `wallet_exists(path: &str) -> bool`
-
-**English:**
-Check if wallet file exists.
-
-**中文:**
-检查钱包文件是否存在。
-
----
-
-### `get_wallet_pubkey(path: &str) -> Result<String, String>`
-
-**English:**
-Get public key from wallet without unlocking.
-
-**中文:**
-无需解锁获取钱包公钥。
-
----
-
-### `load_keypair_interactive(path: &str) -> Result<Keypair, String>`
-
-**English:**
-Load and unlock an existing wallet interactively.
-
-**中文:**
-交互式加载并解锁现有钱包。
-
----
-
-## Run Example | 运行示例
-
-**English:**
 ```bash
-# Run the example
-cargo run --example bot_integration
-
-# With custom wallet path
-WALLET_PATH=my_bot_wallet.json cargo run --example bot_integration
+cargo build --features solana-ops --release
 ```
 
-**中文:**
+## Using the Safekey Command
+
+After integration, users can run:
+
 ```bash
-# 运行示例
-cargo run --example bot_integration
-
-# 使用自定义钱包路径
-WALLET_PATH=my_bot_wallet.json cargo run --example bot_integration
+./your-bot safekey
 ```
 
+This launches the full interactive menu with all wallet operations:
+
+### Available Operations
+
+**Wallet Management:**
+- Create plain text keypair
+- Create encrypted keypair (recommended)
+- Decrypt encrypted keypair
+- Unlock wallet for session
+
+**Solana Operations:**
+- Query SOL balance
+- Transfer SOL
+- Wrap SOL → WSOL
+- Unwrap WSOL → SOL
+- Transfer SPL tokens
+- Create durable nonce accounts
+
+## Security Implementation
+
+### Password Handling
+
+Sol-SafeKey follows the same security model as wick-catching-bot:
+
+**✅ Secure Approach:**
+- Password passed via stdin pipe
+- Exists only in memory
+- Never stored in files or environment variables
+- Immediately cleared after use
+
+**❌ Insecure (Never Do This):**
+```bash
+# DON'T: Environment variables can be leaked
+export WALLET_PASSWORD="mysecret"
+./your-bot
+```
+
+**✅ Secure (Always Do This):**
+```bash
+# Password through stdin pipe - memory only
+echo "your-password" | ./your-bot
+```
+
+### Startup Script Example
+
+Create a secure startup script for your bot:
+
+```bash
+#!/bin/bash
+
+# Build the bot
+echo "🔧 Building bot..."
+cargo build --features solana-ops --release
+
+# Get password securely (no echo)
+echo -n "🔐 Enter wallet password: "
+read -s WALLET_PASSWORD
+echo ""
+
+# Start bot with password piped through stdin
+echo "$WALLET_PASSWORD" | ./build-cache/release/your-bot > bot.log 2>&1
+EXIT_CODE=$?
+
+# Immediately clear password from memory
+WALLET_PASSWORD=""
+unset WALLET_PASSWORD
+
+# Check execution result
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "✅ Bot completed successfully"
+else
+    echo "❌ Bot failed with exit code: $EXIT_CODE"
+    echo "📝 Check bot.log for details"
+fi
+```
+
+## Bot Logic Integration
+
+### Loading Encrypted Wallet
+
+```rust
+use sol_safekey::KeyManager;
+use std::io::{self, Read};
+
+fn load_wallet() -> Result<solana_sdk::signature::Keypair> {
+    let wallet_path = "keystore.json";
+
+    // Read encrypted keystore
+    let json = std::fs::read_to_string(wallet_path)?;
+
+    // Read password from stdin
+    let mut password = String::new();
+    io::stdin().read_to_string(&mut password)?;
+    let password = password.trim();
+
+    // Decrypt and load keypair
+    let keypair = KeyManager::keypair_from_encrypted_json(&json, password)?;
+
+    Ok(keypair)
+}
+```
+
+### Creating New Wallet
+
+```rust
+use sol_safekey::KeyManager;
+
+fn create_wallet(password: &str) -> Result<()> {
+    // Generate new keypair
+    let keypair = KeyManager::generate_keypair();
+
+    println!("📍 Wallet Address: {}", keypair.pubkey());
+
+    // Encrypt and save
+    let json = KeyManager::keypair_to_encrypted_json(&keypair, password)?;
+    std::fs::write("keystore.json", json)?;
+
+    println!("✅ Encrypted wallet saved to keystore.json");
+
+    Ok(())
+}
+```
+
+### Using Solana Operations
+
+```rust
+use sol_safekey::solana_ops::SolanaClient;
+
+fn bot_logic(keypair: &solana_sdk::signature::Keypair) -> Result<()> {
+    // Initialize Solana client
+    let client = SolanaClient::new("https://api.devnet.solana.com")?;
+
+    // Check balance
+    let balance = client.get_sol_balance(&keypair.pubkey())?;
+    println!("💰 Balance: {} SOL", balance);
+
+    // Transfer SOL
+    if balance > 0.01 {
+        let recipient = "RECIPIENT_ADDRESS_HERE".parse()?;
+        let signature = client.transfer_sol(keypair, &recipient, 0.01)?;
+        println!("✅ Transfer successful: {}", signature);
+    }
+
+    // Wrap SOL to WSOL
+    let signature = client.wrap_sol(keypair, 0.1)?;
+    println!("✅ Wrapped 0.1 SOL: {}", signature);
+
+    Ok(())
+}
+```
+
+## Complete Bot Example
+
+See `examples/complete_bot_example.rs` for a full working example that demonstrates:
+
+- Safekey command integration
+- Secure password handling via stdin
+- Encrypted wallet loading
+- All Solana operations
+- Proper error handling
+- Production-ready patterns
+
+Build and run:
+
+```bash
+# Build the example
+cargo build --example complete_bot_example --features solana-ops --release
+
+# Launch interactive safekey commands
+./build-cache/release/examples/complete_bot_example safekey
+
+# Run bot with password from stdin
+echo "your-password" | ./build-cache/release/examples/complete_bot_example
+```
+
+## Comparison with wick-catching-bot
+
+Sol-SafeKey uses the **exact same integration pattern** as wick-catching-bot:
+
+| Feature | wick-catching-bot | Your Bot + sol-safekey |
+|---------|-------------------|------------------------|
+| Safekey command | ✅ `./bot safekey` | ✅ `./your-bot safekey` |
+| Interactive menu | ✅ Full featured | ✅ Full featured |
+| Wallet creation | ✅ AES-256 | ✅ AES-256 |
+| Password security | ✅ stdin pipe | ✅ stdin pipe |
+| SOL operations | ✅ Built-in | ✅ Built-in |
+| Token support | ✅ SPL tokens | ✅ SPL tokens |
+| Durable nonce | ✅ Supported | ✅ Supported |
+| Integration effort | N/A | 🎯 3 lines of code |
+
+## Testing Your Integration
+
+### On Devnet
+
+1. Create test wallet:
+```bash
+./your-bot safekey
+# Select: Create encrypted keypair → Save to keystore.json
+```
+
+2. Get devnet SOL:
+```bash
+solana airdrop 2 YOUR_WALLET_ADDRESS --url devnet
+```
+
+3. Test operations:
+```bash
+./your-bot safekey
+# Select: Unlock wallet → Query balance → Transfer SOL
+```
+
+### Integration Checklist
+
+- [ ] Added sol-safekey dependency to Cargo.toml
+- [ ] Added 3-line safekey command check to main()
+- [ ] Created secure startup script with stdin password
+- [ ] Tested wallet creation with safekey command
+- [ ] Tested wallet loading in bot logic
+- [ ] Verified password never in environment variables
+- [ ] Tested on devnet before production
+- [ ] Backed up keystore.json securely
+
+## Best Practices
+
+### Security
+
+1. **Never** store passwords in:
+   - Environment variables
+   - Configuration files
+   - Source code
+   - Log files
+
+2. **Always** use:
+   - Stdin pipe for password input
+   - Encrypted keystore files (AES-256)
+   - Strong passwords (16+ characters)
+   - Secure backup locations
+
+3. **Production Checklist**:
+   - [ ] Test thoroughly on devnet
+   - [ ] Backup keystore.json securely
+   - [ ] Use hardware security module (HSM) for high-value accounts
+   - [ ] Implement rate limiting for operations
+   - [ ] Monitor for unusual activity
+   - [ ] Keep dependencies updated
+
+### Error Handling
+
+```rust
+use anyhow::{Context, Result};
+
+fn robust_bot_logic() -> Result<()> {
+    // Load wallet with context
+    let keypair = load_wallet()
+        .context("Failed to load wallet from keystore.json")?;
+
+    // Initialize client with retry logic
+    let client = SolanaClient::new_with_retry("https://api.mainnet-beta.solana.com")
+        .context("Failed to connect to Solana network")?;
+
+    // Perform operations with error handling
+    match client.get_sol_balance(&keypair.pubkey()) {
+        Ok(balance) => println!("Balance: {}", balance),
+        Err(e) => eprintln!("Failed to get balance: {}", e),
+    }
+
+    Ok(())
+}
+```
+
+### Performance Tips
+
+1. **Connection Pooling**: Reuse SolanaClient instances
+2. **Batch Operations**: Group multiple transactions
+3. **Async Processing**: Use tokio for concurrent operations
+4. **Caching**: Cache balance checks and account info
+5. **Rate Limiting**: Respect RPC node limits
+
+## Troubleshooting
+
+### Common Issues
+
+**Issue**: "Failed to decrypt keystore"
+- **Cause**: Wrong password
+- **Solution**: Verify password or create new wallet
+
+**Issue**: "Connection refused"
+- **Cause**: RPC node unreachable
+- **Solution**: Check network, try different RPC endpoint
+
+**Issue**: "Insufficient funds"
+- **Cause**: Not enough SOL for transaction + fees
+- **Solution**: Ensure balance covers amount + ~0.00001 SOL fee
+
+**Issue**: "Transaction failed"
+- **Cause**: Network congestion or invalid transaction
+- **Solution**: Retry with higher priority fee or check transaction details
+
+### Getting Help
+
+- Check the [User Guide](USER_GUIDE.md) for detailed operation instructions
+- Review `examples/complete_bot_example.rs` for working code
+- Check logs in `bot.log` for error details
+- Verify your integration matches the wick-catching-bot pattern
+
+## Next Steps
+
+1. ✅ Complete integration (3 lines of code)
+2. ✅ Create test wallet on devnet
+3. ✅ Test all operations via safekey command
+4. ✅ Implement your bot logic
+5. ✅ Test thoroughly on devnet
+6. 🚀 Deploy to production
+
 ---
 
-## Troubleshooting | 故障排除
-
-### "Wallet not created at expected path" | "钱包未在预期路径创建"
-
-**English:**
-Make sure to save the wallet to the correct path when using interactive menu.
-
-**中文:**
-使用交互式菜单时确保将钱包保存到正确的路径。
-
----
-
-### "Failed to read password" | "读取密码失败"
-
-**English:**
-Terminal must support password input. Use a proper terminal emulator.
-
-**中文:**
-终端必须支持密码输入。使用合适的终端模拟器。
-
----
-
-### "Wallet unlocked successfully but bot crashes" | "钱包解锁成功但 bot 崩溃"
-
-**English:**
-Check that you're using the returned `keypair` correctly with `use solana_sdk::signer::Signer;`
-
-**中文:**
-检查是否正确使用返回的 `keypair`，需要 `use solana_sdk::signer::Signer;`
-
----
-
-## Support | 支持
-
-- **GitHub Issues**: https://github.com/0xfnzero/sol-safekey/issues
-- **Telegram**: https://t.me/fnzero_group
-- **Discord**: https://discord.gg/ckf5UHxz
-- **Website | 网站**: https://fnzero.dev/
+**Remember**: Security is paramount. Never compromise on password handling, always test on devnet first, and keep backups of your keystore files.

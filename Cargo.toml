@@ -39,6 +39,8 @@ rand = { version = "0.8", optional = true }
 # Optional: Solana operations
 solana-client = { version = "3.0.0", optional = true }
 tokio = { version = "1.0", features = ["full"], optional = true }
+atty = { version = "0.2", optional = true }
+bincode = { version = "1.3", optional = true }
 
 # Optional: Other utilities
 dotenv = { version = "0.15", optional = true }
@@ -48,7 +50,7 @@ openssl = { version = "0.10.73", features = ["vendored"], optional = true }
 default = []
 cli = ["clap", "qrcode", "totp-rs", "rand"]
 2fa = ["totp-rs", "rand"]
-solana-ops = ["solana-client", "tokio"]
+solana-ops = ["solana-client", "tokio", "atty", "bincode"]
 full = ["cli", "2fa", "solana-ops", "dotenv", "openssl"]
 
 [lib]

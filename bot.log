@@ -1,0 +1,108 @@
+
+╔════════════════════════════════════════════════════╗
+║   Complete Bot Integration Example - sol-safekey  ║
+╚════════════════════════════════════════════════════╝
+
+⚙️  Configuration:
+   Wallet: keystore.json
+   RPC: https://api.devnet.solana.com
+   Network: devnet
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔐 Password Input
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Password received
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔑 Wallet Setup
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Wallet found: keystore.json
+🔓 Unlocking wallet...
+✅ Wallet unlocked!
+📍 Address: 7Jh8bXM35T8WG4KwBMUXtZ7ERCiU9KoAnJpCB947Y8Nw
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Bot Operations
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Checking Balance
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Address: 7Jh8bXM35T8WG4KwBMUXtZ7ERCiU9KoAnJpCB947Y8Nw
+Balance: 0 SOL (0 lamports)
+
+💡 Get devnet SOL:
+   solana airdrop 2 7Jh8bXM35T8WG4KwBMUXtZ7ERCiU9KoAnJpCB947Y8Nw --url devnet
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📤 Transfer SOL Demo
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ Insufficient balance for transfer demo (need 0.01 SOL)
+   Current balance: 0 SOL
+   Please fund your wallet on devnet:
+   → https://faucet.solana.com
+   → solana airdrop 1 7Jh8bXM35T8WG4KwBMUXtZ7ERCiU9KoAnJpCB947Y8Nw
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎁 Wrap SOL to WSOL Demo
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ Insufficient balance for wrap demo (need 0.02 SOL)
+   Current balance: 0 SOL
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎁 Unwrap WSOL to SOL Demo
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example code to unwrap all WSOL back to SOL:
+─────────────────────────────────────
+let signature = client.unwrap_sol(keypair)?;
+println!("Unwrapped WSOL to SOL: {}", signature);
+─────────────────────────────────────
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🪙 Transfer SPL Token Demo
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example code to transfer SPL tokens:
+─────────────────────────────────────
+let mint = Pubkey::from_str("<token_mint_address>")?;
+let recipient = Pubkey::from_str("<recipient_address>")?;
+let amount = 1000; // token amount (smallest units)
+let signature = client.transfer_token(keypair, &recipient, &mint, amount)?;
+println!("Token transfer: {}", signature);
+─────────────────────────────────────
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 Durable Nonce Account Demo
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ Insufficient balance for nonce account (need 0.005 SOL)
+   Current balance: 0 SOL
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Bot Integration Complete!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎉 Your bot can now:
+   ✓ Create and manage encrypted wallets
+   ✓ Check SOL and token balances
+   ✓ Transfer SOL and SPL tokens
+   ✓ Wrap/unwrap SOL to WSOL
+   ✓ Create durable nonce accounts
+   ✓ Sign and submit transactions
+
+💡 Integration Pattern:
+   • Password via stdin pipe (never environment variables)
+   • Wallet file encrypted with AES-256
+   • Use startup-example.sh for secure password handling
+   • All operations use synchronous Solana RPC client
+
+📚 Next Steps:
+   1. Customize the operations for your trading strategy
+   2. Add your bot logic (monitoring, decision making, execution)
+   3. Integrate with your price feeds and trading signals
+   4. Test on devnet before moving to mainnet
+
+⚠️ For production use:
+   • Always test on devnet first
+   • Keep your wallet file secure
+   • Never share your password
+   • Backup your keystore.json file
+
