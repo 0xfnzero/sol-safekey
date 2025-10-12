@@ -29,7 +29,7 @@ if [ "$SKIP_BUILD" = false ]; then
     echo -e "${BLUE}📦 Building bot (release mode with solana-ops feature)...${NC}"
     echo ""
 
-    cargo build --example complete_bot_example --features solana-ops --release
+    cargo build --example bot_example --features solana-ops --release
 
     if [ $? -ne 0 ]; then
         echo ""
@@ -43,9 +43,9 @@ if [ "$SKIP_BUILD" = false ]; then
 fi
 
 # 检查编译产物
-if [ ! -f "build-cache/release/examples/complete_bot_example" ]; then
+if [ ! -f "build-cache/release/examples/bot_example" ]; then
     echo -e "${RED}❌ Bot executable not found${NC}"
-    echo "Expected: build-cache/release/examples/complete_bot_example"
+    echo "Expected: build-cache/release/examples/bot_example"
     exit 1
 fi
 
@@ -73,7 +73,7 @@ if [ ! -f "./keystore.json" ]; then
     fi
 
     # 创建钱包 (通过管道传递密码)
-    echo "$NEW_PASSWORD" | ./build-cache/release/examples/complete_bot_example
+    echo "$NEW_PASSWORD" | ./build-cache/release/examples/bot_example
     NEW_PASSWORD=""
     CONFIRM_PASSWORD=""
 
@@ -102,7 +102,7 @@ echo ""
 echo -e "${BLUE}🚀 Starting bot...${NC}"
 echo ""
 
-echo "$WALLET_PASSWORD" | ./build-cache/release/examples/complete_bot_example > bot.log 2>&1
+echo "$WALLET_PASSWORD" | ./build-cache/release/examples/bot_example > bot.log 2>&1
 BOT_EXIT_CODE=$?
 
 # 立即清除密码变量

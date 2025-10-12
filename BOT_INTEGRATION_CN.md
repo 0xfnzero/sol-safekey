@@ -95,7 +95,7 @@ cargo build --features solana-ops --release
 
 ### 密码处理
 
-Sol-SafeKey 遵循与 wick-catching-bot 相同的安全模型:
+Sol-SafeKey 使用安全的密码处理模型:
 
 **✅ 安全方式:**
 - 密码通过 stdin 管道传递
@@ -226,7 +226,7 @@ fn bot_logic(keypair: &solana_sdk::signature::Keypair) -> Result<()> {
 
 ## 完整 Bot 示例
 
-查看 `examples/complete_bot_example.rs` 获取完整工作示例，演示:
+查看 `examples/bot_example.rs` 获取完整工作示例，演示:
 
 - Safekey 命令集成
 - 通过 stdin 安全处理密码
@@ -239,29 +239,29 @@ fn bot_logic(keypair: &solana_sdk::signature::Keypair) -> Result<()> {
 
 ```bash
 # 构建示例
-cargo build --example complete_bot_example --features solana-ops --release
+cargo build --example bot_example --features solana-ops --release
 
 # 启动交互式 safekey 命令
-./build-cache/release/examples/complete_bot_example safekey
+./build-cache/release/examples/bot_example safekey
 
 # 通过 stdin 运行 bot
-echo "你的密码" | ./build-cache/release/examples/complete_bot_example
+echo "你的密码" | ./build-cache/release/examples/bot_example
 ```
 
-## 与 wick-catching-bot 对比
+## 核心功能总结
 
-Sol-SafeKey 使用与 wick-catching-bot **完全相同的集成模式**:
+Sol-SafeKey 提供全面的钱包管理:
 
-| 功能 | wick-catching-bot | 你的 Bot + sol-safekey |
-|------|-------------------|------------------------|
-| Safekey 命令 | ✅ `./bot safekey` | ✅ `./你的bot safekey` |
-| 交互式菜单 | ✅ 全功能 | ✅ 全功能 |
-| 钱包创建 | ✅ AES-256 | ✅ AES-256 |
-| 密码安全 | ✅ stdin 管道 | ✅ stdin 管道 |
-| SOL 操作 | ✅ 内置 | ✅ 内置 |
-| 代币支持 | ✅ SPL 代币 | ✅ SPL 代币 |
-| Durable nonce | ✅ 支持 | ✅ 支持 |
-| 集成工作量 | N/A | 🎯 3 行代码 |
+| 功能 | 支持 |
+|------|------|
+| Safekey 命令 | ✅ `./你的bot safekey` |
+| 交互式菜单 | ✅ 全功能 |
+| 钱包创建 | ✅ AES-256 加密 |
+| 密码安全 | ✅ stdin 管道（仅内存） |
+| SOL 操作 | ✅ 转账、余额、包装/解包 |
+| 代币支持 | ✅ SPL 代币 |
+| Durable nonce | ✅ 离线交易支持 |
+| 集成工作量 | 🎯 3 行代码 |
 
 ## 测试你的集成
 
@@ -374,9 +374,9 @@ fn robust_bot_logic() -> Result<()> {
 ### 获取帮助
 
 - 查看[使用手册](USER_GUIDE_CN.md)了解详细操作说明
-- 查看 `examples/complete_bot_example.rs` 获取工作代码
+- 查看 `examples/bot_example.rs` 获取工作代码
 - 检查 `bot.log` 了解错误详情
-- 验证你的集成是否匹配 wick-catching-bot 模式
+- 查看上面的集成步骤确保正确实现
 
 ## 下一步
 

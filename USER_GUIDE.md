@@ -25,7 +25,7 @@ If you're using a bot that integrates sol-safekey:
 Or if using the standalone binary:
 
 ```bash
-./build-cache/release/examples/complete_bot_example safekey
+./build-cache/release/examples/bot_example safekey
 ```
 
 ## Main Menu
@@ -604,7 +604,7 @@ After unlocking wallet once, perform multiple operations without re-entering pas
 ## Getting Help
 
 - **Documentation**: Check [Bot Integration Guide](BOT_INTEGRATION.md)
-- **Examples**: Review `examples/complete_bot_example.rs`
+- **Examples**: Review `examples/bot_example.rs`
 - **Explorer**: Verify transactions on https://explorer.solana.com
 - **Solana Docs**: https://docs.solana.com
 

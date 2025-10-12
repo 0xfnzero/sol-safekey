@@ -1,8 +1,45 @@
-# Sol-SafeKey
+<div align="center">
+    <h1>🔐 Sol-SafeKey</h1>
+    <h3><em>Secure Solana key management library with AES-256 encryption</em></h3>
+</div>
 
-A secure Solana key management library with AES-256 encryption and bot integration support.
+<p align="center">
+    <strong>Military-grade wallet security with simple bot integration - secure password handling, encrypted keystores, and full Solana operations support.</strong>
+</p>
 
-[中文文档](README_CN.md)
+<p align="center">
+    <a href="https://crates.io/crates/sol-safekey">
+        <img src="https://img.shields.io/crates/v/sol-safekey.svg" alt="Crates.io">
+    </a>
+    <a href="https://docs.rs/sol-safekey">
+        <img src="https://docs.rs/sol-safekey/badge.svg" alt="Documentation">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey">
+        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/network">
+        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
+    </a>
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
+    <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
+    <img src="https://img.shields.io/badge/Security-FF0000?style=for-the-badge&logo=security&logoColor=white" alt="Security">
+</p>
+
+<p align="center">
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
+    <a href="https://fnzero.dev/">Website</a> |
+    <a href="https://t.me/fnzero_group">Telegram</a> |
+    <a href="https://discord.gg/ckf5UHxz">Discord</a>
+</p>
+
+---
 
 ## ✨ Features
 
@@ -18,10 +55,10 @@ A secure Solana key management library with AES-256 encryption and bot integrati
 
 ```bash
 # Build the bot
-cargo build --example complete_bot_example --features solana-ops --release
+cargo build --example bot_example --features solana-ops --release
 
 # Run interactive safekey commands
-./build-cache/release/examples/complete_bot_example safekey
+./build-cache/release/examples/bot_example safekey
 ```
 
 ### As a Library
@@ -77,7 +114,7 @@ Via `safekey` command:
 
 ## 📖 Examples
 
-See `examples/complete_bot_example.rs` for a complete bot integration example.
+See `examples/bot_example.rs` for a complete bot integration example.
 
 ## 🤝 Contributing
 

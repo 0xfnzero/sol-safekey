@@ -25,7 +25,7 @@ Sol-SafeKey 提供交互式命令行界面，用于安全的 Solana 钱包管理
 或者使用独立二进制文件:
 
 ```bash
-./build-cache/release/examples/complete_bot_example safekey
+./build-cache/release/examples/bot_example safekey
 ```
 
 ## 主菜单
@@ -604,7 +604,7 @@ echo "你的密码" | ./你的bot
 ## 获取帮助
 
 - **文档**: 查看 [Bot 集成指南](BOT_INTEGRATION_CN.md)
-- **示例**: 查看 `examples/complete_bot_example.rs`
+- **示例**: 查看 `examples/bot_example.rs`
 - **浏览器**: 在 https://explorer.solana.com 验证交易
 - **Solana 文档**: https://docs.solana.com
 

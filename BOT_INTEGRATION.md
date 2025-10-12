@@ -95,7 +95,7 @@ This launches the full interactive menu with all wallet operations:
 
 ### Password Handling
 
-Sol-SafeKey follows the same security model as wick-catching-bot:
+Sol-SafeKey uses a secure password handling model:
 
 **✅ Secure Approach:**
 - Password passed via stdin pipe
@@ -226,7 +226,7 @@ fn bot_logic(keypair: &solana_sdk::signature::Keypair) -> Result<()> {
 
 ## Complete Bot Example
 
-See `examples/complete_bot_example.rs` for a full working example that demonstrates:
+See `examples/bot_example.rs` for a full working example that demonstrates:
 
 - Safekey command integration
 - Secure password handling via stdin
@@ -239,29 +239,29 @@ Build and run:
 
 ```bash
 # Build the example
-cargo build --example complete_bot_example --features solana-ops --release
+cargo build --example bot_example --features solana-ops --release
 
 # Launch interactive safekey commands
-./build-cache/release/examples/complete_bot_example safekey
+./build-cache/release/examples/bot_example safekey
 
 # Run bot with password from stdin
-echo "your-password" | ./build-cache/release/examples/complete_bot_example
+echo "your-password" | ./build-cache/release/examples/bot_example
 ```
 
-## Comparison with wick-catching-bot
+## Key Features Summary
 
-Sol-SafeKey uses the **exact same integration pattern** as wick-catching-bot:
+Sol-SafeKey provides comprehensive wallet management:
 
-| Feature | wick-catching-bot | Your Bot + sol-safekey |
-|---------|-------------------|------------------------|
-| Safekey command | ✅ `./bot safekey` | ✅ `./your-bot safekey` |
-| Interactive menu | ✅ Full featured | ✅ Full featured |
-| Wallet creation | ✅ AES-256 | ✅ AES-256 |
-| Password security | ✅ stdin pipe | ✅ stdin pipe |
-| SOL operations | ✅ Built-in | ✅ Built-in |
-| Token support | ✅ SPL tokens | ✅ SPL tokens |
-| Durable nonce | ✅ Supported | ✅ Supported |
-| Integration effort | N/A | 🎯 3 lines of code |
+| Feature | Support |
+|---------|---------|
+| Safekey command | ✅ `./your-bot safekey` |
+| Interactive menu | ✅ Full featured |
+| Wallet creation | ✅ AES-256 encryption |
+| Password security | ✅ stdin pipe (memory only) |
+| SOL operations | ✅ Transfer, balance, wrap/unwrap |
+| Token support | ✅ SPL tokens |
+| Durable nonce | ✅ Offline transaction support |
+| Integration effort | 🎯 3 lines of code |
 
 ## Testing Your Integration
 
@@ -374,9 +374,9 @@ fn robust_bot_logic() -> Result<()> {
 ### Getting Help
 
 - Check the [User Guide](USER_GUIDE.md) for detailed operation instructions
-- Review `examples/complete_bot_example.rs` for working code
+- Review `examples/bot_example.rs` for working code
 - Check logs in `bot.log` for error details
-- Verify your integration matches the wick-catching-bot pattern
+- Review the integration steps above to ensure correct implementation
 
 ## Next Steps
 

@@ -1,8 +1,45 @@
-# Sol-SafeKey
+<div align="center">
+    <h1>🔐 Sol-SafeKey</h1>
+    <h3><em>安全的 Solana 密钥管理库，支持 AES-256 加密</em></h3>
+</div>
 
-安全的 Solana 密钥管理库，支持 AES-256 加密和 Bot 集成。
+<p align="center">
+    <strong>军事级钱包安全，简单的 Bot 集成 - 安全的密码处理、加密的密钥存储和完整的 Solana 操作支持。</strong>
+</p>
 
-[English Documentation](README.md)
+<p align="center">
+    <a href="https://crates.io/crates/sol-safekey">
+        <img src="https://img.shields.io/crates/v/sol-safekey.svg" alt="Crates.io">
+    </a>
+    <a href="https://docs.rs/sol-safekey">
+        <img src="https://docs.rs/sol-safekey/badge.svg" alt="Documentation">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey">
+        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
+    </a>
+    <a href="https://github.com/0xfnzero/sol-safekey/network">
+        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
+    </a>
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
+    <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
+    <img src="https://img.shields.io/badge/Security-FF0000?style=for-the-badge&logo=security&logoColor=white" alt="Security">
+</p>
+
+<p align="center">
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
+    <a href="https://fnzero.dev/">Website</a> |
+    <a href="https://t.me/fnzero_group">Telegram</a> |
+    <a href="https://discord.gg/ckf5UHxz">Discord</a>
+</p>
+
+---
 
 ## ✨ 特性
 
@@ -18,10 +55,10 @@
 
 ```bash
 # 编译 bot
-cargo build --example complete_bot_example --features solana-ops --release
+cargo build --example bot_example --features solana-ops --release
 
 # 运行交互式 safekey 命令
-./build-cache/release/examples/complete_bot_example safekey
+./build-cache/release/examples/bot_example safekey
 ```
 
 ### 作为库使用
@@ -77,7 +114,7 @@ solana-ops = ["sol-safekey/solana-ops"]
 
 ## 📖 示例
 
-查看 `examples/complete_bot_example.rs` 获取完整的 bot 集成示例。
+查看 `examples/bot_example.rs` 获取完整的 bot 集成示例。
 
 ## 🤝 贡献
 
