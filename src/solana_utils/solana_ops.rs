@@ -419,3 +419,110 @@ pub fn lamports_to_sol(lamports: u64) -> f64 {
 pub fn format_token_amount(amount: u64, decimals: u8) -> f64 {
     amount as f64 / 10_f64.powi(decimals as i32)
 }
+
+// ==================== Sol-Trade-SDK Integration ====================
+
+#[cfg(feature = "solana-ops")]
+use std::sync::Arc;
+
+/// Enhanced Solana client using sol-trade-sdk for optimized operations
+#[cfg(feature = "solana-ops")]
+pub struct SolanaClientSdk {
+    rpc_url: String,
+    use_seed_optimize: bool,
+}
+
+#[cfg(feature = "solana-ops")]
+impl SolanaClientSdk {
+    /// Create a new SDK-backed Solana client
+    pub fn new(rpc_url: String, use_seed_optimize: bool) -> Self {
+        Self {
+            rpc_url,
+            use_seed_optimize,
+        }
+    }
+
+    /// Create WSOL ATA using sol-trade-sdk (with seed optimization support)
+    pub async fn create_wsol_ata(&self, keypair: &Keypair) -> Result<Signature> {
+        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use solana_commitment_config::CommitmentConfig;
+
+        let trade_config = TradeConfig {
+            rpc_url: self.rpc_url.clone(),
+            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
+            commitment: CommitmentConfig::confirmed(),
+            create_wsol_ata_on_startup: false,  // 不在启动时创建，由手动调用
+            use_seed_optimize: self.use_seed_optimize,
+        };
+
+        let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
+        let signature_str = trade_client.create_wsol_ata().await?;
+        Ok(Signature::from_str(&signature_str)?)
+    }
+
+    /// Wrap SOL to WSOL using sol-trade-sdk (with seed optimization support)
+    pub async fn wrap_sol(&self, keypair: &Keypair, amount: u64) -> Result<Signature> {
+        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use solana_commitment_config::CommitmentConfig;
+
+        if amount == 0 {
+            return Err(anyhow!("Wrap amount cannot be zero"));
+        }
+
+        let trade_config = TradeConfig {
+            rpc_url: self.rpc_url.clone(),
+            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
+            commitment: CommitmentConfig::confirmed(),
+            create_wsol_ata_on_startup: false,  // 不在启动时创建
+            use_seed_optimize: self.use_seed_optimize,
+        };
+
+        let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
+        let signature_str = trade_client.wrap_sol_to_wsol(amount).await?;
+        Ok(Signature::from_str(&signature_str)?)
+    }
+
+    /// Unwrap WSOL to SOL using sol-trade-sdk (with seed optimization support)
+    pub async fn unwrap_sol(&self, keypair: &Keypair) -> Result<Signature> {
+        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use solana_commitment_config::CommitmentConfig;
+
+        let trade_config = TradeConfig {
+            rpc_url: self.rpc_url.clone(),
+            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
+            commitment: CommitmentConfig::confirmed(),
+            create_wsol_ata_on_startup: false,
+            use_seed_optimize: self.use_seed_optimize,
+        };
+
+        let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
+        let signature_str = trade_client.close_wsol().await?;
+        Ok(Signature::from_str(&signature_str)?)
+    }
+
+    /// Get SOL balance (reuses existing RPC client)
+    pub fn get_sol_balance(&self, pubkey: &Pubkey) -> Result<u64> {
+        let client = RpcClient::new(self.rpc_url.clone());
+        let balance = client.get_balance(pubkey)?;
+        Ok(balance)
+    }
+
+    /// Get WSOL balance
+    pub fn get_wsol_balance(&self, owner: &Pubkey) -> Result<u64> {
+        let wsol_mint = Pubkey::from_str(WSOL_MINT)?;
+        let token_program = Pubkey::from_str(TOKEN_PROGRAM_ID)?;
+
+        // 根据是否使用 seed 优化计算不同的地址
+        let ata = get_associated_token_address(owner, &wsol_mint, &token_program);
+
+        let client = RpcClient::new(self.rpc_url.clone());
+        match client.get_token_account_balance(&ata) {
+            Ok(balance) => {
+                let amount = balance.amount.parse::<u64>()
+                    .map_err(|_| anyhow!("Failed to parse token balance"))?;
+                Ok(amount)
+            }
+            Err(_) => Ok(0),
+        }
+    }
+}

@@ -104,7 +104,7 @@ impl Texts {
             create_encrypted: "  {}  创建加密私钥(bot)",
             decrypt: "  {}  解密私钥",
             exit: "  {}  退出",
-            select_option: "请输入选项 [0-12]: ",
+            select_option: "请输入选项 [0-13]: ",
             goodbye: "👋 再见！",
             invalid_option: "❌ 无效选项，请重新选择",
             continue_use: "是否继续使用? [Y/n]: ",
@@ -177,7 +177,7 @@ impl Texts {
             create_encrypted: "  {}  Create Encrypted Private Key (Bot)",
             decrypt: "  {}  Decrypt Private Key",
             exit: "  {}  Exit",
-            select_option: "Select option [0-12]: ",
+            select_option: "Select option [0-13]: ",
             goodbye: "👋 Goodbye!",
             invalid_option: "❌ Invalid option, please try again",
             continue_use: "Continue? [Y/n]: ",
@@ -372,19 +372,21 @@ pub fn show_main_menu() -> Result<(), String> {
             {
                 println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "查询 SOL 余额" } else { "Check SOL Balance" });
                 println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SOL" } else { "Transfer SOL" });
-                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
-                println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
-                println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
-                println!("  {}  {}", "12.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "创建 WSOL ATA" } else { "Create WSOL ATA" });
+                println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
+                println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
+                println!("  {}  {}", "12.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
+                println!("  {}  {}", "13.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
             }
             #[cfg(not(feature = "2fa"))]
             {
                 println!("  {}  {}", "4.".bright_cyan().bold(), if lang == Language::Chinese { "查询 SOL 余额" } else { "Check SOL Balance" });
                 println!("  {}  {}", "5.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SOL" } else { "Transfer SOL" });
-                println!("  {}  {}", "6.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
-                println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
-                println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
-                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+                println!("  {}  {}", "6.".bright_cyan().bold(), if lang == Language::Chinese { "创建 WSOL ATA" } else { "Create WSOL ATA" });
+                println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
+                println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
+                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
+                println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
             }
         }
 
@@ -456,13 +458,13 @@ pub fn show_main_menu() -> Result<(), String> {
 
             // Solana operations
             #[cfg(all(feature = "solana-ops", feature = "2fa"))]
-            "7" | "8" | "9" | "10" | "11" | "12" => {
+            "7" | "8" | "9" | "10" | "11" | "12" | "13" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
             }
             #[cfg(all(feature = "solana-ops", not(feature = "2fa")))]
-            "4" | "5" | "6" | "7" | "8" | "9" => {
+            "4" | "5" | "6" | "7" | "8" | "9" | "10" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
@@ -936,10 +938,11 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
     let result = match choice {
         "7" => crate::operations::check_balance(&keypair, ops_language),
         "8" => crate::operations::transfer_sol(&keypair, ops_language),
-        "9" => crate::operations::wrap_sol(&keypair, ops_language),
-        "10" => crate::operations::unwrap_sol(&keypair, ops_language),
-        "11" => crate::operations::transfer_token(&keypair, ops_language),
-        "12" => crate::operations::create_nonce_account(&keypair, ops_language),
+        "9" => crate::operations::create_wsol_ata(&keypair, ops_language),
+        "10" => crate::operations::wrap_sol(&keypair, ops_language),
+        "11" => crate::operations::unwrap_sol(&keypair, ops_language),
+        "12" => crate::operations::transfer_token(&keypair, ops_language),
+        "13" => crate::operations::create_nonce_account(&keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 
@@ -947,10 +950,11 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
     let result = match choice {
         "4" => crate::operations::check_balance(&keypair, ops_language),
         "5" => crate::operations::transfer_sol(&keypair, ops_language),
-        "6" => crate::operations::wrap_sol(&keypair, ops_language),
-        "7" => crate::operations::unwrap_sol(&keypair, ops_language),
-        "8" => crate::operations::transfer_token(&keypair, ops_language),
-        "9" => crate::operations::create_nonce_account(&keypair, ops_language),
+        "6" => crate::operations::create_wsol_ata(&keypair, ops_language),
+        "7" => crate::operations::wrap_sol(&keypair, ops_language),
+        "8" => crate::operations::unwrap_sol(&keypair, ops_language),
+        "9" => crate::operations::transfer_token(&keypair, ops_language),
+        "10" => crate::operations::create_nonce_account(&keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 

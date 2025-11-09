@@ -11,7 +11,10 @@ use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 
 #[cfg(feature = "solana-ops")]
-use crate::solana_utils::{SolanaClient, lamports_to_sol};
+use crate::solana_utils::{SolanaClient, SolanaClientSdk, lamports_to_sol};
+
+#[cfg(feature = "solana-ops")]
+use solana_client::rpc_client::RpcClient;
 
 const DEFAULT_RPC_URL: &str = "https://api.mainnet-beta.solana.com";
 const DEVNET_RPC_URL: &str = "https://api.devnet.solana.com";
@@ -67,25 +70,27 @@ pub fn show_operations_menu(keypair: &Keypair, language: Language) -> Result<(),
         if language == Language::English {
             println!("  {}  Check SOL Balance", "1.".bright_cyan());
             println!("  {}  Transfer SOL", "2.".bright_cyan());
-            println!("  {}  Wrap SOL → WSOL", "3.".bright_cyan());
-            println!("  {}  Unwrap WSOL → SOL", "4.".bright_cyan());
-            println!("  {}  Transfer SPL Token", "5.".bright_cyan());
-            println!("  {}  Create Nonce Account", "6.".bright_cyan());
+            println!("  {}  Create WSOL ATA", "3.".bright_cyan());
+            println!("  {}  Wrap SOL → WSOL", "4.".bright_cyan());
+            println!("  {}  Unwrap WSOL → SOL", "5.".bright_cyan());
+            println!("  {}  Transfer SPL Token", "6.".bright_cyan());
+            println!("  {}  Create Nonce Account", "7.".bright_cyan());
             println!("  {}  Back to Main Menu", "0.".bright_cyan());
         } else {
             println!("  {}  查询 SOL 余额", "1.".bright_cyan());
             println!("  {}  转账 SOL", "2.".bright_cyan());
-            println!("  {}  包装 SOL → WSOL", "3.".bright_cyan());
-            println!("  {}  解包 WSOL → SOL", "4.".bright_cyan());
-            println!("  {}  转账 SPL 代币", "5.".bright_cyan());
-            println!("  {}  创建 Nonce 账户", "6.".bright_cyan());
+            println!("  {}  创建 WSOL ATA 账户", "3.".bright_cyan());
+            println!("  {}  包装 SOL → WSOL", "4.".bright_cyan());
+            println!("  {}  解包 WSOL → SOL", "5.".bright_cyan());
+            println!("  {}  转账 SPL 代币", "6.".bright_cyan());
+            println!("  {}  创建 Nonce 账户", "7.".bright_cyan());
             println!("  {}  返回主菜单", "0.".bright_cyan());
         }
 
         let prompt = if language == Language::English {
-            "\nSelect option [0-6]: "
+            "\nSelect option [0-7]: "
         } else {
-            "\n请输入选项 [0-6]: "
+            "\n请输入选项 [0-7]: "
         };
 
         let choice = read_input(prompt, "");
@@ -93,10 +98,11 @@ pub fn show_operations_menu(keypair: &Keypair, language: Language) -> Result<(),
         match choice.as_str() {
             "1" => check_balance(keypair, language)?,
             "2" => transfer_sol(keypair, language)?,
-            "3" => wrap_sol(keypair, language)?,
-            "4" => unwrap_sol(keypair, language)?,
-            "5" => transfer_token(keypair, language)?,
-            "6" => create_nonce_account(keypair, language)?,
+            "3" => create_wsol_ata(keypair, language)?,
+            "4" => wrap_sol(keypair, language)?,
+            "5" => unwrap_sol(keypair, language)?,
+            "6" => transfer_token(keypair, language)?,
+            "7" => create_nonce_account(keypair, language)?,
             "0" => {
                 if language == Language::English {
                     println!("\n{}", "Returning to main menu...".bright_green());
@@ -273,6 +279,166 @@ pub fn transfer_sol(keypair: &Keypair, language: Language) -> Result<(), String>
     }
 }
 
+/// Helper: Run async code, handling both sync and async contexts
+#[cfg(feature = "solana-ops")]
+fn run_async<F, T>(future: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    // Try to get current runtime handle
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            // We're already in a runtime, use block_in_place
+            tokio::task::block_in_place(|| handle.block_on(future))
+        }
+        Err(_) => {
+            // No runtime exists, create a new one
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(future)
+        }
+    }
+}
+
+/// Helper: Calculate and print WSOL ATA address
+#[cfg(feature = "solana-ops")]
+fn print_wsol_ata_address(owner: &Pubkey, language: Language) {
+    use sol_trade_sdk::common::fast_fn::{
+        get_associated_token_address_with_program_id_fast,
+    };
+
+    let wsol_mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
+    let token_program = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+
+    let ata = get_associated_token_address_with_program_id_fast(owner, &wsol_mint, &token_program);
+
+    println!("\n{}", if language == Language::English {
+        "📍 WSOL ATA Address:"
+    } else {
+        "📍 WSOL ATA 地址:"
+    }.bright_yellow());
+    println!("  {}", ata.to_string().bright_white().bold());
+}
+
+#[cfg(feature = "solana-ops")]
+pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), String> {
+    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    if language == Language::English {
+        println!("  {}", "🏦 Create WSOL ATA Account".bright_yellow().bold());
+    } else {
+        println!("  {}", "🏦 创建 WSOL ATA 账户".bright_yellow().bold());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+
+    let network_prompt = if language == Language::English {
+        "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
+    } else {
+        "\n选择网络:\n  1. 主网 (Mainnet)\n  2. 测试网 (Devnet)\n选择 [1]: "
+    };
+
+    let network = read_input(network_prompt, "1");
+    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+
+    let seed_prompt = if language == Language::English {
+        "\nUse seed optimization? (yes/no) [yes]: "
+    } else {
+        "\n是否使用种子优化? (yes/no) [yes]: "
+    };
+    let use_seed = read_input(seed_prompt, "yes");
+    let use_seed_optimize = use_seed.to_lowercase() != "no";
+
+    // 打印WSOL ATA地址
+    print_wsol_ata_address(&keypair.pubkey(), language);
+
+    // 检查账号是否已存在
+    if language == Language::English {
+        println!("\n🔍 Checking if account already exists...");
+    } else {
+        println!("\n🔍 检查账号是否已存在...");
+    }
+
+    let client_sdk = SolanaClientSdk::new(rpc_url.to_string(), use_seed_optimize);
+    let wsol_balance = client_sdk.get_wsol_balance(&keypair.pubkey())
+        .unwrap_or(0);
+
+    // 如果能查到余额（即使是0），说明账号已存在
+    let rpc_client = RpcClient::new(rpc_url.to_string());
+    let wsol_mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
+    let token_program = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+
+    let ata = {
+        use sol_trade_sdk::common::fast_fn::get_associated_token_address_with_program_id_fast;
+        get_associated_token_address_with_program_id_fast(&keypair.pubkey(), &wsol_mint, &token_program)
+    };
+
+    let account_exists = rpc_client.get_account(&ata).is_ok();
+
+    if account_exists {
+        println!("\n{}", "ℹ️  WSOL ATA account already exists!".bright_yellow().bold());
+        println!("  💰 Balance: {} lamports ({} SOL)",
+            wsol_balance.to_string().bright_white(),
+            lamports_to_sol(wsol_balance).to_string().bright_white());
+
+        if language == Language::English {
+            println!("\n✅ Account is ready to use. No need to create.");
+        } else {
+            println!("\n✅ 账号已准备就绪，无需创建。");
+        }
+        return Ok(());
+    }
+
+    println!("\n{}", if language == Language::English {
+        "ℹ️  Account does not exist. Creating new WSOL ATA..."
+    } else {
+        "ℹ️  账号不存在，将创建新的 WSOL ATA..."
+    }.bright_yellow());
+
+    let confirm_prompt = if language == Language::English {
+        "\nConfirm operation? (yes/no) [no]: "
+    } else {
+        "\n确认操作? (yes/no) [no]: "
+    };
+    let confirm = read_input(confirm_prompt, "no");
+
+    if confirm.to_lowercase() != "yes" {
+        let msg = if language == Language::English {
+            "❌ Operation cancelled"
+        } else {
+            "❌ 操作已取消"
+        };
+        println!("\n{}", msg.red());
+        return Ok(());
+    }
+
+    if language == Language::English {
+        println!("\n🚀 Creating WSOL ATA...");
+    } else {
+        println!("\n🚀 正在创建 WSOL ATA...");
+    }
+
+    // 使用run_async执行异步操作
+    match run_async(client_sdk.create_wsol_ata(keypair)) {
+        Ok(signature) => {
+            println!("\n{}", "✅ WSOL ATA created successfully!".bright_green().bold());
+            println!("  📝 Signature: {}", signature.to_string().bright_white());
+            let explorer_url = if network == "2" {
+                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+            } else {
+                format!("https://explorer.solana.com/tx/{}", signature)
+            };
+            println!("  🔗 Explorer: {}", explorer_url.bright_blue());
+            Ok(())
+        }
+        Err(e) => {
+            let msg = if language == Language::English {
+                format!("❌ Creation failed: {}", e)
+            } else {
+                format!("❌ 创建失败: {}", e)
+            };
+            Err(msg)
+        }
+    }
+}
+
 #[cfg(feature = "solana-ops")]
 pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
@@ -291,6 +457,17 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
 
     let network = read_input(network_prompt, "1");
     let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+
+    let seed_prompt = if language == Language::English {
+        "\nUse seed optimization? (yes/no) [yes]: "
+    } else {
+        "\n是否使用种子优化? (yes/no) [yes]: "
+    };
+    let use_seed = read_input(seed_prompt, "yes");
+    let use_seed_optimize = use_seed.to_lowercase() != "no";
+
+    // 打印WSOL ATA地址
+    print_wsol_ata_address(&keypair.pubkey(), language);
 
     let amount_prompt = if language == Language::English {
         "\nAmount to wrap (SOL): "
@@ -333,8 +510,11 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
         println!("\n🚀 正在包装 SOL...");
     }
 
-    let client = SolanaClient::new(rpc_url.to_string());
-    match client.wrap_sol(keypair, amount_lamports) {
+    // 使用SolanaClientSdk调用sol-trade-sdk
+    let client = SolanaClientSdk::new(rpc_url.to_string(), use_seed_optimize);
+
+    // 使用run_async执行异步操作
+    match run_async(client.wrap_sol(keypair, amount_lamports)) {
         Ok(signature) => {
             println!("\n{}", "✅ Wrap successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
@@ -376,6 +556,17 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     let network = read_input(network_prompt, "1");
     let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
 
+    let seed_prompt = if language == Language::English {
+        "\nUse seed optimization? (yes/no) [yes]: "
+    } else {
+        "\n是否使用种子优化? (yes/no) [yes]: "
+    };
+    let use_seed = read_input(seed_prompt, "yes");
+    let use_seed_optimize = use_seed.to_lowercase() != "no";
+
+    // 打印WSOL ATA地址
+    print_wsol_ata_address(&keypair.pubkey(), language);
+
     println!("\n{}", if language == Language::English {
         "ℹ️  This will unwrap ALL your WSOL back to SOL"
     } else {
@@ -405,8 +596,11 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
         println!("\n🚀 正在解包 WSOL...");
     }
 
-    let client = SolanaClient::new(rpc_url.to_string());
-    match client.unwrap_sol(keypair) {
+    // 使用SolanaClientSdk调用sol-trade-sdk
+    let client = SolanaClientSdk::new(rpc_url.to_string(), use_seed_optimize);
+
+    // 使用run_async执行异步操作
+    match run_async(client.unwrap_sol(keypair)) {
         Ok(signature) => {
             println!("\n{}", "✅ Unwrap successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
