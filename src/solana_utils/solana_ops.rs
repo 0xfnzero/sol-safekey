@@ -1,17 +1,18 @@
 use anyhow::{anyhow, Result};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     native_token::LAMPORTS_PER_SOL,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
+    sysvar,
     transaction::Transaction,
 };
 use std::str::FromStr;
 
-// System program ID constant
-const SYSTEM_PROGRAM_ID: &str = "11111111111111111111111111111111";
+// System program ID - hardcoded for solana-sdk 3.0 compatibility
+const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::from_str_const("11111111111111111111111111111111");
 
 const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
 const TOKEN_PROGRAM_ID: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -19,10 +20,8 @@ const ASSOCIATED_TOKEN_PROGRAM_ID: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNs
 
 /// Create a transfer instruction (replacement for system_instruction::transfer)
 fn create_transfer_instruction(from: &Pubkey, to: &Pubkey, lamports: u64) -> Instruction {
-    let system_program_id = Pubkey::from_str(SYSTEM_PROGRAM_ID).unwrap();
-
     Instruction {
-        program_id: system_program_id,
+        program_id: SYSTEM_PROGRAM_ID,
         accounts: vec![
             solana_sdk::instruction::AccountMeta::new(*from, true),
             solana_sdk::instruction::AccountMeta::new(*to, false),
@@ -251,59 +250,108 @@ impl SolanaClient {
         // Nonce account size: 80 bytes
         let rent_exemption = client.get_minimum_balance_for_rent_exemption(80)?;
 
-        let system_program = Pubkey::from_str(SYSTEM_PROGRAM_ID)?;
-
-        // Create nonce account instructions
+        // 手动构造系统程序指令（solana-sdk 3.0 兼容）
         let mut instructions = vec![];
 
-        // 1. Create account
+        println!("📝 构建Nonce账户创建交易...");
+
+        // 1. CreateAccount 指令 (指令ID = 0)
+        println!("   ✓ 添加指令1: CreateAccount (分配空间和租金)");
         let create_account_ix = Instruction {
-            program_id: system_program,
+            program_id: SYSTEM_PROGRAM_ID,
             accounts: vec![
-                solana_sdk::instruction::AccountMeta::new(payer.pubkey(), true),
-                solana_sdk::instruction::AccountMeta::new(nonce_pubkey, true),
+                AccountMeta::new(payer.pubkey(), true),  // from (payer, signer)
+                AccountMeta::new(nonce_pubkey, true),     // to (new account, signer)
             ],
             data: {
-                let mut data = vec![0, 0, 0, 0]; // CreateAccount instruction
+                let mut data = vec![0u32.to_le_bytes()[0], 0, 0, 0]; // CreateAccount 指令ID = 0
                 data.extend_from_slice(&rent_exemption.to_le_bytes());
-                data.extend_from_slice(&80u64.to_le_bytes()); // space
-                data.extend_from_slice(system_program.as_ref());
+                data.extend_from_slice(&80u64.to_le_bytes());
+                data.extend_from_slice(SYSTEM_PROGRAM_ID.as_ref());
                 data
             },
         };
         instructions.push(create_account_ix);
 
-        // 2. Initialize nonce account
+        // 2. InitializeNonceAccount 指令 (指令ID = 6)
+        println!("   ✓ 添加指令2: InitializeNonceAccount (设置authority和nonce值)");
         let initialize_nonce_ix = Instruction {
-            program_id: system_program,
+            program_id: SYSTEM_PROGRAM_ID,
             accounts: vec![
-                solana_sdk::instruction::AccountMeta::new(nonce_pubkey, false),
-                solana_sdk::instruction::AccountMeta::new_readonly(
-                    solana_sdk::sysvar::recent_blockhashes::ID,
-                    false,
+                AccountMeta::new(nonce_pubkey, false),              // nonce account
+                AccountMeta::new_readonly(                           // recent_blockhashes sysvar
+                    sysvar::recent_blockhashes::id(),
+                    false
                 ),
-                solana_sdk::instruction::AccountMeta::new_readonly(
-                    solana_sdk::sysvar::rent::ID,
-                    false,
+                AccountMeta::new_readonly(                           // rent sysvar
+                    sysvar::rent::id(),
+                    false
                 ),
             ],
             data: {
-                let mut data = vec![6, 0, 0, 0]; // InitializeNonceAccount instruction
+                let mut data = vec![6u32.to_le_bytes()[0], 0, 0, 0]; // InitializeNonceAccount 指令ID = 6
                 data.extend_from_slice(payer.pubkey().as_ref());
                 data
             },
         };
         instructions.push(initialize_nonce_ix);
 
+        println!("🚀 发送交易（2个指令将在同一交易中原子性执行）...");
         let recent_blockhash = client.get_latest_blockhash()?;
         let transaction = Transaction::new_signed_with_payer(
             &instructions,
             Some(&payer.pubkey()),
-            &[payer, &nonce_account],
+            &[payer, &nonce_account],  // Both payer and nonce_account must sign
             recent_blockhash,
         );
 
         let signature = client.send_and_confirm_transaction(&transaction)?;
+        println!("✅ 交易已确认: {}", signature);
+
+        // 验证 nonce 账户已正确创建和初始化
+        println!("🔍 验证Nonce账户...");
+        match client.get_account(&nonce_pubkey) {
+            Ok(account) => {
+                if account.data.len() == 80 {
+                    // 解析 nonce 数据
+                    let version = u32::from_le_bytes([
+                        account.data[0],
+                        account.data[1],
+                        account.data[2],
+                        account.data[3],
+                    ]);
+
+                    // 提取 nonce 值（blockhash）
+                    let nonce_bytes = &account.data[36..68];
+                    let nonce_hex: String = nonce_bytes.iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect();
+
+                    // 检查是否为默认值（全0）
+                    let is_initialized = !nonce_bytes.iter().all(|&b| b == 0);
+
+                    println!("✅ Nonce账户创建和初始化成功！");
+                    println!("   📍 地址: {}", nonce_pubkey);
+                    println!("   👤 Authority: {}", payer.pubkey());
+                    println!("   💰 余额: {:.6} SOL", account.lamports as f64 / 1e9);
+                    println!("   📊 版本: {}", version);
+
+                    if is_initialized {
+                        println!("   🔐 Nonce值: {}...{}", &nonce_hex[..16], &nonce_hex[nonce_hex.len()-16..]);
+                        println!("   ✅ 状态: 已初始化，可以立即使用");
+                    } else {
+                        println!("   ❌ Nonce值: 全0（未初始化）");
+                        return Err(anyhow!("Nonce account was created but NOT initialized properly"));
+                    }
+                } else {
+                    return Err(anyhow!("Nonce account created but data size incorrect: {} bytes (expected 80)", account.data.len()));
+                }
+            }
+            Err(e) => {
+                return Err(anyhow!("Failed to verify nonce account after creation: {}", e));
+            }
+        }
+
         Ok((nonce_pubkey, signature))
     }
 }
@@ -345,7 +393,7 @@ fn create_associated_token_account(
             solana_sdk::instruction::AccountMeta::new_readonly(*wallet, false),
             solana_sdk::instruction::AccountMeta::new_readonly(*mint, false),
             solana_sdk::instruction::AccountMeta::new_readonly(
-                Pubkey::from_str(SYSTEM_PROGRAM_ID).unwrap(),
+                SYSTEM_PROGRAM_ID,
                 false,
             ),
             solana_sdk::instruction::AccountMeta::new_readonly(*token_program, false),
