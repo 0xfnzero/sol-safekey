@@ -301,7 +301,7 @@ where
 
 /// Helper: Calculate and print WSOL ATA address
 #[cfg(feature = "solana-ops")]
-fn print_wsol_ata_address(owner: &Pubkey, language: Language) {
+fn print_wsol_ata_address(owner: &Pubkey, language: Language, _use_seed: bool) {
     use sol_trade_sdk::common::fast_fn::{
         get_associated_token_address_with_program_id_fast,
     };
@@ -309,6 +309,7 @@ fn print_wsol_ata_address(owner: &Pubkey, language: Language) {
     let wsol_mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let token_program = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
 
+    // SDK 强制对 WSOL 使用标准 ATA（不支持 seed 优化）
     let ata = get_associated_token_address_with_program_id_fast(owner, &wsol_mint, &token_program);
 
     println!("\n{}", if language == Language::English {
@@ -338,16 +339,11 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
     let network = read_input(network_prompt, "1");
     let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
 
-    let seed_prompt = if language == Language::English {
-        "\nUse seed optimization? (yes/no) [yes]: "
-    } else {
-        "\n是否使用种子优化? (yes/no) [yes]: "
-    };
-    let use_seed = read_input(seed_prompt, "yes");
-    let use_seed_optimize = use_seed.to_lowercase() != "no";
+    // WSOL 强制使用标准 ATA（SDK 设计）
+    let use_seed_optimize = false;
 
     // 打印WSOL ATA地址
-    print_wsol_ata_address(&keypair.pubkey(), language);
+    print_wsol_ata_address(&keypair.pubkey(), language, use_seed_optimize);
 
     // 检查账号是否已存在
     if language == Language::English {
@@ -458,16 +454,11 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     let network = read_input(network_prompt, "1");
     let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
 
-    let seed_prompt = if language == Language::English {
-        "\nUse seed optimization? (yes/no) [yes]: "
-    } else {
-        "\n是否使用种子优化? (yes/no) [yes]: "
-    };
-    let use_seed = read_input(seed_prompt, "yes");
-    let use_seed_optimize = use_seed.to_lowercase() != "no";
+    // WSOL 强制使用标准 ATA（SDK 设计）
+    let use_seed_optimize = false;
 
     // 打印WSOL ATA地址
-    print_wsol_ata_address(&keypair.pubkey(), language);
+    print_wsol_ata_address(&keypair.pubkey(), language, use_seed_optimize);
 
     let amount_prompt = if language == Language::English {
         "\nAmount to wrap (SOL): "
@@ -556,22 +547,54 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     let network = read_input(network_prompt, "1");
     let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
 
-    let seed_prompt = if language == Language::English {
-        "\nUse seed optimization? (yes/no) [yes]: "
-    } else {
-        "\n是否使用种子优化? (yes/no) [yes]: "
-    };
-    let use_seed = read_input(seed_prompt, "yes");
-    let use_seed_optimize = use_seed.to_lowercase() != "no";
+    // WSOL 强制使用标准 ATA（SDK 设计）
+    let use_seed_optimize = false;
 
     // 打印WSOL ATA地址
-    print_wsol_ata_address(&keypair.pubkey(), language);
+    print_wsol_ata_address(&keypair.pubkey(), language, use_seed_optimize);
 
-    println!("\n{}", if language == Language::English {
-        "ℹ️  This will unwrap ALL your WSOL back to SOL"
+    // 询问是否指定金额
+    let amount_prompt = if language == Language::English {
+        "\nUnwrap amount (in SOL, leave empty for ALL): "
     } else {
-        "ℹ️  这将把您的所有 WSOL 解包回 SOL"
-    }.bright_yellow());
+        "\n解包金额（单位: SOL，留空则解包全部）: "
+    };
+    let amount_input = read_input(amount_prompt, "");
+    let amount_input = amount_input.trim();
+
+    let (is_partial, amount_lamports) = if amount_input.is_empty() {
+        // 解包全部
+        println!("\n{}", if language == Language::English {
+            "ℹ️  Will unwrap ALL WSOL back to SOL"
+        } else {
+            "ℹ️  将解包所有 WSOL 回 SOL"
+        }.bright_yellow());
+        (false, 0)
+    } else {
+        // 解包指定金额
+        let amount_sol: f64 = amount_input.parse()
+            .map_err(|_| if language == Language::English {
+                "❌ Invalid amount".to_string()
+            } else {
+                "❌ 无效的金额".to_string()
+            })?;
+        
+        if amount_sol <= 0.0 {
+            return Err(if language == Language::English {
+                "❌ Amount must be greater than 0".to_string()
+            } else {
+                "❌ 金额必须大于 0".to_string()
+            });
+        }
+
+        let lamports = (amount_sol * 1_000_000_000.0) as u64;
+        println!("\n{}", if language == Language::English {
+            format!("ℹ️  Will unwrap {} SOL from WSOL", amount_sol)
+        } else {
+            format!("ℹ️  将从 WSOL 解包 {} SOL", amount_sol)
+        }.bright_yellow());
+        (true, lamports)
+    };
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm operation? (yes/no) [no]: "
@@ -600,7 +623,13 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     let client = SolanaClientSdk::new(rpc_url.to_string(), use_seed_optimize);
 
     // 使用run_async执行异步操作
-    match run_async(client.unwrap_sol(keypair)) {
+    let result = if is_partial {
+        run_async(client.unwrap_sol_partial(keypair, amount_lamports))
+    } else {
+        run_async(client.unwrap_sol(keypair))
+    };
+    
+    match result {
         Ok(signature) => {
             println!("\n{}", "✅ Unwrap successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
@@ -617,6 +646,109 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
                 format!("❌ Unwrap failed: {}", e)
             } else {
                 format!("❌ 解包失败: {}", e)
+            };
+            Err(msg)
+        }
+    }
+}
+
+#[cfg(feature = "solana-ops")]
+/// Close WSOL ATA account and reclaim rent
+pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), String> {
+    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    if language == Language::English {
+        println!("  {}", "🗑️  Close WSOL ATA Account".bright_yellow().bold());
+    } else {
+        println!("  {}", "🗑️  关闭 WSOL ATA 账号".bright_yellow().bold());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+
+    let network_prompt = if language == Language::English {
+        "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
+    } else {
+        "\n选择网络:\n  1. 主网 (Mainnet)\n  2. 测试网 (Devnet)\n选择 [1]: "
+    };
+
+    let network = read_input(network_prompt, "1");
+    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+
+    // WSOL 强制使用标准 ATA（SDK 设计）
+    let use_seed_optimize = false;
+
+    // 打印WSOL ATA地址
+    print_wsol_ata_address(&keypair.pubkey(), language, use_seed_optimize);
+
+    println!("\n{}", if language == Language::English {
+        "ℹ️  This operation will:"
+    } else {
+        "ℹ️  此操作将:"
+    }.bright_yellow().bold());
+    
+    if language == Language::English {
+        println!("     • Unwrap ALL WSOL back to SOL automatically");
+        println!("     • Close the WSOL ATA account");
+        println!("     • Reclaim rent (~0.00203928 SOL) to your wallet");
+    } else {
+        println!("     • 自动将所有 WSOL 解包回 SOL");
+        println!("     • 关闭 WSOL ATA 账号");
+        println!("     • 回收租金 (~0.00203928 SOL) 到您的钱包");
+    }
+
+    println!("\n{}", if language == Language::English {
+        "💰 All SOL (unwrapped WSOL + rent) will be returned to your wallet!"
+    } else {
+        "�� 所有 SOL（解包的 WSOL + 租金）将返回到您的钱包!"
+    }.green().bold());
+
+    let confirm_prompt = if language == Language::English {
+        "\nConfirm operation? (yes/no) [no]: "
+    } else {
+        "\n确认操作? (yes/no) [no]: "
+    };
+    let confirm = read_input(confirm_prompt, "no");
+
+    if confirm.to_lowercase() != "yes" {
+        let msg = if language == Language::English {
+            "❌ Operation cancelled"
+        } else {
+            "❌ 操作已取消"
+        };
+        println!("\n{}", msg.red());
+        return Ok(());
+    }
+
+    if language == Language::English {
+        println!("\n🚀 Closing WSOL ATA account...");
+    } else {
+        println!("\n🚀 正在关闭 WSOL ATA 账号...");
+    }
+
+    // 使用SolanaClientSdk调用sol-trade-sdk
+    let client = SolanaClientSdk::new(rpc_url.to_string(), use_seed_optimize);
+
+    // 使用run_async执行异步操作
+    match run_async(client.unwrap_sol(keypair)) {
+        Ok(signature) => {
+            println!("\n{}", "✅ WSOL ATA closed successfully!".bright_green().bold());
+            println!("  📝 Signature: {}", signature.to_string().bright_white());
+            let explorer_url = if network == "2" {
+                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+            } else {
+                format!("https://explorer.solana.com/tx/{}", signature)
+            };
+            println!("  🔗 Explorer: {}", explorer_url.bright_blue());
+            println!("\n{}", if language == Language::English {
+                "💰 Rent reclaimed to your wallet!"
+            } else {
+                "💰 租金已返还到您的钱包!"
+            }.green());
+            Ok(())
+        }
+        Err(e) => {
+            let msg = if language == Language::English {
+                format!("❌ Close failed: {}", e)
+            } else {
+                format!("❌ 关闭失败: {}", e)
             };
             Err(msg)
         }

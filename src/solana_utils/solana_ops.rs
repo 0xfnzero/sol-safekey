@@ -548,6 +548,28 @@ impl SolanaClientSdk {
         Ok(Signature::from_str(&signature_str)?)
     }
 
+    /// Unwrap partial WSOL to SOL using sol-trade-sdk (指定金额解包)
+    pub async fn unwrap_sol_partial(&self, keypair: &Keypair, amount: u64) -> Result<Signature> {
+        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use solana_commitment_config::CommitmentConfig;
+
+        if amount == 0 {
+            return Err(anyhow!("Unwrap amount cannot be zero"));
+        }
+
+        let trade_config = TradeConfig {
+            rpc_url: self.rpc_url.clone(),
+            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
+            commitment: CommitmentConfig::confirmed(),
+            create_wsol_ata_on_startup: false,
+            use_seed_optimize: self.use_seed_optimize,
+        };
+
+        let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
+        let signature_str = trade_client.wrap_wsol_to_sol(amount).await?;
+        Ok(Signature::from_str(&signature_str)?)
+    }
+
     /// Get SOL balance (reuses existing RPC client)
     pub fn get_sol_balance(&self, pubkey: &Pubkey) -> Result<u64> {
         let client = RpcClient::new(self.rpc_url.clone());
