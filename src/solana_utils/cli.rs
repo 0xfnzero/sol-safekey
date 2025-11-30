@@ -5,6 +5,8 @@ use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 use std::str::FromStr;
 
 use crate::solana_utils::solana_ops::{lamports_to_sol, format_token_amount, SolanaClient};
+#[cfg(feature = "solana-ops")]
+use crate::solana_utils::solana_ops::SolanaClientSdk;
 use crate::KeyManager;
 
 #[derive(Parser)]
@@ -93,6 +95,9 @@ pub enum SolanaOpsCommand {
         /// RPC URL (defaults to mainnet)
         #[arg(short, long, default_value = "https://api.mainnet-beta.solana.com")]
         rpc_url: String,
+        /// Optional: Unwrap specific amount in SOL (partial unwrap; keep WSOL ATA open)
+        #[arg(short, long)]
+        amount: Option<f64>,
     },
 }
 
@@ -302,30 +307,91 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
             println!("Explorer: https://solscan.io/tx/{}", signature);
         }
 
-        SolanaOpsCommand::UnwrapSol { rpc_url } => {
+        SolanaOpsCommand::UnwrapSol { rpc_url, amount } => {
             let keypair = load_encrypted_keypair(encrypted_file)?;
-            let client = SolanaClient::new(rpc_url);
 
-            println!("\n{}", "🔄 Unwrapping WSOL to SOL...".cyan());
+            if let Some(unwrap_amount) = amount {
+                let lamports = (unwrap_amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-            // Confirm
-            print!("\n{}", "Confirm unwrap? (yes/no): ".yellow());
-            use std::io::{self, Write};
-            io::stdout().flush()?;
-            let mut confirm = String::new();
-            io::stdin().read_line(&mut confirm)?;
+                println!("\n{}", "🔄 Unwrapping partial WSOL to SOL...".cyan());
+                println!("Amount: {} SOL ({} lamports)", unwrap_amount, lamports);
+                println!("{}", "💡 WSOL 主账户将保持开启（仅解包指定金额）".yellow());
 
-            if confirm.trim().to_lowercase() != "yes" {
-                println!("{}", "Operation cancelled.".red());
-                return Ok(());
+                // 二次确认
+                print!("\n{}", "Confirm partial unwrap? (yes/no): ".yellow());
+                use std::io::{self, Write};
+                io::stdout().flush()?;
+                let mut confirm = String::new();
+                io::stdin().read_line(&mut confirm)?;
+                if confirm.trim().to_lowercase() != "yes" {
+                    println!("{}", "Operation cancelled.".red());
+                    return Ok(());
+                }
+
+                // 余额校验（避免因余额不足导致交易失败）
+                #[cfg(feature = "solana-ops")]
+                {
+                    let client = SolanaClientSdk::new(rpc_url.clone(), false);
+                    let wsol_balance = client.get_wsol_balance(&keypair.pubkey())?;
+                    if wsol_balance < lamports {
+                        return Err(anyhow::anyhow!(
+                            "WSOL余额不足，当前: {} lamports，需要: {} lamports",
+                            wsol_balance, lamports
+                        ));
+                    }
+
+                    println!("\n{}", "🚀 Sending transaction...".cyan());
+                    let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
+                    let signature = rt.block_on(client.unwrap_sol_partial(&keypair, lamports))?;
+
+                    println!("\n{}", "✅ Partial unwrap successful!".green().bold());
+                    println!("Signature: {}", signature.to_string().yellow());
+                    println!("Explorer: https://solscan.io/tx/{}", signature);
+                }
+
+                #[cfg(not(feature = "solana-ops"))]
+                {
+                    return Err(anyhow::anyhow!(
+                        "该功能需要启用 feature 'solana-ops' 才可使用指定金额解包"
+                    ));
+                }
+            } else {
+                println!("\n{}", "🔄 Unwrapping WSOL to SOL (close WSOL ATA)...".cyan());
+                println!("{}", "⚠️ 注意：该操作会关闭 WSOL ATA，并将所有 SOL 余额返还至钱包，且不可逆。".bright_red().bold());
+
+                print!("\n{}", "Confirm close WSOL ATA? (yes/no): ".yellow());
+                use std::io::{self, Write};
+                io::stdout().flush()?;
+                let mut confirm = String::new();
+                io::stdin().read_line(&mut confirm)?;
+                if confirm.trim().to_lowercase() != "yes" {
+                    println!("{}", "Operation cancelled.".red());
+                    return Ok(());
+                }
+
+                #[cfg(feature = "solana-ops")]
+                {
+                    let client = SolanaClientSdk::new(rpc_url.clone(), false);
+                    println!("\n{}", "🚀 Sending transaction...".cyan());
+                    let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
+                    let signature = rt.block_on(client.unwrap_sol(&keypair))?;
+
+                    println!("\n{}", "✅ Unwrap successful!".green().bold());
+                    println!("Signature: {}", signature.to_string().yellow());
+                    println!("Explorer: https://solscan.io/tx/{}", signature);
+                }
+
+                #[cfg(not(feature = "solana-ops"))]
+                {
+                    let client = SolanaClient::new(rpc_url);
+                    println!("\n{}", "🚀 Sending transaction...".cyan());
+                    let signature = client.unwrap_sol(&keypair)?;
+
+                    println!("\n{}", "✅ Unwrap successful!".green().bold());
+                    println!("Signature: {}", signature.to_string().yellow());
+                    println!("Explorer: https://solscan.io/tx/{}", signature);
+                }
             }
-
-            println!("\n{}", "🚀 Sending transaction...".cyan());
-            let signature = client.unwrap_sol(&keypair)?;
-
-            println!("\n{}", "✅ Unwrap successful!".green().bold());
-            println!("Signature: {}", signature.to_string().yellow());
-            println!("Explorer: https://solscan.io/tx/{}", signature);
         }
     }
 
