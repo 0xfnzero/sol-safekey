@@ -104,7 +104,7 @@ impl Texts {
             create_encrypted: "  {}  创建加密私钥(bot)",
             decrypt: "  {}  解密私钥",
             exit: "  {}  退出",
-            select_option: "请输入选项 [0-13]: ",
+            select_option: "请输入选项 [0-14]: ",
             goodbye: "👋 再见！",
             invalid_option: "❌ 无效选项，请重新选择",
             continue_use: "是否继续使用? [Y/n]: ",
@@ -177,7 +177,7 @@ impl Texts {
             create_encrypted: "  {}  Create Encrypted Private Key (Bot)",
             decrypt: "  {}  Decrypt Private Key",
             exit: "  {}  Exit",
-            select_option: "Select option [0-13]: ",
+            select_option: "Select option [0-14]: ",
             goodbye: "👋 Goodbye!",
             invalid_option: "❌ Invalid option, please try again",
             continue_use: "Continue? [Y/n]: ",
@@ -460,13 +460,13 @@ pub fn show_main_menu() -> Result<(), String> {
 
             // Solana operations
             #[cfg(all(feature = "solana-ops", feature = "2fa"))]
-            "7" | "8" | "9" | "10" | "11" | "12" | "13" => {
+            "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
             }
             #[cfg(all(feature = "solana-ops", not(feature = "2fa")))]
-            "4" | "5" | "6" | "7" | "8" | "9" | "10" => {
+            "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
