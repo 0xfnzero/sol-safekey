@@ -88,7 +88,6 @@ let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
 - ✅ **Password Security**: stdin pipe only (never in environment variables or files)
 - ✅ **Encryption**: AES-256 with PBKDF2 key derivation
 - ✅ **Memory Safety**: Immediate password cleanup after use
-- ✅ **Production Ready**: Same security model as wick-catching-bot
 
 ## 📦 Installation
 
