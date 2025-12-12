@@ -111,6 +111,11 @@ Via `safekey` command:
 - Wrap/Unwrap SOL ↔ WSOL
 - Transfer SPL tokens
 - Create durable nonce accounts
+- **🔥 PumpSwap Sell** - Interactive token selling on PumpSwap DEX
+  - One-click sell all tokens
+  - Seed-optimized ATA support
+  - Default 99% slippage for fast execution
+  - Bilingual support (English/Chinese)
 
 ## 📖 Examples
 

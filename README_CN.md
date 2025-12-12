@@ -111,6 +111,11 @@ solana-ops = ["sol-safekey/solana-ops"]
 - Wrap/Unwrap SOL ↔ WSOL
 - 转账 SPL 代币
 - 创建 durable nonce 账户
+- **🔥 PumpSwap 卖出** - PumpSwap DEX 上的交互式代币卖出
+  - 一键卖出所有代币
+  - 支持 Seed 优化的 ATA
+  - 默认 99% 滑点，快速成交
+  - 双语支持（中文/英文）
 
 ## 📖 示例
 

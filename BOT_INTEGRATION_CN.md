@@ -90,6 +90,7 @@ cargo build --features solana-ops --release
 - 解包 WSOL → SOL
 - 转账 SPL 代币
 - 创建 durable nonce 账户
+- **PumpSwap 卖出** - 在 PumpSwap DEX 上一键卖出代币
 
 ## 安全实现
 
@@ -259,7 +260,8 @@ Sol-SafeKey 提供全面的钱包管理:
 | 钱包创建 | ✅ AES-256 加密 |
 | 密码安全 | ✅ stdin 管道（仅内存） |
 | SOL 操作 | ✅ 转账、余额、包装/解包 |
-| 代币支持 | ✅ SPL 代币 |
+| 代币支持 | ✅ SPL 代币、Token-2022 |
+| PumpSwap DEX | ✅ 支持 Seed 优化 ATA 的一键卖出 |
 | Durable nonce | ✅ 离线交易支持 |
 | 集成工作量 | 🎯 3 行代码 |
 

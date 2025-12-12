@@ -460,6 +460,95 @@ Account: 8yG3wE5dK2mH9L...
 Transaction signature: 6N9Z4qO7FyJ1M3...
 ```
 
+### 11. PumpSwap Sell (Token-2022 Support)
+
+**Purpose**: Sell all tokens on PumpSwap DEX with one click
+
+**Use Case**: Quick exit from meme tokens or trading positions on PumpSwap
+
+**Prerequisites**:
+- Token balance in your wallet (standard or seed-optimized ATA)
+- Sufficient SOL for transaction fees
+- Token must be listed on PumpSwap DEX
+
+**Features**:
+- Sells ALL tokens automatically (no amount input needed)
+- Default 99% slippage for fast execution
+- Supports both standard and seed-optimized Associated Token Accounts
+- Bilingual interface (English/Chinese)
+- Token-2022 program support
+
+**Steps**:
+1. Select option `12` or `15` from main menu (depending on 2FA setup)
+2. If wallet not unlocked, provide keystore and password
+3. Enter RPC URL (e.g., `https://api.mainnet-beta.solana.com`)
+4. Choose seed optimization:
+   - `y`: Use seed-optimized ATA (lower fees)
+   - `n`: Use standard ATA
+5. Enter token mint address
+6. Confirm transaction
+7. View transaction signatures
+
+**Example**:
+```
+🔥 PumpSwap Sell Tokens
+
+[If not unlocked]
+Keystore path: keystore.json
+Password: ************
+
+Enter RPC URL: https://api.mainnet-beta.solana.com
+
+Use seed-optimized ATA? (y/n): n
+
+Token mint address: TokenMintAddressHere...
+
+💰 Checking token balance...
+✅ Token balance: 1,000,000 tokens (6 decimals)
+
+📊 Fetching PumpSwap pool parameters...
+✅ Pool found!
+  Base mint: TokenMintAddressHere...
+  Quote mint: So11111111111111111111111111111111111111112 (WSOL)
+  Pool balance: 5,000,000 / 2.5 SOL
+
+💱 Executing sell...
+  Amount: 1,000,000 tokens (ALL)
+  Slippage: 99% (9900 basis points)
+  DEX: PumpSwap
+
+🚀 Sending transaction...
+✅ Sell successful!
+   Transaction signature 1: 5J7W8vN2BxC9K4...
+   Transaction signature 2: 3K9X2nM5DyH8F7...
+
+💰 Estimated received: ~0.48 SOL
+```
+
+**Advanced Options**:
+
+**Seed-Optimized ATA**:
+- Lower transaction fees
+- Recommended for frequent traders
+- Only use if you know your token uses seed-optimized accounts
+
+**Slippage**:
+- Default: 99% (9900 basis points)
+- Ensures fast execution even in volatile markets
+- Protects against MEV sandwich attacks by accepting any price within 99%
+
+**Token-2022 Support**:
+- Automatically detects Token-2022 program tokens
+- No manual configuration needed
+- Works with both standard SPL tokens and Token-2022 tokens
+
+**Important Notes**:
+- This operation sells **ALL** your tokens in one transaction
+- Transaction may use multiple signatures for SWQOS (Solana Write Queue Optimization System)
+- Always verify token mint address before confirming
+- Test on devnet first with small amounts
+- Check pool liquidity before large sells
+
 ## Tips and Best Practices
 
 ### Wallet Security

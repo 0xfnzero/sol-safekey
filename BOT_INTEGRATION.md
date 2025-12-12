@@ -90,6 +90,7 @@ This launches the full interactive menu with all wallet operations:
 - Unwrap WSOL → SOL
 - Transfer SPL tokens
 - Create durable nonce accounts
+- **PumpSwap Sell** - One-click token selling on PumpSwap DEX
 
 ## Security Implementation
 
@@ -259,7 +260,8 @@ Sol-SafeKey provides comprehensive wallet management:
 | Wallet creation | ✅ AES-256 encryption |
 | Password security | ✅ stdin pipe (memory only) |
 | SOL operations | ✅ Transfer, balance, wrap/unwrap |
-| Token support | ✅ SPL tokens |
+| Token support | ✅ SPL tokens, Token-2022 |
+| PumpSwap DEX | ✅ One-click sell with seed-optimized ATA |
 | Durable nonce | ✅ Offline transaction support |
 | Integration effort | 🎯 3 lines of code |
 
