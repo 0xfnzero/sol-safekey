@@ -57,7 +57,7 @@ pub mod bot_helper;
 pub mod operations;
 
 // Solana utilities for token operations
-#[cfg(feature = "solana-ops")]
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 pub mod solana_utils;
 
 // Re-export commonly used types

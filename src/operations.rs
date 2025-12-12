@@ -8,6 +8,7 @@ use colored::*;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::bs58;
 use std::str::FromStr;
 
 #[cfg(feature = "solana-ops")]
@@ -955,11 +956,10 @@ pub fn create_nonce_account(keypair: &Keypair, language: Language) -> Result<(),
 /// Entry point for Solana operations from interactive menu
 /// Prompts for keystore file and password, then shows operations menu
 pub fn show_solana_operations_menu(language: crate::interactive::Language) -> Result<(), String> {
-    use rpassword;
-    use crate::KeyManager;
-
     #[cfg(feature = "solana-ops")]
     {
+        use crate::KeyManager;
+
         // Convert language from interactive module to operations module
         let ops_language = match language {
             crate::interactive::Language::English => Language::English,
@@ -1031,4 +1031,170 @@ pub fn show_solana_operations_menu(language: crate::interactive::Language) -> Re
         let _ = language; // Suppress unused variable warning
         Err("Solana operations require the 'solana-ops' feature".to_string())
     }
+}
+
+/// PumpSwap 交互式卖出
+#[cfg(feature = "sol-trade-sdk")]
+pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
+    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    if language == Language::English {
+        println!("  {}", "🔥 PumpSwap Sell Tokens".bright_magenta().bold());
+    } else {
+        println!("  {}", "🔥 PumpSwap 卖出代币".bright_magenta().bold());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+    println!("\n{}", if language == Language::English {
+        "Current Wallet:"
+    } else {
+        "当前钱包:"
+    }.bright_green());
+    println!("  📍 {}", keypair.pubkey().to_string().bright_white());
+
+    // Step 1: 输入 RPC URL（可选）
+    println!();
+    let rpc_prompt = if language == Language::English {
+        format!("RPC URL (default: {}): ", DEFAULT_RPC_URL)
+    } else {
+        format!("RPC URL (默认: {}): ", DEFAULT_RPC_URL)
+    };
+    let rpc_url = read_input(&rpc_prompt, DEFAULT_RPC_URL);
+
+    // Step 2: 询问是否使用 seed 优化
+    println!();
+    if language == Language::English {
+        println!("{}", "🔧 Seed Optimization Configuration".bright_cyan());
+        println!("   Seed optimization is used to create optimized ATA addresses");
+        println!("   If your token ATA was created using the standard method, choose 'no'");
+        println!("   If unsure, it's recommended to choose 'no'");
+    } else {
+        println!("{}", "🔧 Seed 优化配置".bright_cyan());
+        println!("   Seed 优化用于创建优化的 ATA 地址，可以节省交易费用");
+        println!("   如果你的代币 ATA 是通过标准方式创建的，请选择 'no'");
+        println!("   如果不确定，建议选择 'no'");
+    }
+
+    print!("\n{} ", if language == Language::English {
+        "❓ Enable Seed Optimization? (yes/no, default: no):"
+    } else {
+        "❓ 启用 Seed 优化? (yes/no, 默认 no):"
+    }.yellow());
+    io::stdout().flush().map_err(|e| e.to_string())?;
+
+    let mut seed_input = String::new();
+    io::stdin().read_line(&mut seed_input).map_err(|e| e.to_string())?;
+    let use_seed = seed_input.trim().to_lowercase() == "yes" || seed_input.trim().to_lowercase() == "y";
+
+    if use_seed {
+        println!("{}", if language == Language::English {
+            "✅ Seed optimization enabled"
+        } else {
+            "✅ 已启用 Seed 优化"
+        }.green());
+    } else {
+        println!("{}", if language == Language::English {
+            "✅ Using standard ATA"
+        } else {
+            "✅ 使用标准 ATA"
+        }.green());
+    }
+
+    // Step 3: 输入 token mint 地址
+    println!();
+    let mint_prompt = if language == Language::English {
+        "Token Mint Address: "
+    } else {
+        "代币 Mint 地址: "
+    };
+    print!("{}", mint_prompt.yellow());
+    io::stdout().flush().map_err(|e| e.to_string())?;
+
+    let mut mint = String::new();
+    io::stdin().read_line(&mut mint).map_err(|e| e.to_string())?;
+    let mint = mint.trim();
+
+    if mint.is_empty() {
+        return Err(if language == Language::English {
+            "Token mint address cannot be empty".to_string()
+        } else {
+            "代币 Mint 地址不能为空".to_string()
+        });
+    }
+
+    // 验证 mint 地址格式
+    if let Err(e) = Pubkey::from_str(mint) {
+        return Err(if language == Language::English {
+            format!("Invalid token mint address: {}", e)
+        } else {
+            format!("无效的代币 Mint 地址: {}", e)
+        });
+    }
+
+    // Step 4: 使用默认滑点 99%
+    let slippage = 9900u64;
+    println!();
+    if language == Language::English {
+        println!("📊 Slippage tolerance: {}%", slippage as f64 / 100.0);
+    } else {
+        println!("📊 滑点容忍度: {}%", slippage as f64 / 100.0);
+    }
+
+    // Step 5: 调用异步卖出函数
+    println!();
+    if language == Language::English {
+        println!("{}", "🚀 Starting sell transaction...".bright_blue());
+    } else {
+        println!("{}", "🚀 开始卖出交易...".bright_blue());
+    }
+
+    // 使用当前 tokio runtime 执行异步操作
+    // 如果不在运行时中，则创建新运行时
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            // 在当前运行时中执行
+            // 使用 std::thread::spawn 避免嵌套运行时问题
+            let keypair_b58 = bs58::encode(keypair.to_bytes()).into_string();
+            let mint_clone = mint.to_string();
+            let rpc_url_clone = rpc_url.clone();
+
+            std::thread::spawn(move || {
+                let keypair_clone = Keypair::from_base58_string(&keypair_b58);
+                handle.block_on(async move {
+                    crate::solana_utils::pumpswap_sell::handle_pumpswap_sell_no_prompt(
+                        &keypair_clone,
+                        &mint_clone,
+                        &rpc_url_clone,
+                        slippage,
+                        use_seed,
+                        language,
+                    ).await
+                })
+            })
+            .join()
+            .map_err(|_| "Thread panicked".to_string())?
+        }
+        Err(_) => {
+            // 没有运行时，创建新的
+            let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+            rt.block_on(async {
+                crate::solana_utils::pumpswap_sell::handle_pumpswap_sell_no_prompt(
+                    keypair,
+                    mint,
+                    &rpc_url,
+                    slippage,
+                    use_seed,
+                    language,
+                ).await
+            })
+        }
+    }
+}
+
+#[cfg(not(feature = "sol-trade-sdk"))]
+pub fn pumpswap_sell_interactive(_keypair: &Keypair, language: Language) -> Result<(), String> {
+    Err(if language == Language::English {
+        "PumpSwap sell requires 'sol-trade-sdk' feature. Please rebuild with:\ncargo build --release --features sol-trade-sdk".to_string()
+    } else {
+        "PumpSwap 卖出需要 'sol-trade-sdk' 功能。请使用以下命令重新编译:\ncargo build --release --features sol-trade-sdk".to_string()
+    })
 }

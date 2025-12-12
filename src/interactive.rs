@@ -378,6 +378,9 @@ pub fn show_main_menu() -> Result<(), String> {
                 println!("  {}  {}", "12.".bright_cyan().bold(), if lang == Language::Chinese { "关闭 WSOL ATA" } else { "Close WSOL ATA" });
                 println!("  {}  {}", "13.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
                 println!("  {}  {}", "14.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+
+                #[cfg(feature = "sol-trade-sdk")]
+                println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
             }
             #[cfg(not(feature = "2fa"))]
             {
@@ -389,6 +392,9 @@ pub fn show_main_menu() -> Result<(), String> {
                 println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "关闭 WSOL ATA" } else { "Close WSOL ATA" });
                 println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
                 println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+
+                #[cfg(feature = "sol-trade-sdk")]
+                println!("  {}  {}", "12.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
             }
         }
 
@@ -460,13 +466,13 @@ pub fn show_main_menu() -> Result<(), String> {
 
             // Solana operations
             #[cfg(all(feature = "solana-ops", feature = "2fa"))]
-            "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" => {
+            "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
             }
             #[cfg(all(feature = "solana-ops", not(feature = "2fa")))]
-            "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" => {
+            "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
@@ -946,6 +952,8 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
         "12" => crate::operations::close_wsol_ata(&keypair, ops_language),
         "13" => crate::operations::transfer_token(&keypair, ops_language),
         "14" => crate::operations::create_nonce_account(&keypair, ops_language),
+        #[cfg(feature = "sol-trade-sdk")]
+        "15" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 
@@ -959,6 +967,8 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
         "9" => crate::operations::close_wsol_ata(&keypair, ops_language),
         "10" => crate::operations::transfer_token(&keypair, ops_language),
         "11" => crate::operations::create_nonce_account(&keypair, ops_language),
+        #[cfg(feature = "sol-trade-sdk")]
+        "12" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 
