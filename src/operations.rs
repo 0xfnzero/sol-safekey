@@ -1071,19 +1071,21 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
         println!("{}", "🔧 Seed 优化配置".bright_cyan());
         println!("   Seed 优化用于创建优化的 ATA 地址，可以节省交易费用");
         println!("   如果你的代币 ATA 是通过标准方式创建的，请选择 'no'");
-        println!("   如果不确定，建议选择 'no'");
+        println!("   如果不确定，建议选择 'yes'（默认）");
     }
 
     print!("\n{} ", if language == Language::English {
-        "❓ Enable Seed Optimization? (yes/no, default: no):"
+        "❓ Enable Seed Optimization? (yes/no, default: yes):"
     } else {
-        "❓ 启用 Seed 优化? (yes/no, 默认 no):"
+        "❓ 启用 Seed 优化? (yes/no, 默认 yes):"
     }.yellow());
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut seed_input = String::new();
     io::stdin().read_line(&mut seed_input).map_err(|e| e.to_string())?;
-    let use_seed = seed_input.trim().to_lowercase() == "yes" || seed_input.trim().to_lowercase() == "y";
+    let seed_input_trimmed = seed_input.trim().to_lowercase();
+    // 默认为 yes：空输入或 yes/y 都启用，只有明确输入 no/n 才禁用
+    let use_seed = seed_input_trimmed.is_empty() || seed_input_trimmed == "yes" || seed_input_trimmed == "y";
 
     if use_seed {
         println!("{}", if language == Language::English {
@@ -1099,21 +1101,29 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
         }.green());
     }
 
-    // Step 3: 输入 token mint 地址
+    // Step 3: 输入 token mint 地址（支持多个，用逗号或空格分割）
     println!();
-    let mint_prompt = if language == Language::English {
-        "Token Mint Address: "
+    if language == Language::English {
+        println!("{}", "💡 You can enter multiple mint addresses separated by commas or spaces".bright_cyan());
+        println!("   Tokens will be sold in the order entered");
     } else {
-        "代币 Mint 地址: "
+        println!("{}", "💡 可以输入多个 Mint 地址，用逗号或空格分割".bright_cyan());
+        println!("   将按输入顺序依次卖出");
+    }
+
+    let mint_prompt = if language == Language::English {
+        "\nToken Mint Address(es): "
+    } else {
+        "\n代币 Mint 地址: "
     };
     print!("{}", mint_prompt.yellow());
     io::stdout().flush().map_err(|e| e.to_string())?;
 
-    let mut mint = String::new();
-    io::stdin().read_line(&mut mint).map_err(|e| e.to_string())?;
-    let mint = mint.trim();
+    let mut mint_input = String::new();
+    io::stdin().read_line(&mut mint_input).map_err(|e| e.to_string())?;
+    let mint_input = mint_input.trim();
 
-    if mint.is_empty() {
+    if mint_input.is_empty() {
         return Err(if language == Language::English {
             "Token mint address cannot be empty".to_string()
         } else {
@@ -1121,13 +1131,42 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
         });
     }
 
-    // 验证 mint 地址格式
-    if let Err(e) = Pubkey::from_str(mint) {
+    // 解析多个 mint 地址（支持逗号和空格分割）
+    let mint_addresses: Vec<String> = mint_input
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+
+    if mint_addresses.is_empty() {
         return Err(if language == Language::English {
-            format!("Invalid token mint address: {}", e)
+            "No valid mint addresses found".to_string()
         } else {
-            format!("无效的代币 Mint 地址: {}", e)
+            "未找到有效的 Mint 地址".to_string()
         });
+    }
+
+    // 验证所有 mint 地址格式
+    for (idx, mint) in mint_addresses.iter().enumerate() {
+        if let Err(e) = Pubkey::from_str(mint) {
+            return Err(if language == Language::English {
+                format!("Invalid mint address #{}: {} (error: {})", idx + 1, mint, e)
+            } else {
+                format!("无效的 Mint 地址 #{}: {} (错误: {})", idx + 1, mint, e)
+            });
+        }
+    }
+
+    // 显示将要处理的 mint 地址
+    println!();
+    if language == Language::English {
+        println!("{}", format!("📋 Found {} token(s) to sell:", mint_addresses.len()).bright_green());
+    } else {
+        println!("{}", format!("📋 找到 {} 个代币待卖出:", mint_addresses.len()).bright_green());
+    }
+    for (idx, mint) in mint_addresses.iter().enumerate() {
+        println!("   {}. {}", idx + 1, mint.bright_white());
     }
 
     // Step 4: 使用默认滑点 99%
@@ -1139,55 +1178,138 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
         println!("📊 滑点容忍度: {}%", slippage as f64 / 100.0);
     }
 
-    // Step 5: 调用异步卖出函数
-    println!();
-    if language == Language::English {
-        println!("{}", "🚀 Starting sell transaction...".bright_blue());
-    } else {
-        println!("{}", "🚀 开始卖出交易...".bright_blue());
+    // Step 4.5: 批量卖出前统一确认
+    let total_mints = mint_addresses.len();
+    if total_mints > 1 {
+        println!();
+        if language == Language::English {
+            println!("{}", format!("⚠️  You are about to sell {} tokens", total_mints).yellow().bold());
+            println!("   All tokens will be sold automatically without individual confirmation");
+        } else {
+            println!("{}", format!("⚠️  您即将卖出 {} 个代币", total_mints).yellow().bold());
+            println!("   所有代币将自动卖出，不会逐个确认");
+        }
+
+        print!("\n{}", if language == Language::English {
+            "❓ Confirm batch sell? (yes/no, default: yes): "
+        } else {
+            "❓ 确认批量卖出? (yes/no, 默认 yes): "
+        }.yellow());
+        io::stdout().flush().map_err(|e| e.to_string())?;
+
+        let mut confirm = String::new();
+        io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
+        let confirm_trimmed = confirm.trim().to_lowercase();
+
+        if confirm_trimmed == "no" || confirm_trimmed == "n" {
+            return Err(if language == Language::English {
+                "❌ Batch sell cancelled".to_string()
+            } else {
+                "❌ 批量卖出已取消".to_string()
+            });
+        }
     }
 
-    // 使用当前 tokio runtime 执行异步操作
-    // 如果不在运行时中，则创建新运行时
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
-            // 在当前运行时中执行
-            // 使用 std::thread::spawn 避免嵌套运行时问题
-            let keypair_b58 = bs58::encode(keypair.to_bytes()).into_string();
-            let mint_clone = mint.to_string();
-            let rpc_url_clone = rpc_url.clone();
+    // Step 5: 循环处理每个 mint 地址
+    // 批量卖出时跳过单个确认（skip_confirmation=true）
+    let skip_confirmation = total_mints > 1;
+    for (idx, mint) in mint_addresses.iter().enumerate() {
+        println!();
+        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+        if language == Language::English {
+            println!("{}", format!("🚀 Processing token {}/{}", idx + 1, total_mints).bright_blue());
+            println!("   Mint: {}", mint.bright_white());
+        } else {
+            println!("{}", format!("🚀 处理第 {}/{} 个代币", idx + 1, total_mints).bright_blue());
+            println!("   Mint: {}", mint.bright_white());
+        }
+        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
 
-            std::thread::spawn(move || {
-                let keypair_clone = Keypair::from_base58_string(&keypair_b58);
-                handle.block_on(async move {
+        // 使用当前 tokio runtime 执行异步操作
+        let result = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // 在当前运行时中执行
+                let keypair_b58 = bs58::encode(keypair.to_bytes()).into_string();
+                let mint_clone = mint.to_string();
+                let rpc_url_clone = rpc_url.clone();
+
+                std::thread::spawn(move || {
+                    let keypair_clone = Keypair::from_base58_string(&keypair_b58);
+                    handle.block_on(async move {
+                        crate::solana_utils::pumpswap_sell::handle_pumpswap_sell_no_prompt(
+                            &keypair_clone,
+                            &mint_clone,
+                            &rpc_url_clone,
+                            slippage,
+                            use_seed,
+                            language,
+                            skip_confirmation,  // 传入 skip_confirmation 参数
+                        ).await
+                    })
+                })
+                .join()
+                .map_err(|_| "Thread panicked".to_string())?
+            }
+            Err(_) => {
+                // 没有运行时，创建新的
+                let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+                rt.block_on(async {
                     crate::solana_utils::pumpswap_sell::handle_pumpswap_sell_no_prompt(
-                        &keypair_clone,
-                        &mint_clone,
-                        &rpc_url_clone,
+                        keypair,
+                        mint,
+                        &rpc_url,
                         slippage,
                         use_seed,
                         language,
+                        skip_confirmation,  // 传入 skip_confirmation 参数
                     ).await
                 })
-            })
-            .join()
-            .map_err(|_| "Thread panicked".to_string())?
+            }
+        };
+
+        // 处理结果
+        match result {
+            Ok(_) => {
+                if language == Language::English {
+                    println!("\n{}", format!("✅ Token {}/{} sold successfully", idx + 1, total_mints).bright_green());
+                } else {
+                    println!("\n{}", format!("✅ 第 {}/{} 个代币卖出成功", idx + 1, total_mints).bright_green());
+                }
+            }
+            Err(e) => {
+                if language == Language::English {
+                    println!("\n{}", format!("❌ Token {}/{} failed: {}", idx + 1, total_mints, e).bright_red());
+                    println!("   Continuing with next token...");
+                } else {
+                    println!("\n{}", format!("❌ 第 {}/{} 个代币卖出失败: {}", idx + 1, total_mints, e).bright_red());
+                    println!("   继续处理下一个代币...");
+                }
+            }
         }
-        Err(_) => {
-            // 没有运行时，创建新的
-            let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-            rt.block_on(async {
-                crate::solana_utils::pumpswap_sell::handle_pumpswap_sell_no_prompt(
-                    keypair,
-                    mint,
-                    &rpc_url,
-                    slippage,
-                    use_seed,
-                    language,
-                ).await
-            })
+
+        // 如果不是最后一个，添加延迟
+        if idx < total_mints - 1 {
+            println!();
+            if language == Language::English {
+                println!("⏳ Waiting 2 seconds before next transaction...");
+            } else {
+                println!("⏳ 等待 2 秒后处理下一个交易...");
+            }
+            std::thread::sleep(std::time::Duration::from_secs(2));
         }
     }
+
+    // 所有交易完成
+    println!();
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    if language == Language::English {
+        println!("{}", "🎉 All transactions completed!".bright_green().bold());
+    } else {
+        println!("{}", "🎉 所有交易已完成！".bright_green().bold());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+    Ok(())
 }
 
 #[cfg(not(feature = "sol-trade-sdk"))]

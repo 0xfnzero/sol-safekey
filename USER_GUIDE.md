@@ -460,11 +460,11 @@ Account: 8yG3wE5dK2mH9L...
 Transaction signature: 6N9Z4qO7FyJ1M3...
 ```
 
-### 11. PumpSwap Sell (Token-2022 Support)
+### 11. PumpSwap Sell (Token-2022 & Batch Sell Support)
 
-**Purpose**: Sell all tokens on PumpSwap DEX with one click
+**Purpose**: Sell tokens on PumpSwap DEX with one click, supports single or batch selling
 
-**Use Case**: Quick exit from meme tokens or trading positions on PumpSwap
+**Use Case**: Quick exit from meme tokens or trading positions on PumpSwap, supports selling multiple tokens at once
 
 **Prerequisites**:
 - Token balance in your wallet (standard or seed-optimized ATA)
@@ -474,7 +474,9 @@ Transaction signature: 6N9Z4qO7FyJ1M3...
 **Features**:
 - Sells ALL tokens automatically (no amount input needed)
 - Default 99% slippage for fast execution
-- Supports both standard and seed-optimized Associated Token Accounts
+- Supports both standard and seed-optimized Associated Token Accounts (seed optimization enabled by default)
+- **Batch Selling**: Support multiple mint addresses separated by commas or spaces
+- **Smart Confirmation**: Single confirmation for batch selling, individual confirmation for single token
 - Bilingual interface (English/Chinese)
 - Token-2022 program support
 
@@ -482,14 +484,14 @@ Transaction signature: 6N9Z4qO7FyJ1M3...
 1. Select option `12` or `15` from main menu (depending on 2FA setup)
 2. If wallet not unlocked, provide keystore and password
 3. Enter RPC URL (e.g., `https://api.mainnet-beta.solana.com`)
-4. Choose seed optimization:
-   - `y`: Use seed-optimized ATA (lower fees)
+4. Choose seed optimization (default yes, just press Enter):
+   - Enter or `y`: Use seed-optimized ATA (lower fees, recommended)
    - `n`: Use standard ATA
-5. Enter token mint address
-6. Confirm transaction
+5. Enter token mint address(es) (supports multiple, separated by commas or spaces)
+6. Confirm once for batch selling, or individually for single token
 7. View transaction signatures
 
-**Example**:
+**Single Token Sell Example**:
 ```
 🔥 PumpSwap Sell Tokens
 
@@ -499,38 +501,99 @@ Password: ************
 
 Enter RPC URL: https://api.mainnet-beta.solana.com
 
-Use seed-optimized ATA? (y/n): n
+❓ Enable Seed Optimization? (yes/no, default: yes): [Press Enter]
+✅ Seed optimization enabled
 
-Token mint address: TokenMintAddressHere...
+Token Mint Address: TokenMintAddressHere...
+
+📋 Found 1 token(s) to sell:
+   1. TokenMintAddressHere...
+
+📊 Slippage tolerance: 99%
 
 💰 Checking token balance...
 ✅ Token balance: 1,000,000 tokens (6 decimals)
 
+❓ Confirm sell all? (yes/no, default: yes): [Press Enter]
+
 📊 Fetching PumpSwap pool parameters...
 ✅ Pool found!
-  Base mint: TokenMintAddressHere...
-  Quote mint: So11111111111111111111111111111111111111112 (WSOL)
-  Pool balance: 5,000,000 / 2.5 SOL
-
-💱 Executing sell...
-  Amount: 1,000,000 tokens (ALL)
-  Slippage: 99% (9900 basis points)
-  DEX: PumpSwap
 
 🚀 Sending transaction...
 ✅ Sell successful!
-   Transaction signature 1: 5J7W8vN2BxC9K4...
-   Transaction signature 2: 3K9X2nM5DyH8F7...
+   Transaction signature: 5J7W8vN2BxC9K4...
+```
 
-💰 Estimated received: ~0.48 SOL
+**Batch Sell Example**:
+```
+🔥 PumpSwap Sell Tokens
+
+Enter RPC URL: https://api.mainnet-beta.solana.com
+
+❓ Enable Seed Optimization? (yes/no, default: yes): [Press Enter]
+✅ Seed optimization enabled
+
+💡 You can enter multiple mint addresses separated by commas or spaces
+   Tokens will be sold in the order entered
+
+Token Mint Address(es): Token1Address..., Token2Address..., Token3Address...
+
+📋 Found 3 token(s) to sell:
+   1. Token1Address...
+   2. Token2Address...
+   3. Token3Address...
+
+📊 Slippage tolerance: 99%
+
+⚠️  You are about to sell 3 tokens
+   All tokens will be sold automatically without individual confirmation
+
+❓ Confirm batch sell? (yes/no, default: yes): [Press Enter]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Processing token 1/3
+   Mint: Token1Address...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Token Balance: 500,000 tokens
+✅ Token 1/3 sold successfully
+
+⏳ Waiting 2 seconds before next transaction...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Processing token 2/3
+   Mint: Token2Address...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Token Balance: 1,000,000 tokens
+✅ Token 2/3 sold successfully
+
+⏳ Waiting 2 seconds before next transaction...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Processing token 3/3
+   Mint: Token3Address...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Token Balance: 250,000 tokens
+✅ Token 3/3 sold successfully
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎉 All transactions completed!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **Advanced Options**:
 
 **Seed-Optimized ATA**:
 - Lower transaction fees
-- Recommended for frequent traders
-- Only use if you know your token uses seed-optimized accounts
+- Recommended for all users (enabled by default)
+- Automatically detects both standard and seed-optimized ATAs
+
+**Batch Selling**:
+- Support multiple mint addresses at once
+- Separate addresses with commas (,) or spaces
+- Tokens are sold in the order entered
+- Single confirmation for batch operations
+- Automatic 2-second delay between tokens
+- Individual token failure doesn't affect subsequent tokens
 
 **Slippage**:
 - Default: 99% (9900 basis points)

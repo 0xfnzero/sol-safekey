@@ -88,13 +88,14 @@ pub async fn handle_pumpswap_sell(
     println!("🔧 Token Program: {}", token_program);
 
     // 二次确认
-    print!("\n{}", "❓ 确认全部卖出? (yes/no): ".yellow());
+    print!("\n{}", "❓ 确认全部卖出? (yes/no, 默认 yes): ".yellow());
     use std::io::{self, Write};
     io::stdout().flush()?;
     let mut confirm = String::new();
     io::stdin().read_line(&mut confirm)?;
 
-    if confirm.trim().to_lowercase() != "yes" {
+    let confirm_trimmed = confirm.trim().to_lowercase();
+    if confirm_trimmed == "no" || confirm_trimmed == "n" {
         println!("{}", "❌ 操作已取消".red());
         return Ok(());
     }
@@ -104,7 +105,7 @@ pub async fn handle_pumpswap_sell(
     println!("   Token Program: {}", token_program);
 
     // 从链上获取PumpSwap参数
-    let pump_params = match PumpSwapParams::from_mint_by_rpc(&client.rpc, &mint_pubkey).await {
+    let pump_params = match PumpSwapParams::from_mint_by_rpc(&client.infrastructure.rpc, &mint_pubkey).await {
         Ok(params) => {
             println!("✅ 找到PumpSwap池子");
             println!("   Pool: {}", params.pool);
@@ -135,13 +136,13 @@ pub async fn handle_pumpswap_sell(
     };
 
     // 获取最新的 blockhash
-    let recent_blockhash = client.rpc.get_latest_blockhash().await?;
+    let recent_blockhash = client.infrastructure.rpc.get_latest_blockhash().await?;
 
     // 配置 Gas 策略
     let gas_fee_strategy = GasFeeStrategy::new();
     gas_fee_strategy.set_global_fee_strategy(
         150000, 150000, 500000, 500000,
-        0.001, 0.001, 256 * 1024, 0
+        0.001, 0.001
     );
 
     println!("\n{}", "🚀 构建卖出交易...".cyan());
@@ -204,9 +205,9 @@ fn ask_use_seed() -> Result<bool> {
     println!("\n{}", "🔧 Seed 优化配置".bright_cyan());
     println!("   Seed 优化用于创建优化的 ATA 地址，可以节省交易费用");
     println!("   如果你的代币 ATA 是通过标准方式创建的，请选择 'no'");
-    println!("   如果不确定，建议选择 'no'");
+    println!("   如果不确定，建议选择 'yes'（默认）");
 
-    print!("\n{} ", "❓ 启用 Seed 优化? (yes/no, 默认 no):".yellow());
+    print!("\n{} ", "❓ 启用 Seed 优化? (yes/no, 默认 yes):".yellow());
     use std::io::{self, Write};
     io::stdout().flush()?;
 
@@ -214,7 +215,8 @@ fn ask_use_seed() -> Result<bool> {
     io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
 
-    let use_seed = input == "yes" || input == "y";
+    // 默认为 yes：空输入或 yes/y 都启用，只有明确输入 no/n 才禁用
+    let use_seed = input.is_empty() || input == "yes" || input == "y";
 
     if use_seed {
         println!("{}", "✅ 已启用 Seed 优化".green());
@@ -236,7 +238,7 @@ async fn check_token_balance(
     use_seed: bool,
 ) -> Result<(u64, u8, Pubkey)> {
     // 获取 mint 账户信息
-    let mint_account = client.rpc.get_account(mint).await
+    let mint_account = client.infrastructure.rpc.get_account(mint).await
         .map_err(|e| anyhow::anyhow!("获取代币账户失败: {}", e))?;
 
     let token_program = mint_account.owner;
@@ -251,7 +253,7 @@ async fn check_token_balance(
 
     println!("   检查标准 ATA: {}", standard_ata);
 
-    match client.rpc.get_token_account_balance(&standard_ata).await {
+    match client.infrastructure.rpc.get_token_account_balance(&standard_ata).await {
         Ok(balance) => {
             let amount = balance.amount.parse::<u64>()
                 .map_err(|_| anyhow::anyhow!("解析余额失败"))?;
@@ -276,7 +278,7 @@ async fn check_token_balance(
 
         println!("   检查 Seed ATA: {}", seed_ata);
 
-        match client.rpc.get_token_account_balance(&seed_ata).await {
+        match client.infrastructure.rpc.get_token_account_balance(&seed_ata).await {
             Ok(balance) => {
                 let amount = balance.amount.parse::<u64>()
                     .map_err(|_| anyhow::anyhow!("解析余额失败"))?;
@@ -311,6 +313,7 @@ pub async fn handle_pumpswap_sell_no_prompt(
     slippage: u64,
     use_seed: bool,
     language: Language,
+    skip_confirmation: bool,  // 新增参数：是否跳过确认
 ) -> Result<(), String> {
     // 解析 mint 地址
     let mint_pubkey = Pubkey::from_str(mint)
@@ -368,31 +371,38 @@ pub async fn handle_pumpswap_sell_no_prompt(
     if language == Language::Chinese {
         println!("💰 代币余额: {} (原始数量: {})", readable_balance.to_string().green(), token_balance);
         println!("🔧 Token Program: {}", token_program);
-        println!("\n{}", "❓ 确认全部卖出? (yes/no): ".yellow());
     } else {
         println!("💰 Token Balance: {} (raw: {})", readable_balance.to_string().green(), token_balance);
         println!("🔧 Token Program: {}", token_program);
-        println!("\n{}", "❓ Confirm sell all? (yes/no): ".yellow());
     }
 
-    // 二次确认
-    use std::io::{self, Write};
-    print!("{}", if language == Language::Chinese {
-        "请输入 (yes/no): "
-    } else {
-        "Enter (yes/no): "
-    });
-    io::stdout().flush().map_err(|e| e.to_string())?;
-
-    let mut confirm = String::new();
-    io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
-
-    if confirm.trim().to_lowercase() != "yes" {
-        return Err(if language == Language::Chinese {
-            "❌ 操作已取消".to_string()
+    // 二次确认（如果需要）
+    if !skip_confirmation {
+        if language == Language::Chinese {
+            println!("\n{}", "❓ 确认全部卖出? (yes/no, 默认 yes): ".yellow());
         } else {
-            "❌ Operation cancelled".to_string()
+            println!("\n{}", "❓ Confirm sell all? (yes/no, default: yes): ".yellow());
+        }
+
+        use std::io::{self, Write};
+        print!("{}", if language == Language::Chinese {
+            "请输入 (yes/no, 默认 yes): "
+        } else {
+            "Enter (yes/no, default: yes): "
         });
+        io::stdout().flush().map_err(|e| e.to_string())?;
+
+        let mut confirm = String::new();
+        io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
+
+        let confirm_trimmed = confirm.trim().to_lowercase();
+        if confirm_trimmed == "no" || confirm_trimmed == "n" {
+            return Err(if language == Language::Chinese {
+                "❌ 操作已取消".to_string()
+            } else {
+                "❌ Operation cancelled".to_string()
+            });
+        }
     }
 
     if language == Language::Chinese {
@@ -402,7 +412,7 @@ pub async fn handle_pumpswap_sell_no_prompt(
     }
 
     // 从链上获取 PumpSwap 参数
-    let pump_params = PumpSwapParams::from_mint_by_rpc(&client.rpc, &mint_pubkey).await
+    let pump_params = PumpSwapParams::from_mint_by_rpc(&client.infrastructure.rpc, &mint_pubkey).await
         .map_err(|e| format!("获取池子参数失败: {}", e))?;
 
     if language == Language::Chinese {
@@ -418,14 +428,14 @@ pub async fn handle_pumpswap_sell_no_prompt(
     }
 
     // 获取最新的 blockhash
-    let recent_blockhash = client.rpc.get_latest_blockhash().await
+    let recent_blockhash = client.infrastructure.rpc.get_latest_blockhash().await
         .map_err(|e| format!("获取blockhash失败: {}", e))?;
 
     // 配置 Gas 策略
     let gas_fee_strategy = GasFeeStrategy::new();
     gas_fee_strategy.set_global_fee_strategy(
         150000, 150000, 500000, 500000,
-        0.001, 0.001, 256 * 1024, 0
+        0.001, 0.001
     );
 
     if language == Language::Chinese {
