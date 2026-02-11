@@ -41,6 +41,26 @@
 
 ---
 
+## 📑 Table of Contents
+
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+  - [For Bot Developers](#for-bot-developers)
+  - [As a Library](#as-a-library)
+- [📚 Documentation](#-documentation)
+- [🔐 Security](#-security)
+- [📦 Installation](#-installation)
+- [🛠️ Available Operations](#️-available-operations)
+  - [Wallet Management](#wallet-management)
+  - [SOL Operations](#sol-operations)
+  - [Token Operations](#token-operations)
+  - [Advanced Features](#advanced-features)
+- [📖 Examples](#-examples)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
+---
+
 ## ✨ Features
 
 - **🔐 AES-256 Encryption**: Military-grade encryption with PBKDF2 key derivation
@@ -103,18 +123,35 @@ solana-ops = ["sol-safekey/solana-ops"]
 
 ## 🛠️ Available Operations
 
-Via `safekey` command:
-- Create encrypted wallet
-- Query SOL balance
-- Transfer SOL
-- Wrap/Unwrap SOL ↔ WSOL
-- Transfer SPL tokens
-- Create durable nonce accounts
+### Wallet Management
+- **Create Wallet** - Generate new encrypted wallet with AES-256
+- **Import Wallet** - Import existing wallet from private key or seed phrase
+- **Export Wallet** - Export wallet to encrypted JSON format
+- **View Address** - Display wallet public address
+
+### SOL Operations
+- **Query Balance** - Check SOL balance in your wallet
+- **Transfer SOL** - Send SOL to other addresses
+- **Wrap SOL** - Convert SOL to WSOL (Wrapped SOL)
+- **Unwrap WSOL** - Convert WSOL back to SOL
+
+### Token Operations
+- **Transfer SPL Tokens** - Send SPL tokens to other addresses
+- **Query Token Balance** - Check token balances
 - **🔥 PumpSwap Sell** - Interactive token selling on PumpSwap DEX
-  - One-click sell all tokens
-  - Seed-optimized ATA support
-  - Default 99% slippage for fast execution
-  - Bilingual support (English/Chinese)
+  - **Batch Selling**: Sell multiple tokens at once (comma or space separated)
+  - **Smart Defaults**: Seed optimization and confirmations default to yes
+  - **One-click Sell**: Automatically sell all token balance
+  - **Seed-optimized ATA**: Lower transaction fees (enabled by default)
+  - **99% Slippage**: Fast execution even in volatile markets
+  - **Token-2022 Support**: Automatic detection and handling
+  - **Bilingual UI**: Full support for English and Chinese
+
+### Advanced Features
+- **Durable Nonce Accounts** - Create and manage nonce accounts for offline signing
+- **2FA Support** - Optional two-factor authentication for enhanced security
+- **Hardware Fingerprint** - Device-based security layer
+- **Secure Password Input** - stdin pipe only (never in environment variables)
 
 ## 📖 Examples
 
