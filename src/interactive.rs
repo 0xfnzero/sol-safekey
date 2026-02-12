@@ -426,6 +426,8 @@ pub fn show_main_menu() -> Result<(), String> {
                         eprintln!("❌ {}", e);
                     }
                 }
+                // 解锁/锁定后直接回到菜单，不再问「是否继续使用」
+                continue;
             }
             "l" => {
                 if session.is_unlocked() {
@@ -442,6 +444,7 @@ pub fn show_main_menu() -> Result<(), String> {
                         println!("\n⚠️ Wallet not unlocked");
                     }
                 }
+                continue;
             }
 
             // Advanced security features (2FA)
