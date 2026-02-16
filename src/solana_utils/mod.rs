@@ -6,6 +6,8 @@ pub mod cli;
 
 #[cfg(feature = "sol-trade-sdk")]
 pub mod pumpswap_sell;
+#[cfg(feature = "sol-trade-sdk")]
+pub mod pumpfun_sell;
 
 #[cfg(feature = "solana-ops")]
 pub use solana_ops::*;

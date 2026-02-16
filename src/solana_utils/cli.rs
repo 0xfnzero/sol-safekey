@@ -115,6 +115,22 @@ pub enum SolanaOpsCommand {
         #[arg(short, long, default_value = "9900")]
         slippage: u64,
     },
+
+    /// Pump.fun bonding curve sell (sell all balance, receive native SOL)
+    #[command(name = "pumpfun-sell")]
+    PumpFunSell {
+        /// Token mint address to sell
+        #[arg(short, long)]
+        mint: String,
+
+        /// RPC URL (defaults to mainnet)
+        #[arg(short, long, default_value = "https://api.mainnet-beta.solana.com")]
+        rpc_url: String,
+
+        /// Slippage tolerance in basis points (e.g., 100 = 1%, 9900 = 99%)
+        #[arg(short, long, default_value = "9900")]
+        slippage: u64,
+    },
 }
 
 /// Load keypair from encrypted file
@@ -425,6 +441,24 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                 let keypair = load_encrypted_keypair(encrypted_file)?;
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 rt.block_on(handle_pumpswap_sell(&keypair, &mint, &rpc_url, slippage))?;
+            }
+        }
+
+        SolanaOpsCommand::PumpFunSell { mint, rpc_url, slippage } => {
+            #[cfg(not(feature = "sol-trade-sdk"))]
+            {
+                return Err(anyhow::anyhow!(
+                    "Pump.fun sell requires 'sol-trade-sdk' feature. Please rebuild with:\ncargo build --release --features sol-trade-sdk"
+                ));
+            }
+
+            #[cfg(feature = "sol-trade-sdk")]
+            {
+                use crate::solana_utils::pumpfun_sell::handle_pumpfun_sell;
+
+                let keypair = load_encrypted_keypair(encrypted_file)?;
+                let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
+                rt.block_on(handle_pumpfun_sell(&keypair, &mint, &rpc_url, slippage))?;
             }
         }
     }

@@ -381,6 +381,8 @@ pub fn show_main_menu() -> Result<(), String> {
 
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
+                #[cfg(feature = "sol-trade-sdk")]
+                println!("  {}  {}", "16.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 内盘卖出代币" } else { "Pump.fun Bonding Curve Sell" });
             }
             #[cfg(not(feature = "2fa"))]
             {
@@ -395,6 +397,8 @@ pub fn show_main_menu() -> Result<(), String> {
 
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "12.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
+                #[cfg(feature = "sol-trade-sdk")]
+                println!("  {}  {}", "13.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 内盘卖出代币" } else { "Pump.fun Bonding Curve Sell" });
             }
         }
 
@@ -469,13 +473,13 @@ pub fn show_main_menu() -> Result<(), String> {
 
             // Solana operations
             #[cfg(all(feature = "solana-ops", feature = "2fa"))]
-            "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" => {
+            "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" | "16" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
             }
             #[cfg(all(feature = "solana-ops", not(feature = "2fa")))]
-            "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" => {
+            "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" | "13" => {
                 if let Err(e) = handle_solana_operation(choice, lang, &mut session) {
                     eprintln!("❌ {}", e);
                 }
@@ -957,6 +961,8 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
         "14" => crate::operations::create_nonce_account(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
         "15" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
+        #[cfg(feature = "sol-trade-sdk")]
+        "16" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 
@@ -972,6 +978,8 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
         "11" => crate::operations::create_nonce_account(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
         "12" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
+        #[cfg(feature = "sol-trade-sdk")]
+        "13" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 

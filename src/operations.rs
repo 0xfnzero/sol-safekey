@@ -1320,3 +1320,245 @@ pub fn pumpswap_sell_interactive(_keypair: &Keypair, language: Language) -> Resu
         "PumpSwap 卖出需要 'sol-trade-sdk' 功能。请使用以下命令重新编译:\ncargo build --release --features sol-trade-sdk".to_string()
     })
 }
+
+/// Pump.fun 内盘（bonding curve）交互式卖出
+#[cfg(feature = "sol-trade-sdk")]
+pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
+    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    if language == Language::English {
+        println!("  {}", "🔥 Pump.fun Bonding Curve Sell".bright_magenta().bold());
+    } else {
+        println!("  {}", "🔥 Pump.fun 内盘卖出代币".bright_magenta().bold());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+    println!("\n{}", if language == Language::English {
+        "Current Wallet:"
+    } else {
+        "当前钱包:"
+    }.bright_green());
+    println!("  📍 {}", keypair.pubkey().to_string().bright_white());
+
+    let rpc_prompt = if language == Language::English {
+        format!("RPC URL (default: {}): ", DEFAULT_RPC_URL)
+    } else {
+        format!("RPC URL (默认: {}): ", DEFAULT_RPC_URL)
+    };
+    let rpc_url = read_input(&rpc_prompt, DEFAULT_RPC_URL);
+
+    println!();
+    if language == Language::English {
+        println!("{}", "🔧 Seed Optimization Configuration".bright_cyan());
+        println!("   If your token ATA was created using the standard method, choose 'no'");
+        println!("   If unsure, it's recommended to choose 'no'");
+    } else {
+        println!("{}", "🔧 Seed 优化配置".bright_cyan());
+        println!("   如果你的代币 ATA 是通过标准方式创建的，请选择 'no'");
+        println!("   如果不确定，建议选择 'yes'（默认）");
+    }
+
+    print!("\n{} ", if language == Language::English {
+        "❓ Enable Seed Optimization? (yes/no, default: yes):"
+    } else {
+        "❓ 启用 Seed 优化? (yes/no, 默认 yes):"
+    }.yellow());
+    io::stdout().flush().map_err(|e| e.to_string())?;
+
+    let mut seed_input = String::new();
+    io::stdin().read_line(&mut seed_input).map_err(|e| e.to_string())?;
+    let seed_input_trimmed = seed_input.trim().to_lowercase();
+    let use_seed = seed_input_trimmed.is_empty() || seed_input_trimmed == "yes" || seed_input_trimmed == "y";
+
+    if language == Language::English {
+        println!("{}", "💡 You can enter multiple mint addresses separated by commas or spaces".bright_cyan());
+    } else {
+        println!("{}", "💡 可以输入多个 Mint 地址，用逗号或空格分割".bright_cyan());
+    }
+
+    let mint_prompt = if language == Language::English {
+        "\nToken Mint Address(es): "
+    } else {
+        "\n代币 Mint 地址: "
+    };
+    print!("{}", mint_prompt.yellow());
+    io::stdout().flush().map_err(|e| e.to_string())?;
+
+    let mut mint_input = String::new();
+    io::stdin().read_line(&mut mint_input).map_err(|e| e.to_string())?;
+    let mint_input = mint_input.trim();
+
+    if mint_input.is_empty() {
+        return Err(if language == Language::English {
+            "Token mint address cannot be empty".to_string()
+        } else {
+            "代币 Mint 地址不能为空".to_string()
+        });
+    }
+
+    let mint_addresses: Vec<String> = mint_input
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+
+    if mint_addresses.is_empty() {
+        return Err(if language == Language::English {
+            "No valid mint addresses found".to_string()
+        } else {
+            "未找到有效的 Mint 地址".to_string()
+        });
+    }
+
+    for (idx, mint) in mint_addresses.iter().enumerate() {
+        if let Err(e) = Pubkey::from_str(mint) {
+            return Err(if language == Language::English {
+                format!("Invalid mint address #{}: {} (error: {})", idx + 1, mint, e)
+            } else {
+                format!("无效的 Mint 地址 #{}: {} (错误: {})", idx + 1, mint, e)
+            });
+        }
+    }
+
+    println!();
+    if language == Language::English {
+        println!("{}", format!("📋 Found {} token(s) to sell:", mint_addresses.len()).bright_green());
+    } else {
+        println!("{}", format!("📋 找到 {} 个代币待卖出:", mint_addresses.len()).bright_green());
+    }
+    for (idx, mint) in mint_addresses.iter().enumerate() {
+        println!("   {}. {}", idx + 1, mint.bright_white());
+    }
+
+    let slippage = 9900u64;
+    println!();
+    if language == Language::English {
+        println!("📊 Slippage tolerance: {}%", slippage as f64 / 100.0);
+    } else {
+        println!("📊 滑点容忍度: {}%", slippage as f64 / 100.0);
+    }
+
+    let total_mints = mint_addresses.len();
+    if total_mints > 1 {
+        println!();
+        if language == Language::English {
+            println!("{}", format!("⚠️  You are about to sell {} tokens", total_mints).yellow().bold());
+        } else {
+            println!("{}", format!("⚠️  您即将卖出 {} 个代币", total_mints).yellow().bold());
+        }
+
+        print!("\n{}", if language == Language::English {
+            "❓ Confirm batch sell? (yes/no, default: yes): "
+        } else {
+            "❓ 确认批量卖出? (yes/no, 默认 yes): "
+        }.yellow());
+        io::stdout().flush().map_err(|e| e.to_string())?;
+
+        let mut confirm = String::new();
+        io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
+        let confirm_trimmed = confirm.trim().to_lowercase();
+
+        if confirm_trimmed == "no" || confirm_trimmed == "n" {
+            return Err(if language == Language::English {
+                "❌ Batch sell cancelled".to_string()
+            } else {
+                "❌ 批量卖出已取消".to_string()
+            });
+        }
+    }
+
+    let skip_confirmation = total_mints > 1;
+    for (idx, mint) in mint_addresses.iter().enumerate() {
+        println!();
+        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+        if language == Language::English {
+            println!("{}", format!("🚀 Processing token {}/{}", idx + 1, total_mints).bright_blue());
+            println!("   Mint: {}", mint.bright_white());
+        } else {
+            println!("{}", format!("🚀 处理第 {}/{} 个代币", idx + 1, total_mints).bright_blue());
+            println!("   Mint: {}", mint.bright_white());
+        }
+        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+        let result = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                let keypair_b58 = bs58::encode(keypair.to_bytes()).into_string();
+                let mint_clone = mint.to_string();
+                let rpc_url_clone = rpc_url.clone();
+
+                std::thread::spawn(move || {
+                    let keypair_clone = Keypair::from_base58_string(&keypair_b58);
+                    handle.block_on(async move {
+                        crate::solana_utils::pumpfun_sell::handle_pumpfun_sell_no_prompt(
+                            &keypair_clone,
+                            &mint_clone,
+                            &rpc_url_clone,
+                            slippage,
+                            use_seed,
+                            language,
+                            skip_confirmation,
+                        ).await
+                    })
+                })
+                .join()
+                .map_err(|_| "Thread panicked".to_string())?
+            }
+            Err(_) => {
+                let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+                rt.block_on(async {
+                    crate::solana_utils::pumpfun_sell::handle_pumpfun_sell_no_prompt(
+                        keypair,
+                        mint,
+                        &rpc_url,
+                        slippage,
+                        use_seed,
+                        language,
+                        skip_confirmation,
+                    ).await
+                })
+            }
+        };
+
+        match result {
+            Ok(_) => {
+                if language == Language::English {
+                    println!("\n{}", format!("✅ Token {}/{} sold successfully", idx + 1, total_mints).bright_green());
+                } else {
+                    println!("\n{}", format!("✅ 第 {}/{} 个代币卖出成功", idx + 1, total_mints).bright_green());
+                }
+            }
+            Err(e) => {
+                if language == Language::English {
+                    println!("\n{}", format!("❌ Token {}/{} failed: {}", idx + 1, total_mints, e).bright_red());
+                } else {
+                    println!("\n{}", format!("❌ 第 {}/{} 个代币卖出失败: {}", idx + 1, total_mints, e).bright_red());
+                }
+            }
+        }
+
+        if idx < total_mints - 1 {
+            println!();
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    }
+
+    println!();
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    if language == Language::English {
+        println!("{}", "🎉 All transactions completed!".bright_green().bold());
+    } else {
+        println!("{}", "🎉 所有交易已完成！".bright_green().bold());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+    Ok(())
+}
+
+#[cfg(not(feature = "sol-trade-sdk"))]
+pub fn pumpfun_sell_interactive(_keypair: &Keypair, language: Language) -> Result<(), String> {
+    Err(if language == Language::English {
+        "Pump.fun sell requires 'sol-trade-sdk' feature. Please rebuild with:\ncargo build --release --features sol-trade-sdk".to_string()
+    } else {
+        "Pump.fun 内盘卖出需要 'sol-trade-sdk' 功能。请使用以下命令重新编译:\ncargo build --release --features sol-trade-sdk".to_string()
+    })
+}
