@@ -612,6 +612,41 @@ Keystore 路径: keystore.json
 - 先在 devnet 上用小额测试
 - 大额卖出前检查池子流动性
 
+### 12. Pump.fun 卖出
+
+在 **Pump.fun 内盘**（bonding curve）上卖出代币换原生 SOL。适用于代币仍在 Pump.fun、尚未迁移到 Raydium 的情况；已迁移代币请使用 **PumpSwap 卖出**（第 11 节）。
+
+**用途**：在 bonding curve 上一键卖出 Pump.fun 代币，直接获得 SOL。
+
+**前置条件**：
+- 已解锁钱包，且代币在 ATA 中
+- 代币须为 Pump.fun bonding curve 代币（mint 属于 Pump.fun 程序）
+- 有足够 SOL 支付交易费
+
+**功能**：
+- 一次性卖出**全部**代币余额
+- 可选 seed 优化 ATA（与 PumpSwap 相同，降低手续费）
+- 支持 Token-2022（自动检测）
+- 中英双语提示
+
+**步骤**：
+1. 运行 `sol-safekey`（或 `./你的bot safekey`）并解锁钱包。
+2. 选择 **13**（Pump.fun 卖出）或 **16**（Pump.fun 卖出，无 2FA 确认）。
+3. 按提示输入 RPC URL（或使用默认）。
+4. 按提示选择是否使用 seed 优化 ATA。
+5. 输入代币 **mint 地址**（Pump.fun 代币）。
+6. 确认数量并签名，交易发送后输出签名。
+
+**示例（命令行）**：
+```bash
+./你的bot safekey pumpfun-sell --mint <MINT地址>
+```
+
+**重要提示**：
+- 仅适用于仍在 Pump.fun bonding curve 上的代币；已迁移代币请用 PumpSwap 卖出。
+- 确认前务必核对 mint 地址。
+- 尽可能先在 devnet 上小额测试。
+
 ## 提示和最佳实践
 
 ### 钱包安全

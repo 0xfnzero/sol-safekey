@@ -612,6 +612,41 @@ Token Mint Address(es): Token1Address..., Token2Address..., Token3Address...
 - Test on devnet first with small amounts
 - Check pool liquidity before large sells
 
+### 12. Pump.fun Sell
+
+Sell tokens on **Pump.fun internal market** (bonding curve) for native SOL. Use this when the token is still on Pump.fun (not yet migrated to Raydium); for migrated tokens use **PumpSwap Sell** (section 11) instead.
+
+**Purpose**: One-click sell of Pump.fun tokens on the bonding curve, receiving SOL directly.
+
+**Prerequisites**:
+- Unlocked wallet with the token in an ATA
+- Token must be a Pump.fun bonding-curve token (mint on Pump.fun program)
+- Sufficient SOL for transaction fees
+
+**Features**:
+- Sells **all** token balance in one transaction
+- Optional seed-optimized ATA (same as PumpSwap; reduces fees)
+- Token-2022 support (auto-detected)
+- Bilingual prompts (English/Chinese)
+
+**Steps**:
+1. Run `sol-safekey` (or `./your-bot safekey`) and unlock your wallet.
+2. Choose **13** (Pump.fun Sell) or **16** (Pump.fun Sell, no 2FA prompt).
+3. Enter RPC URL when prompted (or use default).
+4. Choose whether to use seed-optimized ATA when asked.
+5. Enter the token **mint address** (Pump.fun token).
+6. Confirm the amount and sign. Transaction is sent and signature is printed.
+
+**Example (CLI)**:
+```bash
+./your-bot safekey pumpfun-sell --mint <MINT_ADDRESS>
+```
+
+**Important Notes**:
+- Only for tokens still on Pump.fun bonding curve. Migrated tokens should use PumpSwap Sell.
+- Always verify the mint address before confirming.
+- Test on devnet with small amounts first when possible.
+
 ## Tips and Best Practices
 
 ### Wallet Security

@@ -91,6 +91,7 @@ This launches the full interactive menu with all wallet operations:
 - Transfer SPL tokens
 - Create durable nonce accounts
 - **PumpSwap Sell** - One-click token selling on PumpSwap DEX
+- **Pump.fun Sell** - One-click token selling on Pump.fun bonding curve (internal market)
 
 ## Security Implementation
 
@@ -262,6 +263,7 @@ Sol-SafeKey provides comprehensive wallet management:
 | SOL operations | ✅ Transfer, balance, wrap/unwrap |
 | Token support | ✅ SPL tokens, Token-2022 |
 | PumpSwap DEX | ✅ One-click sell with seed-optimized ATA |
+| Pump.fun (bonding curve) | ✅ One-click sell on internal market |
 | Durable nonce | ✅ Offline transaction support |
 | Integration effort | 🎯 3 lines of code |
 

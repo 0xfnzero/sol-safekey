@@ -65,7 +65,7 @@
 
 - **🔐 AES-256 Encryption**: Military-grade encryption with PBKDF2 key derivation
 - **🤖 Bot Integration**: Simple 3-line integration for Solana trading bots
-- **💰 Solana Operations**: Built-in support for transfers, wrapping, token operations
+- **💰 Solana Operations**: Built-in support for transfers, wrapping, token operations, PumpSwap DEX sell, and **Pump.fun internal market (bonding curve) sell**
 - **🔒 Secure by Default**: Password via stdin pipe (memory only, never environment variables)
 - **🎯 Interactive CLI**: Full-featured command-line interface with `safekey` command
 
@@ -146,6 +146,11 @@ solana-ops = ["sol-safekey/solana-ops"]
   - **99% Slippage**: Fast execution even in volatile markets
   - **Token-2022 Support**: Automatic detection and handling
   - **Bilingual UI**: Full support for English and Chinese
+- **🔥 Pump.fun Internal Market Sell** - One-click sell on Pump.fun bonding curve (internal market only; for migrated tokens use PumpSwap)
+  - **Internal market (bonding curve)**: Sell tokens that are still on Pump.fun’s bonding curve for native SOL
+  - **Seed-optimized ATA**: Lower fees (optional, same as PumpSwap)
+  - **Token-2022 Support**: Automatic detection
+  - **Bilingual UI**: English and Chinese
 
 ### Advanced Features
 - **Durable Nonce Accounts** - Create and manage nonce accounts for offline signing
@@ -159,7 +164,7 @@ See `examples/bot_example.rs` for a complete bot integration example.
 
 ## 🤝 Contributing
 
-Contributions welcome! Please ensure security best practices are followed.
+Contributions welcome! Please ensure security best practices are followed. **Use English for commit and PR descriptions.**
 
 ## 📄 License
 

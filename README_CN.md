@@ -65,7 +65,7 @@
 
 - **🔐 AES-256 加密**: 军事级加密，使用 PBKDF2 密钥派生
 - **🤖 Bot 集成**: 3 行代码即可集成到 Solana 交易机器人
-- **💰 Solana 操作**: 内置转账、wrap、token 等链上操作
+- **💰 Solana 操作**: 内置转账、wrap、token、PumpSwap DEX 卖出及 **Pump.fun 内盘（bonding curve）卖出**
 - **🔒 默认安全**: 密码通过 stdin 管道传递（仅内存，永不使用环境变量）
 - **🎯 交互式 CLI**: 完整的命令行界面，通过 `safekey` 命令使用
 
@@ -146,6 +146,11 @@ solana-ops = ["sol-safekey/solana-ops"]
   - **99% 滑点**：即使在波动市场中也能快速成交
   - **Token-2022 支持**：自动检测和处理
   - **双语界面**：完整支持中文和英文
+- **🔥 Pump.fun 内盘卖出** - 在 Pump.fun 内盘（bonding curve）上一键卖出代币换原生 SOL（仅限未迁移代币；已迁移请用 PumpSwap）
+  - **内盘（bonding curve）**：代币仍在 Pump.fun 内盘时，直接卖出换 SOL
+  - **Seed 优化 ATA**：可选，与 PumpSwap 一致
+  - **Token-2022 支持**：自动检测
+  - **双语界面**：中文与英文
 
 ### 高级功能
 - **Durable Nonce 账户** - 创建和管理 nonce 账户用于离线签名
@@ -159,7 +164,7 @@ solana-ops = ["sol-safekey/solana-ops"]
 
 ## 🤝 贡献
 
-欢迎贡献！请确保遵循安全最佳实践。
+欢迎贡献！请确保遵循安全最佳实践。**提交与 PR 说明请使用英文。**
 
 ## 📄 许可证
 
