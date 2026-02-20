@@ -1554,7 +1554,7 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
     Ok(())
 }
 
-/// Pump (Pump.fun) 返现：查看说明并领取（原生 SOL）
+/// Pump (Pump.fun) 返现：查询余额 → 显示 → 确认 → 领取（原生 SOL）
 #[cfg(feature = "sol-trade-sdk")]
 pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
     use std::sync::Arc;
@@ -1585,6 +1585,69 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
     };
     let rpc_url = read_input(&rpc_prompt, DEFAULT_RPC_URL);
 
+    // Step 1: 查询 UserVolumeAccumulator PDA 余额
+    if language == Language::English {
+        println!("\n{}", "🔍 Querying cashback balance...".bright_cyan());
+    } else {
+        println!("\n{}", "🔍 正在查询返现余额...".bright_cyan());
+    }
+
+    let pda = sol_trade_sdk::instruction::utils::pumpfun::get_user_volume_accumulator_pda(&keypair.pubkey())
+        .ok_or_else(|| if language == Language::English {
+            "Failed to derive UserVolumeAccumulator PDA".to_string()
+        } else {
+            "无法派生 UserVolumeAccumulator PDA 地址".to_string()
+        })?;
+
+    let rpc_client = RpcClient::new(rpc_url.clone());
+    let pda_balance_lamports = rpc_client.get_balance(&pda).unwrap_or(0);
+    let rent_exempt_min: u64 = 890_880;
+    let claimable_lamports = pda_balance_lamports.saturating_sub(rent_exempt_min);
+    let claimable_sol = claimable_lamports as f64 / 1_000_000_000.0;
+
+    // Step 2: 显示余额
+    println!("\n{}", if language == Language::English {
+        "📊 Cashback Info:"
+    } else {
+        "📊 返现信息:"
+    }.bright_yellow());
+    println!("  PDA: {}", pda.to_string().bright_white());
+    if language == Language::English {
+        println!("  PDA Balance: {} lamports ({:.9} SOL)", pda_balance_lamports, pda_balance_lamports as f64 / 1e9);
+        println!("  Claimable:   {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+    } else {
+        println!("  PDA 余额:    {} lamports ({:.9} SOL)", pda_balance_lamports, pda_balance_lamports as f64 / 1e9);
+        println!("  可领取:      {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+    }
+
+    if claimable_lamports == 0 {
+        if language == Language::English {
+            println!("\n{}", "ℹ️  No cashback available to claim.".bright_yellow());
+        } else {
+            println!("\n{}", "ℹ️  暂无可领取的返现。".bright_yellow());
+        }
+        return Ok(());
+    }
+
+    // Step 3: 确认是否领取
+    let confirm_prompt = if language == Language::English {
+        format!("\nClaim {:.9} SOL? (yes/no) [no]: ", claimable_sol)
+    } else {
+        format!("\n领取 {:.9} SOL? (yes/no) [no]: ", claimable_sol)
+    };
+    let confirm = read_input(&confirm_prompt, "no");
+
+    if confirm.to_lowercase() != "yes" {
+        let msg = if language == Language::English {
+            "❌ Claim cancelled"
+        } else {
+            "❌ 已取消领取"
+        };
+        println!("\n{}", msg.red());
+        return Ok(());
+    }
+
+    // Step 4: 执行领取
     if language == Language::English {
         println!("\n{}", "🚀 Claiming...".bright_cyan());
     } else {
@@ -1640,7 +1703,7 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
     Ok(())
 }
 
-/// PumpSwap 返现：查看说明并领取（WSOL）
+/// PumpSwap 返现：查询余额 → 显示 → 确认 → 领取（WSOL）
 #[cfg(feature = "sol-trade-sdk")]
 pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
     use std::sync::Arc;
@@ -1671,6 +1734,68 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
     };
     let rpc_url = read_input(&rpc_prompt, DEFAULT_RPC_URL);
 
+    // Step 1: 查询 PumpSwap UserVolumeAccumulator 的 WSOL ATA 余额
+    if language == Language::English {
+        println!("\n{}", "🔍 Querying cashback balance...".bright_cyan());
+    } else {
+        println!("\n{}", "🔍 正在查询返现余额...".bright_cyan());
+    }
+
+    let wsol_ata = sol_trade_sdk::instruction::utils::pumpswap::get_user_volume_accumulator_wsol_ata(&keypair.pubkey())
+        .ok_or_else(|| if language == Language::English {
+            "Failed to derive PumpSwap UserVolumeAccumulator WSOL ATA".to_string()
+        } else {
+            "无法派生 PumpSwap UserVolumeAccumulator WSOL ATA 地址".to_string()
+        })?;
+
+    let rpc_client = RpcClient::new(rpc_url.clone());
+    let claimable_lamports = match rpc_client.get_token_account_balance(&wsol_ata) {
+        Ok(balance) => balance.amount.parse::<u64>().unwrap_or(0),
+        Err(_) => 0,
+    };
+    let claimable_sol = claimable_lamports as f64 / 1_000_000_000.0;
+
+    // Step 2: 显示余额
+    println!("\n{}", if language == Language::English {
+        "📊 Cashback Info:"
+    } else {
+        "📊 返现信息:"
+    }.bright_yellow());
+    println!("  WSOL ATA: {}", wsol_ata.to_string().bright_white());
+    if language == Language::English {
+        println!("  Claimable: {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+    } else {
+        println!("  可领取:   {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+    }
+
+    if claimable_lamports == 0 {
+        if language == Language::English {
+            println!("\n{}", "ℹ️  No cashback available to claim.".bright_yellow());
+        } else {
+            println!("\n{}", "ℹ️  暂无可领取的返现。".bright_yellow());
+        }
+        return Ok(());
+    }
+
+    // Step 3: 确认是否领取
+    let confirm_prompt = if language == Language::English {
+        format!("\nClaim {:.9} SOL (WSOL)? (yes/no) [no]: ", claimable_sol)
+    } else {
+        format!("\n领取 {:.9} SOL (WSOL)? (yes/no) [no]: ", claimable_sol)
+    };
+    let confirm = read_input(&confirm_prompt, "no");
+
+    if confirm.to_lowercase() != "yes" {
+        let msg = if language == Language::English {
+            "❌ Claim cancelled"
+        } else {
+            "❌ 已取消领取"
+        };
+        println!("\n{}", msg.red());
+        return Ok(());
+    }
+
+    // Step 4: 执行领取
     if language == Language::English {
         println!("\n{}", "🚀 Claiming...".bright_cyan());
     } else {
