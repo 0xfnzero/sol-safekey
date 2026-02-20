@@ -131,6 +131,22 @@ pub enum SolanaOpsCommand {
         #[arg(short, long, default_value = "9900")]
         slippage: u64,
     },
+
+    /// View and claim Pump (Pump.fun) cashback (native SOL)
+    #[command(name = "pumpfun-cashback")]
+    PumpFunCashback {
+        /// RPC URL (defaults to mainnet)
+        #[arg(short, long, default_value = "https://api.mainnet-beta.solana.com")]
+        rpc_url: String,
+    },
+
+    /// View and claim PumpSwap cashback (WSOL)
+    #[command(name = "pumpswap-cashback")]
+    PumpSwapCashback {
+        /// RPC URL (defaults to mainnet)
+        #[arg(short, long, default_value = "https://api.mainnet-beta.solana.com")]
+        rpc_url: String,
+    },
 }
 
 /// Load keypair from encrypted file
@@ -459,6 +475,70 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                 let keypair = load_encrypted_keypair(encrypted_file)?;
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 rt.block_on(handle_pumpfun_sell(&keypair, &mint, &rpc_url, slippage))?;
+            }
+        }
+
+        SolanaOpsCommand::PumpFunCashback { rpc_url } => {
+            #[cfg(not(feature = "sol-trade-sdk"))]
+            {
+                return Err(anyhow::anyhow!(
+                    "Pump cashback requires 'sol-trade-sdk' feature. Please rebuild with:\ncargo build --release --features sol-trade-sdk"
+                ));
+            }
+
+            #[cfg(feature = "sol-trade-sdk")]
+            {
+                use sol_trade_sdk::{common::TradeConfig, SolanaTrade};
+                use solana_commitment_config::CommitmentConfig;
+
+                let keypair = load_encrypted_keypair(encrypted_file)?;
+                let payer = std::sync::Arc::new(keypair.insecure_clone());
+                let config = TradeConfig {
+                    rpc_url: rpc_url.clone(),
+                    swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url.clone())],
+                    commitment: CommitmentConfig::confirmed(),
+                    create_wsol_ata_on_startup: false,
+                    use_seed_optimize: false,
+                };
+                let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
+                let client = rt.block_on(SolanaTrade::new(payer, config));
+                println!("\n{}", "💰 Claiming Pump (Pump.fun) cashback (native SOL)...".cyan());
+                let sig = rt.block_on(client.claim_cashback_pumpfun())?;
+                println!("\n{}", "✅ Claim successful!".green().bold());
+                println!("Signature: {}", sig.yellow());
+                println!("Explorer: https://solscan.io/tx/{}", sig);
+            }
+        }
+
+        SolanaOpsCommand::PumpSwapCashback { rpc_url } => {
+            #[cfg(not(feature = "sol-trade-sdk"))]
+            {
+                return Err(anyhow::anyhow!(
+                    "PumpSwap cashback requires 'sol-trade-sdk' feature. Please rebuild with:\ncargo build --release --features sol-trade-sdk"
+                ));
+            }
+
+            #[cfg(feature = "sol-trade-sdk")]
+            {
+                use sol_trade_sdk::{common::TradeConfig, SolanaTrade};
+                use solana_commitment_config::CommitmentConfig;
+
+                let keypair = load_encrypted_keypair(encrypted_file)?;
+                let payer = std::sync::Arc::new(keypair.insecure_clone());
+                let config = TradeConfig {
+                    rpc_url: rpc_url.clone(),
+                    swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url.clone())],
+                    commitment: CommitmentConfig::confirmed(),
+                    create_wsol_ata_on_startup: false,
+                    use_seed_optimize: false,
+                };
+                let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
+                let client = rt.block_on(SolanaTrade::new(payer, config));
+                println!("\n{}", "💰 Claiming PumpSwap cashback (WSOL)...".cyan());
+                let sig = rt.block_on(client.claim_cashback_pumpswap())?;
+                println!("\n{}", "✅ Claim successful!".green().bold());
+                println!("Signature: {}", sig.yellow());
+                println!("Explorer: https://solscan.io/tx/{}", sig);
             }
         }
     }

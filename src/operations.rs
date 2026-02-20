@@ -1554,11 +1554,151 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
     Ok(())
 }
 
+/// Pump (Pump.fun) 返现：查看说明并领取（原生 SOL）
+#[cfg(feature = "sol-trade-sdk")]
+pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
+    use std::sync::Arc;
+    use sol_trade_sdk::{common::TradeConfig, SolanaTrade};
+    use solana_commitment_config::CommitmentConfig;
+
+    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    if language == Language::English {
+        println!("  {}", "💰 Pump (Pump.fun) Cashback – View & Claim".bright_magenta().bold());
+        println!("  {}", "   Cashback is native SOL from trading on Pump.fun.".bright_white());
+    } else {
+        println!("  {}", "💰 Pump (Pump.fun) 返现 – 查看与领取".bright_magenta().bold());
+        println!("  {}", "   返现为在 Pump.fun 交易累积的原生 SOL。".bright_white());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+    println!("\n{}", if language == Language::English {
+        "Current Wallet:"
+    } else {
+        "当前钱包:"
+    }.bright_green());
+    println!("  📍 {}", keypair.pubkey().to_string().bright_white());
+
+    let rpc_prompt = if language == Language::English {
+        format!("RPC URL (default: {}): ", DEFAULT_RPC_URL)
+    } else {
+        format!("RPC URL (默认: {}): ", DEFAULT_RPC_URL)
+    };
+    let rpc_url = read_input(&rpc_prompt, DEFAULT_RPC_URL);
+
+    if language == Language::English {
+        println!("\n{}", "🚀 Claiming...".bright_cyan());
+    } else {
+        println!("\n{}", "🚀 正在领取...".bright_cyan());
+    }
+
+    let payer = Arc::new(keypair.insecure_clone());
+    let config = TradeConfig {
+        rpc_url: rpc_url.clone(),
+        swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url)],
+        commitment: CommitmentConfig::confirmed(),
+        create_wsol_ata_on_startup: false,
+        use_seed_optimize: false,
+    };
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let client = rt.block_on(SolanaTrade::new(payer, config));
+    let sig = rt.block_on(client.claim_cashback_pumpfun()).map_err(|e| e.to_string())?;
+
+    if language == Language::English {
+        println!("{}", "✅ Claim successful!".bright_green().bold());
+        println!("Signature: {}", sig.yellow());
+        println!("Explorer: https://solscan.io/tx/{}", sig);
+    } else {
+        println!("{}", "✅ 领取成功！".bright_green().bold());
+        println!("签名: {}", sig.yellow());
+        println!("浏览器: https://solscan.io/tx/{}", sig);
+    }
+    Ok(())
+}
+
+/// PumpSwap 返现：查看说明并领取（WSOL）
+#[cfg(feature = "sol-trade-sdk")]
+pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
+    use std::sync::Arc;
+    use sol_trade_sdk::{common::TradeConfig, SolanaTrade};
+    use solana_commitment_config::CommitmentConfig;
+
+    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    if language == Language::English {
+        println!("  {}", "💰 PumpSwap Cashback – View & Claim".bright_magenta().bold());
+        println!("  {}", "   Cashback is WSOL from trading on PumpSwap.".bright_white());
+    } else {
+        println!("  {}", "💰 PumpSwap 返现 – 查看与领取".bright_magenta().bold());
+        println!("  {}", "   返现为在 PumpSwap 交易累积的 WSOL。".bright_white());
+    }
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+
+    println!("\n{}", if language == Language::English {
+        "Current Wallet:"
+    } else {
+        "当前钱包:"
+    }.bright_green());
+    println!("  📍 {}", keypair.pubkey().to_string().bright_white());
+
+    let rpc_prompt = if language == Language::English {
+        format!("RPC URL (default: {}): ", DEFAULT_RPC_URL)
+    } else {
+        format!("RPC URL (默认: {}): ", DEFAULT_RPC_URL)
+    };
+    let rpc_url = read_input(&rpc_prompt, DEFAULT_RPC_URL);
+
+    if language == Language::English {
+        println!("\n{}", "🚀 Claiming...".bright_cyan());
+    } else {
+        println!("\n{}", "🚀 正在领取...".bright_cyan());
+    }
+
+    let payer = Arc::new(keypair.insecure_clone());
+    let config = TradeConfig {
+        rpc_url: rpc_url.clone(),
+        swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url)],
+        commitment: CommitmentConfig::confirmed(),
+        create_wsol_ata_on_startup: false,
+        use_seed_optimize: false,
+    };
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let client = rt.block_on(SolanaTrade::new(payer, config));
+    let sig = rt.block_on(client.claim_cashback_pumpswap()).map_err(|e| e.to_string())?;
+
+    if language == Language::English {
+        println!("{}", "✅ Claim successful!".bright_green().bold());
+        println!("Signature: {}", sig.yellow());
+        println!("Explorer: https://solscan.io/tx/{}", sig);
+    } else {
+        println!("{}", "✅ 领取成功！".bright_green().bold());
+        println!("签名: {}", sig.yellow());
+        println!("浏览器: https://solscan.io/tx/{}", sig);
+    }
+    Ok(())
+}
+
 #[cfg(not(feature = "sol-trade-sdk"))]
 pub fn pumpfun_sell_interactive(_keypair: &Keypair, language: Language) -> Result<(), String> {
     Err(if language == Language::English {
         "Pump.fun sell requires 'sol-trade-sdk' feature. Please rebuild with:\ncargo build --release --features sol-trade-sdk".to_string()
     } else {
         "Pump.fun 内盘卖出需要 'sol-trade-sdk' 功能。请使用以下命令重新编译:\ncargo build --release --features sol-trade-sdk".to_string()
+    })
+}
+
+#[cfg(not(feature = "sol-trade-sdk"))]
+pub fn pumpfun_cashback_interactive(_keypair: &Keypair, language: Language) -> Result<(), String> {
+    Err(if language == Language::English {
+        "Pump cashback requires 'sol-trade-sdk' feature.".to_string()
+    } else {
+        "Pump 返现需要 'sol-trade-sdk' 功能。".to_string()
+    })
+}
+
+#[cfg(not(feature = "sol-trade-sdk"))]
+pub fn pumpswap_cashback_interactive(_keypair: &Keypair, language: Language) -> Result<(), String> {
+    Err(if language == Language::English {
+        "PumpSwap cashback requires 'sol-trade-sdk' feature.".to_string()
+    } else {
+        "PumpSwap 返现需要 'sol-trade-sdk' 功能。".to_string()
     })
 }
