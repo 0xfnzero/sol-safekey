@@ -384,7 +384,7 @@ pub fn show_main_menu() -> Result<(), String> {
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "16.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 内盘卖出代币" } else { "Pump.fun Bonding Curve Sell" });
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "17.".bright_magenta().bold(), if lang == Language::Chinese { "Pump 返现（查看与领取）" } else { "Pump Cashback (View & Claim)" });
+                println!("  {}  {}", "17.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 返现（查看与领取）" } else { "Pump.fun Cashback (View & Claim)" });
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "18.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 返现（查看与领取）" } else { "PumpSwap Cashback (View & Claim)" });
             }
@@ -404,7 +404,7 @@ pub fn show_main_menu() -> Result<(), String> {
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "13.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 内盘卖出代币" } else { "Pump.fun Bonding Curve Sell" });
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "14.".bright_magenta().bold(), if lang == Language::Chinese { "Pump 返现（查看与领取）" } else { "Pump Cashback (View & Claim)" });
+                println!("  {}  {}", "14.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 返现（查看与领取）" } else { "Pump.fun Cashback (View & Claim)" });
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 返现（查看与领取）" } else { "PumpSwap Cashback (View & Claim)" });
             }

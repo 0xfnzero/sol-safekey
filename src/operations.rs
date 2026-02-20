@@ -1591,17 +1591,42 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
         println!("\n{}", "🚀 正在领取...".bright_cyan());
     }
 
-    let payer = Arc::new(keypair.insecure_clone());
-    let config = TradeConfig {
-        rpc_url: rpc_url.clone(),
-        swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url)],
-        commitment: CommitmentConfig::confirmed(),
-        create_wsol_ata_on_startup: false,
-        use_seed_optimize: false,
+    let sig = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            let keypair_b58 = bs58::encode(keypair.to_bytes()).into_string();
+            let rpc_url_clone = rpc_url.clone();
+            std::thread::spawn(move || {
+                let kp = Keypair::from_base58_string(&keypair_b58);
+                let payer = Arc::new(kp);
+                let config = TradeConfig {
+                    rpc_url: rpc_url_clone.clone(),
+                    swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url_clone)],
+                    commitment: CommitmentConfig::confirmed(),
+                    create_wsol_ata_on_startup: false,
+                    use_seed_optimize: false,
+                };
+                handle.block_on(async move {
+                    let client = SolanaTrade::new(payer, config).await;
+                    client.claim_cashback_pumpfun().await.map_err(|e| e.to_string())
+                })
+            })
+            .join()
+            .map_err(|_| "Thread panicked".to_string())??
+        }
+        Err(_) => {
+            let payer = Arc::new(keypair.insecure_clone());
+            let config = TradeConfig {
+                rpc_url: rpc_url.clone(),
+                swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url)],
+                commitment: CommitmentConfig::confirmed(),
+                create_wsol_ata_on_startup: false,
+                use_seed_optimize: false,
+            };
+            let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+            let client = rt.block_on(SolanaTrade::new(payer, config));
+            rt.block_on(client.claim_cashback_pumpfun()).map_err(|e| e.to_string())?
+        }
     };
-    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-    let client = rt.block_on(SolanaTrade::new(payer, config));
-    let sig = rt.block_on(client.claim_cashback_pumpfun()).map_err(|e| e.to_string())?;
 
     if language == Language::English {
         println!("{}", "✅ Claim successful!".bright_green().bold());
@@ -1652,17 +1677,42 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
         println!("\n{}", "🚀 正在领取...".bright_cyan());
     }
 
-    let payer = Arc::new(keypair.insecure_clone());
-    let config = TradeConfig {
-        rpc_url: rpc_url.clone(),
-        swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url)],
-        commitment: CommitmentConfig::confirmed(),
-        create_wsol_ata_on_startup: false,
-        use_seed_optimize: false,
+    let sig = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            let keypair_b58 = bs58::encode(keypair.to_bytes()).into_string();
+            let rpc_url_clone = rpc_url.clone();
+            std::thread::spawn(move || {
+                let kp = Keypair::from_base58_string(&keypair_b58);
+                let payer = Arc::new(kp);
+                let config = TradeConfig {
+                    rpc_url: rpc_url_clone.clone(),
+                    swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url_clone)],
+                    commitment: CommitmentConfig::confirmed(),
+                    create_wsol_ata_on_startup: false,
+                    use_seed_optimize: false,
+                };
+                handle.block_on(async move {
+                    let client = SolanaTrade::new(payer, config).await;
+                    client.claim_cashback_pumpswap().await.map_err(|e| e.to_string())
+                })
+            })
+            .join()
+            .map_err(|_| "Thread panicked".to_string())??
+        }
+        Err(_) => {
+            let payer = Arc::new(keypair.insecure_clone());
+            let config = TradeConfig {
+                rpc_url: rpc_url.clone(),
+                swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url)],
+                commitment: CommitmentConfig::confirmed(),
+                create_wsol_ata_on_startup: false,
+                use_seed_optimize: false,
+            };
+            let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+            let client = rt.block_on(SolanaTrade::new(payer, config));
+            rt.block_on(client.claim_cashback_pumpswap()).map_err(|e| e.to_string())?
+        }
     };
-    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-    let client = rt.block_on(SolanaTrade::new(payer, config));
-    let sig = rt.block_on(client.claim_cashback_pumpswap()).map_err(|e| e.to_string())?;
 
     if language == Language::English {
         println!("{}", "✅ Claim successful!".bright_green().bold());
