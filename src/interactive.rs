@@ -380,9 +380,9 @@ pub fn show_main_menu() -> Result<(), String> {
                 println!("  {}  {}", "14.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
 
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
+                println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 卖出代币" } else { "Pump.fun Sell Tokens" });
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "16.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 内盘卖出代币" } else { "Pump.fun Bonding Curve Sell" });
+                println!("  {}  {}", "16.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "17.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 返现（查看与领取）" } else { "Pump.fun Cashback (View & Claim)" });
                 #[cfg(feature = "sol-trade-sdk")]
@@ -400,9 +400,9 @@ pub fn show_main_menu() -> Result<(), String> {
                 println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
 
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "12.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
+                println!("  {}  {}", "12.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 卖出代币" } else { "Pump.fun Sell Tokens" });
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "13.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 内盘卖出代币" } else { "Pump.fun Bonding Curve Sell" });
+                println!("  {}  {}", "13.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
                 #[cfg(feature = "sol-trade-sdk")]
                 println!("  {}  {}", "14.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 返现（查看与领取）" } else { "Pump.fun Cashback (View & Claim)" });
                 #[cfg(feature = "sol-trade-sdk")]
@@ -968,9 +968,9 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
         "13" => crate::operations::transfer_token(&keypair, ops_language),
         "14" => crate::operations::create_nonce_account(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "15" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
+        "15" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "16" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
+        "16" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
         "17" => crate::operations::pumpfun_cashback_interactive(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
@@ -989,9 +989,9 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
         "10" => crate::operations::transfer_token(&keypair, ops_language),
         "11" => crate::operations::create_nonce_account(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "12" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
+        "12" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "13" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
+        "13" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
         "14" => crate::operations::pumpfun_cashback_interactive(&keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
