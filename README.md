@@ -115,7 +115,8 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sol-safekey = { path = "path/to/sol-safekey" }
+sol-safekey = "0.1.2"
+# or from local path: sol-safekey = { path = "path/to/sol-safekey" }
 
 [features]
 solana-ops = ["sol-safekey/solana-ops"]

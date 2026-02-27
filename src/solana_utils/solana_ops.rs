@@ -501,6 +501,9 @@ impl SolanaClientSdk {
             commitment: CommitmentConfig::confirmed(),
             create_wsol_ata_on_startup: false,  // 不在启动时创建，由手动调用
             use_seed_optimize: self.use_seed_optimize,
+            check_min_tip: false,
+            log_enabled: false,
+            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
@@ -523,6 +526,9 @@ impl SolanaClientSdk {
             commitment: CommitmentConfig::confirmed(),
             create_wsol_ata_on_startup: false,  // 不在启动时创建
             use_seed_optimize: self.use_seed_optimize,
+            check_min_tip: false,
+            log_enabled: false,
+            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
@@ -541,6 +547,9 @@ impl SolanaClientSdk {
             commitment: CommitmentConfig::confirmed(),
             create_wsol_ata_on_startup: false,
             use_seed_optimize: self.use_seed_optimize,
+            check_min_tip: false,
+            log_enabled: false,
+            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
@@ -563,6 +572,9 @@ impl SolanaClientSdk {
             commitment: CommitmentConfig::confirmed(),
             create_wsol_ata_on_startup: false,
             use_seed_optimize: self.use_seed_optimize,
+            check_min_tip: false,
+            log_enabled: false,
+            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;

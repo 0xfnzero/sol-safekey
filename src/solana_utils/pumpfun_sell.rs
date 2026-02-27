@@ -57,6 +57,9 @@ pub async fn handle_pumpfun_sell(
         commitment,
         create_wsol_ata_on_startup: false,
         use_seed_optimize: use_seed,
+        check_min_tip: false,
+        log_enabled: false,
+        use_core_affinity: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -138,6 +141,7 @@ pub async fn handle_pumpfun_sell(
         fixed_output_token_amount: None,
         gas_fee_strategy,
         simulate: false,
+        grpc_recv_us: None,
     };
 
     println!("{}", "📤 发送交易到链上...".bright_blue());
@@ -264,6 +268,9 @@ pub async fn handle_pumpfun_sell_no_prompt(
         commitment,
         create_wsol_ata_on_startup: false,
         use_seed_optimize: use_seed,
+        check_min_tip: false,
+        log_enabled: false,
+        use_core_affinity: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -386,6 +393,7 @@ pub async fn handle_pumpfun_sell_no_prompt(
         fixed_output_token_amount: None,
         gas_fee_strategy,
         simulate: false,
+        grpc_recv_us: None,
     };
 
     if language == Language::Chinese {

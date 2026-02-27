@@ -1667,6 +1667,9 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                     commitment: CommitmentConfig::confirmed(),
                     create_wsol_ata_on_startup: false,
                     use_seed_optimize: false,
+                    check_min_tip: false,
+                    log_enabled: false,
+                    use_core_affinity: false,
                 };
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
@@ -1684,6 +1687,9 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                 commitment: CommitmentConfig::confirmed(),
                 create_wsol_ata_on_startup: false,
                 use_seed_optimize: false,
+                check_min_tip: false,
+                log_enabled: false,
+                use_core_affinity: false,
             };
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));
@@ -1815,6 +1821,9 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                     commitment: CommitmentConfig::confirmed(),
                     create_wsol_ata_on_startup: false,
                     use_seed_optimize: false,
+                    check_min_tip: false,
+                    log_enabled: false,
+                    use_core_affinity: false,
                 };
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
@@ -1832,6 +1841,9 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                 commitment: CommitmentConfig::confirmed(),
                 create_wsol_ata_on_startup: false,
                 use_seed_optimize: false,
+                check_min_tip: false,
+                log_enabled: false,
+                use_core_affinity: false,
             };
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));

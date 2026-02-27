@@ -499,6 +499,9 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                     commitment: CommitmentConfig::confirmed(),
                     create_wsol_ata_on_startup: false,
                     use_seed_optimize: false,
+                    check_min_tip: false,
+                    log_enabled: false,
+                    use_core_affinity: false,
                 };
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
@@ -531,6 +534,9 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                     commitment: CommitmentConfig::confirmed(),
                     create_wsol_ata_on_startup: false,
                     use_seed_optimize: false,
+                    check_min_tip: false,
+                    log_enabled: false,
+                    use_core_affinity: false,
                 };
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
