@@ -105,13 +105,30 @@ pub fn encrypt_key(secret_key: &str, encryption_key: &[u8; 32]) -> Result<String
 ///
 /// Returns the original plaintext string
 pub fn decrypt_key(encrypted_data: &str, encryption_key: &[u8; 32]) -> Result<String, String> {
-    let ciphertext = general_purpose::STANDARD.decode(encrypted_data)
+    let decrypted = decrypt_key_to_bytes(encrypted_data, encryption_key)?;
+    String::from_utf8(decrypted).map_err(|_| "Invalid UTF-8 data in decrypted content".to_string())
+}
+
+/// Decrypt to raw bytes (used when plaintext may be base58 string or 64-byte keypair).
+pub fn decrypt_key_to_bytes(encrypted_data: &str, encryption_key: &[u8; 32]) -> Result<Vec<u8>, String> {
+    let ciphertext = general_purpose::STANDARD
+        .decode(encrypted_data)
         .map_err(|_| "Invalid encrypted data format".to_string())?;
+    Ok(xor_encrypt_decrypt(&ciphertext, encryption_key))
+}
 
-    let decrypted = xor_encrypt_decrypt(&ciphertext, encryption_key);
-
-    String::from_utf8(decrypted)
-        .map_err(|_| "Invalid UTF-8 data in decrypted content".to_string())
+/// Strip trailing bytes that are not valid base58 (e.g. 0x00, \n, \r, or non-ASCII).
+fn trim_trailing_non_base58(bytes: &[u8]) -> &[u8] {
+    let mut end = bytes.len();
+    while end > 0 {
+        let b = bytes[end - 1];
+        if b == 0x00 || b == b'\n' || b == b'\r' || b > 127 {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+    &bytes[..end]
 }
 
 /// Minimum password length for encryption/decryption
@@ -286,16 +303,8 @@ impl KeyManager {
         Ok(keystore.to_string())
     }
 
-    /// Decrypt a keypair from encrypted JSON keystore
-    ///
-    /// # Arguments
-    ///
-    /// * `json_data` - The encrypted keystore JSON string
-    /// * `password` - The password used for encryption
-    ///
-    /// # Returns
-    ///
-    /// The restored Keypair
+    /// Decrypt a keypair from encrypted JSON keystore.
+    /// 与 GitHub 最新版兼容：优先按「base58 私钥」解密；若解密结果非 UTF-8，再尝试「64 字节 keypair」。
     pub fn keypair_from_encrypted_json(json_data: &str, password: &str) -> EncryptionResult<Keypair> {
         use serde_json::Value;
 
@@ -306,12 +315,42 @@ impl KeyManager {
             .as_str()
             .ok_or("Missing encrypted_private_key field")?;
 
-        let private_key_str = Self::decrypt_with_password(encrypted, password)?;
+        let key = generate_encryption_key_simple(password);
+        let decrypted = decrypt_key_to_bytes(encrypted, &key)
+            .map_err(|e| format!("解密失败: {}", e))?;
 
-        // Solana 3.0 uses from_base58_string directly
-        let keypair = Keypair::from_base58_string(&private_key_str);
+        // 1) 标准格式：UTF-8 base58 私钥（keypair_to_encrypted_json 生成）。去除首尾空白避免换行/空格导致解析失败
+        if let Ok(s) = String::from_utf8(decrypted.clone()) {
+            let s = s.trim_end_matches(|c| c == '\n' || c == '\r').trim();
+            if !s.is_empty() {
+                let keypair = Keypair::from_base58_string(s);
+                return Ok(keypair);
+            }
+        }
 
-        Ok(keypair)
+        // 2) 兼容：部分工具加密的是 64 字节原始 keypair，解密后非 UTF-8
+        if decrypted.len() == 64 {
+            if let Ok(k) = Keypair::try_from(decrypted.as_slice()) {
+                return Ok(k);
+            }
+        }
+
+        // 3) 解密长度在典型 base58 范围内 (80–96)：可能带有尾部垃圾，先剥掉再试
+        if (80..=96).contains(&decrypted.len()) {
+            let trimmed = trim_trailing_non_base58(&decrypted);
+            if let Ok(s) = String::from_utf8(trimmed.to_vec()) {
+                let s = s.trim_end_matches(|c| c == '\n' || c == '\r').trim();
+                if !s.is_empty() {
+                    let keypair = Keypair::from_base58_string(s);
+                    return Ok(keypair);
+                }
+            }
+        }
+
+        Err(format!(
+            "解密结果既非有效 base58 私钥，也非 64 字节 keypair（解密长度: {}）。请确认：1) 密码正确 2) keystore 由 sol-safekey 生成 3) 密码长度 10–20 字符",
+            decrypted.len()
+        ))
     }
 }
 

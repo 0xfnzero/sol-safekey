@@ -123,6 +123,7 @@ fn unlock_wallet(wallet_path: &str) -> Result<Keypair> {
     print!("🔑 Enter wallet password: ");
     std::io::stdout().flush().unwrap();
 
+    // 与 wick-bot 完全一致：密码原样使用，不做 trim（wick-bot 的 bot_helper 亦不 trim）
     let password = rpassword::read_password()
         .map_err(|e| format!("Failed to read password: {}", e))?;
 

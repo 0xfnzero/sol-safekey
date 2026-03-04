@@ -740,7 +740,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -3427,7 +3427,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -4302,9 +4302,9 @@ dependencies = [
 
 [[package]]
 name = "sol-trade-sdk"
-version = "3.5.5"
+version = "3.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae4a048c97ed3c8b5747eac2a597bbd00c8a701873b32cac1406c5816d89689"
+checksum = "000c5f6b4112b41f27ad8fbc760395308fe94c4a65745e0d0ac0b74b526ce43c"
 dependencies = [
  "anyhow",
  "arc-swap",
