@@ -3,21 +3,30 @@
 //! Provides interactive Solana operations using encrypted keystore
 //! 提供使用加密 keystore 的交互式 Solana 操作
 
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use std::io::{self, Write};
-use colored::*;
 use solana_sdk::signature::Keypair;
-use solana_sdk::signer::Signer;
+
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
+use colored::*;
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use solana_sdk::pubkey::Pubkey;
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
+use solana_sdk::signer::Signer;
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use solana_sdk::bs58;
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use std::str::FromStr;
 
 #[cfg(feature = "solana-ops")]
 use crate::solana_utils::{SolanaClient, SolanaClientSdk, lamports_to_sol};
 
-#[cfg(feature = "solana-ops")]
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use solana_client::rpc_client::RpcClient;
 
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 const DEFAULT_RPC_URL: &str = "https://api.mainnet-beta.solana.com";
+#[cfg(feature = "solana-ops")]
 const DEVNET_RPC_URL: &str = "https://api.devnet.solana.com";
 
 /// Language for UI
@@ -28,6 +37,7 @@ pub enum Language {
 }
 
 /// Read user input with default value
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 fn read_input(prompt: &str, default: &str) -> String {
     print!("{}", prompt);
     io::stdout().flush().unwrap();
@@ -1669,7 +1679,6 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                     use_seed_optimize: false,
                     check_min_tip: false,
                     log_enabled: false,
-                    use_core_affinity: false,
                 };
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
@@ -1689,7 +1698,6 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                 use_seed_optimize: false,
                 check_min_tip: false,
                 log_enabled: false,
-                use_core_affinity: false,
             };
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));
@@ -1823,7 +1831,6 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                     use_seed_optimize: false,
                     check_min_tip: false,
                     log_enabled: false,
-                    use_core_affinity: false,
                 };
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
@@ -1843,7 +1850,6 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                 use_seed_optimize: false,
                 check_min_tip: false,
                 log_enabled: false,
-                use_core_affinity: false,
             };
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));

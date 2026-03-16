@@ -503,7 +503,6 @@ impl SolanaClientSdk {
             use_seed_optimize: self.use_seed_optimize,
             check_min_tip: false,
             log_enabled: false,
-            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
@@ -528,7 +527,6 @@ impl SolanaClientSdk {
             use_seed_optimize: self.use_seed_optimize,
             check_min_tip: false,
             log_enabled: false,
-            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
@@ -549,7 +547,6 @@ impl SolanaClientSdk {
             use_seed_optimize: self.use_seed_optimize,
             check_min_tip: false,
             log_enabled: false,
-            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
@@ -574,7 +571,6 @@ impl SolanaClientSdk {
             use_seed_optimize: self.use_seed_optimize,
             check_min_tip: false,
             log_enabled: false,
-            use_core_affinity: false,
         };
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;

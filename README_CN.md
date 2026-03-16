@@ -115,7 +115,7 @@ let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
 
 ```toml
 [dependencies]
-sol-safekey = "0.1.2"
+sol-safekey = "0.1.3"
 # 或本地路径: sol-safekey = { path = "path/to/sol-safekey" }
 
 [features]

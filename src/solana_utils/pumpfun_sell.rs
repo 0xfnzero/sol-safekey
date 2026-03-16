@@ -59,7 +59,6 @@ pub async fn handle_pumpfun_sell(
         use_seed_optimize: use_seed,
         check_min_tip: false,
         log_enabled: false,
-        use_core_affinity: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -270,7 +269,6 @@ pub async fn handle_pumpfun_sell_no_prompt(
         use_seed_optimize: use_seed,
         check_min_tip: false,
         log_enabled: false,
-        use_core_affinity: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
