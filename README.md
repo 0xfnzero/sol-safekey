@@ -45,6 +45,8 @@
 
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
+- [📋 Complete Menu Index](#-complete-menu-index)
+- [📖 Interactive Menu Tutorial](#-interactive-menu-tutorial)
 - [📖 Complete Interactive Menu Guide](#-complete-interactive-menu-guide)
 - [For Bot Developers](#for-bot-developers)
 - [As a Library](#as-a-library)
@@ -95,6 +97,63 @@ std::fs::write("keystore.json", json)?;
 let json = std::fs::read_to_string("keystore.json")?;
 let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
 ```
+
+---
+
+## 📋 Complete Menu Index
+
+Quick overview of all 18 interactive menu operations organized by category:
+
+### 🔑 Core Functions (Options 1-3)
+
+- **[1. Create Plaintext Key](INTERACTIVE_TUTORIAL.md#1-create-plaintext-key)** - Generate and save unencrypted Solana keypair (for testing)
+- **[2. Create Encrypted Key (bot)](INTERACTIVE_TUTORIAL.md#2-create-encrypted-key)** - Encrypt existing private key and save to keystore
+- **[3. Decrypt Key](INTERACTIVE_TUTORIAL.md#3-decrypt-key)** - Decrypt keystore and reveal private key
+
+### 🔒 Wallet Management (Option U)
+
+- **[U. Unlock Wallet](INTERACTIVE_TUTORIAL.md#u-unlock-wallet)** - Unlock wallet for Solana operations
+
+### 🛡️ Advanced Security Features (Options 4-6)
+
+- **[4. Setup 2FA Authentication](INTERACTIVE_TUTORIAL.md#4-setup-2fa-authentication)** - Configure two-factor authentication
+- **[5. Generate Triple-Factor Wallet](INTERACTIVE_TUTORIAL.md#5-generate-triple-factor-wallet)** - Create wallet with 3FA (hardware + password + security question + 2FA)
+- **[6. Unlock Triple-Factor Wallet](INTERACTIVE_TUTORIAL.md#6-unlock-triple-factor-wallet)** - Decrypt 3FA encrypted wallet
+
+### 💰 Solana On-Chain Operations (Options 7-18)
+
+#### Balance & Transfer
+- **[7. Check SOL Balance](INTERACTIVE_TUTORIAL.md#7-check-sol-balance)** - Query wallet SOL balance
+- **[8. Transfer SOL](INTERACTIVE_TUTORIAL.md#8-transfer-sol)** - Send SOL to another address
+
+#### WSOL Operations
+- **[9. Create WSOL ATA](INTERACTIVE_TUTORIAL.md#9-create-wsol-ata)** - Create Wrapped SOL Associated Token Account
+- **[10. Wrap SOL → WSOL](INTERACTIVE_TUTORIAL.md#10-wrap-sol--wsol)** - Convert SOL to Wrapped SOL
+- **[11. Unwrap WSOL → SOL](INTERACTIVE_TUTORIAL.md#11-unwrap-wsol--sol)** - Convert Wrapped SOL back to SOL
+- **[12. Close WSOL ATA](INTERACTIVE_TUTORIAL.md#12-close-wsol-ata)** - Close WSOL ATA and convert remaining WSOL to SOL
+
+#### Token Operations
+- **[13. Transfer SPL Token](INTERACTIVE_TUTORIAL.md#13-transfer-spl-token)** - Send SPL tokens to another address
+
+#### Transaction Tools
+- **[14. Create Nonce Account](INTERACTIVE_TUTORIAL.md#14-create-nonce-account)** - Create durable nonce for transaction replay protection
+
+#### DEX Operations
+- **[15. Pump.fun Sell Token](INTERACTIVE_TUTORIAL.md#15-pumpfun-sell-token)** - Sell tokens on Pump.fun DEX (internal market)
+- **[16. PumpSwap Sell Token](INTERACTIVE_TUTORIAL.md#16-pumpswap-sell-token)** - Sell tokens on PumpSwap DEX
+
+#### Cashback Operations
+- **[17. Pump.fun Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback-view--claim)** - View and claim pump.fun cashback (native SOL)
+- **[18. PumpSwap Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback-view--claim)** - View and claim PumpSwap cashback (WSOL)
+
+### 🎯 Quick Access
+
+Common tasks and their direct links:
+
+- 🔑 **[Wallet Setup](INTERACTIVE_TUTORIAL.md#u-unlock-wallet)** - Unlock wallet to get started
+- 💰 **[Check Balance](INTERACTIVE_TUTORIAL.md#7-check-sol-balance)** - Query SOL balance quickly
+- 🔑 **[Nonce Account](INTERACTIVE_TUTORIAL.md#14-create-nonce-account)** - Create durable nonce for trading bots
+- 🏪 **[DEX Operations](INTERACTIVE_TUTORIAL.md#15-pumpfun-sell-token)** - Access Pump.fun and PumpSwap sell functions
 
 ---
 
