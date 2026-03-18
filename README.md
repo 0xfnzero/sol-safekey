@@ -89,8 +89,8 @@
 - **[16. PumpSwap Sell](INTERACTIVE_TUTORIAL.md#16-pumpswap-sell-token)** - Sell on PumpSwap DEX
 
 ##### Cashback Operations
-- **[17. Pump.fun Cashback](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback)** - View/claim pump.fun cashback (SOL)
-- **[18. PumpSwap Cashback](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback)** - View/claim PumpSwap cashback (WSOL)
+- **[17. Pump.fun Cashback](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback-view--claim)** - View/claim pump.fun cashback (SOL)
+- **[18. PumpSwap Cashback](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback-view--claim)** - View/claim PumpSwap cashback (WSOL)
 
 ---
 

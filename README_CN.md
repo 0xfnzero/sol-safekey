@@ -112,8 +112,8 @@ sol-safekey start
 - **[16. PumpSwap 卖出](INTERACTIVE_TUTORIAL_CN.md#16-pumpswap-卖出代币)** - PumpSwap DEX 卖出
 
 ##### 返现操作
-- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现-查看与领取)** - pump.fun 返现（SOL）
-- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现-查看与领取)** - PumpSwap 返现（WSOL）
+- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现)** - pump.fun 返现（SOL）
+- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现)** - PumpSwap 返现（WSOL）
 
 ---
 ---
