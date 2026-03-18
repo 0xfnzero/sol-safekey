@@ -4325,9 +4325,9 @@ dependencies = [
 
 [[package]]
 name = "sol-trade-sdk"
-version = "3.6.4"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c03579ccd97a184b95d79e0a67d6051caecab1f6985ec0853dfc8efea1928ca0"
+checksum = "67f2ea32af1f2c49335da969841c060738e94a4dee2af9e8ab230f5e0156adec"
 dependencies = [
  "anyhow",
  "arc-swap",

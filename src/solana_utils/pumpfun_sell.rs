@@ -59,6 +59,7 @@ pub async fn handle_pumpfun_sell(
         use_seed_optimize: use_seed,
         check_min_tip: false,
         log_enabled: false,
+        swqos_cores_from_end: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -132,7 +133,7 @@ pub async fn handle_pumpfun_sell(
         with_tip: false,
         extension_params: DexParamEnum::PumpFun(pump_params),
         address_lookup_table_account: None,
-        wait_transaction_confirmed: true,
+        wait_tx_confirmed: true,
         create_output_token_ata: false, // 输出为 SOL，无需 ATA
         close_output_token_ata: false,
         close_mint_token_ata: false,
@@ -269,6 +270,7 @@ pub async fn handle_pumpfun_sell_no_prompt(
         use_seed_optimize: use_seed,
         check_min_tip: false,
         log_enabled: false,
+        swqos_cores_from_end: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -383,7 +385,7 @@ pub async fn handle_pumpfun_sell_no_prompt(
         with_tip: false,
         extension_params: DexParamEnum::PumpFun(pump_params),
         address_lookup_table_account: None,
-        wait_transaction_confirmed: true,
+        wait_tx_confirmed: true,
         create_output_token_ata: false,
         close_output_token_ata: false,
         close_mint_token_ata: false,

@@ -69,6 +69,7 @@ pub async fn handle_pumpswap_sell(
         use_seed_optimize: use_seed,
         check_min_tip: false,
         log_enabled: false,
+        swqos_cores_from_end: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -160,7 +161,7 @@ pub async fn handle_pumpswap_sell(
         with_tip: false,
         extension_params: DexParamEnum::PumpSwap(pump_params),
         address_lookup_table_account: None,
-        wait_transaction_confirmed: true,
+        wait_tx_confirmed: true,
         create_output_token_ata: true,   // 创建 WSOL ATA
         close_output_token_ata: false,   // 不自动关闭 WSOL ATA
         close_mint_token_ata: false,     // 不关闭代币 ATA（可能还有灰尘）
@@ -350,6 +351,7 @@ pub async fn handle_pumpswap_sell_no_prompt(
         use_seed_optimize: use_seed,
         check_min_tip: false,
         log_enabled: false,
+        swqos_cores_from_end: false,
     };
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
@@ -460,7 +462,7 @@ pub async fn handle_pumpswap_sell_no_prompt(
         with_tip: false,
         extension_params: DexParamEnum::PumpSwap(pump_params),
         address_lookup_table_account: None,
-        wait_transaction_confirmed: true,
+        wait_tx_confirmed: true,
         create_output_token_ata: true,   // 创建 WSOL ATA
         close_output_token_ata: false,   // 不自动关闭 WSOL ATA
         close_mint_token_ata: false,     // 不关闭代币 ATA（可能还有灰尘）

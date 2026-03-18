@@ -667,7 +667,7 @@ fn create_encrypted_key_interactive(texts: &Texts) -> Result<(), String> {
             io::stdin().read_line(&mut file_path).map_err(|e| e.to_string())?;
             let file_path = file_path.trim();
             let file_path = if file_path.is_empty() {
-                "wallet.json"
+                "keystore.json"
             } else {
                 file_path
             };

@@ -978,12 +978,12 @@ pub fn show_solana_operations_menu(language: crate::interactive::Language) -> Re
 
         // Prompt for keystore file
         let file_prompt = if ops_language == Language::English {
-            "Keystore file path (default: wallet.json): "
+            "Keystore file path (default: keystore.json): "
         } else {
-            "Keystore 文件路径 (默认: wallet.json): "
+            "Keystore 文件路径 (默认: keystore.json): "
         };
 
-        let file_path = read_input(file_prompt, "wallet.json");
+        let file_path = read_input(file_prompt, "keystore.json");
 
         // Check if file exists
         if !std::path::Path::new(&file_path).exists() {
@@ -1679,6 +1679,7 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                     use_seed_optimize: false,
                     check_min_tip: false,
                     log_enabled: false,
+                    swqos_cores_from_end: false,
                 };
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
@@ -1698,6 +1699,7 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                 use_seed_optimize: false,
                 check_min_tip: false,
                 log_enabled: false,
+                swqos_cores_from_end: false,
             };
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));
@@ -1831,6 +1833,7 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                     use_seed_optimize: false,
                     check_min_tip: false,
                     log_enabled: false,
+                    swqos_cores_from_end: false,
                 };
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
@@ -1850,6 +1853,7 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                 use_seed_optimize: false,
                 check_min_tip: false,
                 log_enabled: false,
+                swqos_cores_from_end: false,
             };
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));

@@ -501,7 +501,7 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                     use_seed_optimize: false,
                     check_min_tip: false,
                     log_enabled: false,
-                    use_core_affinity: false,
+                    swqos_cores_from_end: false,
                 };
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
@@ -536,7 +536,7 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                     use_seed_optimize: false,
                     check_min_tip: false,
                     log_enabled: false,
-                    use_core_affinity: false,
+                    swqos_cores_from_end: false,
                 };
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
