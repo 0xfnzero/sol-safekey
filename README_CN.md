@@ -56,24 +56,42 @@
 
 ### 📋 功能指南
 
-#### 🚀 快速开始
-**[安装 →](#-安装)** → **[解锁钱包](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** → **[查询余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)**
+#### 🎯 开始使用
 
-#### 🔑 核心功能
+#### 步骤 1：启动交互式菜单
+```bash
+sol-safekey start
+```
+
+你将看到语言选择界面。选择你偏好的语言：
+
+**英文**：输入 `2`
+**中文**：输入 `1`
+
+#### 步骤 2：选择一个操作
+选择语言后，你将看到主菜单。输入与你想执行的操作对应的数字。
+
+**重要提示**：如果你还没有创建钱包，你需要：
+- **解锁现有钱包**（选项 `U`）
+- **创建新钱包**（选项 `1` 或 `2`）
+
+---
+
+#### 🔑 核心功能（选项 1-3）
 - **[1. 创建明文私钥](INTERACTIVE_TUTORIAL_CN.md#1-创建明文私钥（选项-1）)** - 生成未加密密钥对（仅测试）
 - **[2. 创建加密私钥](INTERACTIVE_TUTORIAL_CN.md#2-创建加密私钥bot)（选项-2）)** - 加密并保存到 keystore
 - **[3. 解密私钥](INTERACTIVE_TUTORIAL_CN.md#3-解密私钥（选项-3）)** - 解密 keystore 显示私钥
 
-#### 🔒 钱包管理
+#### 🔒 钱包管理（选项 U）
 - **[U. 解锁钱包](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** - 解锁钱包进行 Solana 操作
 
-#### 🛡️ 高级安全
+#### 🛡️ 高级安全（选项 4-6）
 - **[4. 设置 2FA](INTERACTIVE_TUTORIAL_CN.md#4-设置-2fa-认证)** - 配置双因素认证
 - **[5. 生成三因子钱包](INTERACTIVE_TUTORIAL_CN.md#5-生成三因子钱包)** - 创建 3FA 钱包
 - **[6. 解锁三因子钱包](INTERACTIVE_TUTORIAL_CN.md#6-解锁三因子钱包)** - 解密 3FA 加密钱包
 
-#### 💰 Solana 操作
-##### 余额转账
+#### 💰 Solana 操作（选项 7-18）
+##### 余额与转账
 - **[7. 查询余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)** - 查询 SOL 余额
 - **[8. 转账 SOL](INTERACTIVE_TUTORIAL_CN.md#8-转账-sol)** - 发送 SOL
 
@@ -83,7 +101,7 @@
 - **[11. 解包 WSOL](INTERACTIVE_TUTORIAL_CN.md#11-解包-wsol--sol)** - WSOL → SOL
 - **[12. 关闭 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#12-关闭-wsol-ata)** - 关闭 WSOL ATA
 
-##### 代币工具
+##### 代币操作
 - **[13. 转账 SPL 代币](INTERACTIVE_TUTORIAL_CN.md#13-转账-spl-代币)** - 发送 SPL 代币
 - **[14. 创建 Nonce 账户](INTERACTIVE_TUTORIAL_CN.md#14-创建-nonce-账户)** - 创建持久化 nonce
 
@@ -95,6 +113,7 @@
 - **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现-查看与领取)** - pump.fun 返现（SOL）
 - **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现-查看与领取)** - PumpSwap 返现（WSOL）
 
+---
 ---
 
 ## 📚 文档
@@ -112,42 +131,6 @@
 - ✅ **硬件指纹**：基于设备的安全层
 - ✅ **2FA 支持**：可选的双重因素认证以增强安全性
 
-
-## 🛠️ 可用操作
-
-### 钱包管理
-- **创建钱包** - 使用 AES-256 生成新的加密钱包
-- **导入钱包** - 从私钥或助记词导入现有钱包
-- **导出钱包** - 导出钱包为加密 JSON 格式
-- **查看地址** - 显示钱包公钥地址
-
-### SOL 操作
-- **查询余额** - 查看钱包中的 SOL 余额
-- **转账 SOL** - 向其他地址发送 SOL
-- **包装 SOL** - 将 SOL 转换为 WSOL（包装的 SOL）
-- **解包 WSOL** - 将 WSOL 转换回 SOL
-- **关闭 WSOL ATA** - 关闭 WSOL ATA 账户
-
-### 代币操作
-- **转账 SPL 代币** - 向其他地址发送 SPL 代币
-- **查询代币余额** - 查看代币余额
-
-### DEX 操作
-- **🔥 Pump.fun 卖出** - Pump.fun DEX 上的交互式代币卖出（仅限内盘）
-- **🔄 PumpSwap 卖出** - 在 PumpSwap DEX 上卖出代币
-
-### 返现操作
-- **Pump.fun 返现** - 查看和领取 pump.fun 返现（原生 SOL）
-- **PumpSwap 返现** - 查看和领取 PumpSwap 返现（WSOL）
-
-### 高级功能
-- **Durable Nonce 账户** - 创建和管理用于离线签名的 nonce 账户
-- **2FA 支持** - 可选的双重因素认证以增强安全性
-
-### 交易管理
-- **查询交易状态** - 在 Solana 上查询交易状态
-
----
 
 ## 📖 示例
 
