@@ -46,10 +46,7 @@
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [📋 Complete Menu Index](#-complete-menu-index)
-- [📖 Interactive Menu Tutorial](#-interactive-menu-tutorial)
 - [📖 Complete Interactive Menu Guide](#-complete-interactive-menu-guide)
-- [For Bot Developers](#for-bot-developers)
-- [As a Library](#as-a-library)
 - [📚 Documentation](#-documentation)
 - [🔐 Security](#-security)
 - [📦 Installation](#-installation)
@@ -162,27 +159,6 @@ Common tasks and their direct links:
 📖 **[View Complete Interactive Menu Guide → INTERACTIVE_TUTORIAL.md]**
 
 Comprehensive step-by-step guide for all interactive menu operations, including detailed instructions, use cases, and example outputs for each of the 18 menu options.
-
----
-
-## For Bot Developers
-
-### As a Library
-
-```rust
-use sol_safekey::KeyManager;
-
-// Generate keypair
-let keypair = KeyManager::generate_keypair();
-
-// Encrypt and save
-let json = KeyManager::keypair_to_encrypted_json(&keypair, "password")?;
-std::fs::write("keystore.json", json)?;
-
-// Load and decrypt
-let json = std::fs::read_to_string("keystore.json")?;
-let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
-```
 
 ---
 
