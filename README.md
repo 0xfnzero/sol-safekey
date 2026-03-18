@@ -168,29 +168,6 @@ Comprehensive step-by-step guide for all interactive menu operations, including 
 - ✅ **Hardware Fingerprint**: Device-based security layer
 - ✅ **2FA Support**: Optional two-factor authentication for enhanced security
 
----
-
-## 📦 Installation
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-sol-safekey = "0.1.3"
-```
-
-# Or from local path:
-```toml
-[dependencies]
-sol-safekey = { path = "path/to/sol-safekey" }
-```
-
-# or from crates.io:
-```bash
-cargo install sol-safekey --features="full"
-```
-
----
 
 ## 🛠️ Available Operations
 

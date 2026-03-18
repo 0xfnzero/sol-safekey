@@ -147,6 +147,28 @@ let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
 
 ---
 
+## 📦 安装
+
+添加到你的 `Cargo.toml`：
+
+```toml
+[dependencies]
+sol-safekey = "0.1.3"
+```
+
+# 或从本地路径：
+```toml
+[dependencies]
+sol-safekey = { path = "path/to/sol-safekey" }
+```
+
+# 或从 crates.io：
+```bash
+cargo install sol-safekey --features="full"
+```
+
+---
+
 ## 📖 交互式菜单完整使用指南
 
 📖 **[查看交互式菜单完整教程 → INTERACTIVE_TUTORIAL_CN.md]**
@@ -170,29 +192,6 @@ let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
 - ✅ **硬件指纹**：基于设备的安全层
 - ✅ **2FA 支持**：可选的双重因素认证以增强安全性
 
----
-
-## 📦 安装
-
-添加到你的 `Cargo.toml`：
-
-```toml
-[dependencies]
-sol-safekey = "0.1.3"
-```
-
-# 或从本地路径：
-```toml
-[dependencies]
-sol-safekey = { path = "path/to/sol-safekey" }
-```
-
-# 或从 crates.io：
-```bash
-cargo install sol-safekey --features="full"
-```
-
----
 
 ## 🛠️ 可用操作
 
