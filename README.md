@@ -47,7 +47,6 @@
 - [🚀 Quick Start](#-quick-start)
 - [📦 Installation](#-installation)
 - [📋 Feature Guide](#-feature-guide)
-- [📖 Complete Interactive Menu Guide](#-complete-interactive-menu-guide)
 - [📚 Documentation](#-documentation)
 - [🔐 Security](#-security)
 - [💬 Contact](#-contact)
