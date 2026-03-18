@@ -28,6 +28,23 @@ Or if using the standalone binary:
 ./build-cache/release/examples/bot_example safekey
 ```
 
+#### Direct Installation (Standalone)
+
+For standalone usage without a bot, install sol-safekey directly:
+
+```bash
+# Install from crates.io (recommended for latest version)
+cargo install sol-safekey --features="full"
+
+# Verify installation
+sol-safekey --version
+
+# Start interactive menu
+sol-safekey start
+```
+
+This method provides direct access to all sol-safekey features through the interactive menu.
+
 ## Main Menu
 
 Upon launching, you'll see the language selection:

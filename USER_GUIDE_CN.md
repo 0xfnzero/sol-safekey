@@ -28,6 +28,23 @@ Sol-SafeKey 提供交互式命令行界面，用于安全的 Solana 钱包管理
 ./build-cache/release/examples/bot_example safekey
 ```
 
+#### 直接安装（独立使用）
+
+对于不使用 bot 的独立使用，直接安装 sol-safekey：
+
+```bash
+# 从 crates.io 安装（推荐使用最新版本）
+cargo install sol-safekey --features="full"
+
+# 验证安装
+sol-safekey --version
+
+# 启动交互式菜单
+sol-safekey start
+```
+
+这种方式提供通过交互式菜单直接访问所有 sol-safekey 功能。
+
 ## 主菜单
 
 启动后，你会看到语言选择:
