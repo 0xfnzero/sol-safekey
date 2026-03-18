@@ -55,6 +55,54 @@
 - [🤝 贡献](#-贡献)
 - [📄 许可证](#-许可证)
 
+### 📋 完整菜单索引
+
+所有 18 个交互式菜单操作的快速概览，按类别组织：
+
+#### 🔑 核心功能（选项 1-3）
+- **[1. 创建明文私钥](INTERACTIVE_TUTORIAL_CN.md#1-创建明文私钥（选项-1）)** - 生成并保存未加密的 Solana 密钥对（仅用于测试）
+- **[2. 创建加密私钥(bot)](INTERACTIVE_TUTORIAL_CN.md#2-创建加密私钥bot)（选项-2）)** - 加密现有私钥并保存到 keystore
+- **[3. 解密私钥](INTERACTIVE_TUTORIAL_CN.md#3-解密私钥（选项-3）)** - 解密 keystore 并显示私钥
+
+#### 🔒 钱包管理（选项 U）
+- **[U. 解锁钱包](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** - 解锁钱包以进行 Solana 操作
+
+#### 🛡️ 高级安全功能（选项 4-6）
+- **[4. 设置 2FA 认证](INTERACTIVE_TUTORIAL_CN.md#4-设置-2fa-认证)** - 配置双因素认证
+- **[5. 生成三因子钱包](INTERACTIVE_TUTORIAL_CN.md#5-生成三因子钱包)** - 创建 3FA 钱包（硬件 + 密码 + 安全问题 + 2FA）
+- **[6. 解锁三因子钱包](INTERACTIVE_TUTORIAL_CN.md#6-解锁三因子钱包)** - 解密 3FA 加密钱包
+
+#### 💰 Solana 链上操作（选项 7-18）
+##### 余额与转账
+- **[7. 查询 SOL 余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)** - 查询钱包 SOL 余额
+- **[8. 转账 SOL](INTERACTIVE_TUTORIAL_CN.md#8-转账-sol)** - 向其他地址发送 SOL
+
+##### WSOL 操作
+- **[9. 创建 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#9-创建-wsol-ata)** - 创建包装 SOL 关联代币账户
+- **[10. 包装 SOL → WSOL](INTERACTIVE_TUTORIAL_CN.md#10-包装-sol--wsol)** - 将 SOL 转换为包装 SOL
+- **[11. 解包 WSOL → SOL](INTERACTIVE_TUTORIAL_CN.md#11-解包-wsol--sol)** - 将包装 SOL 转换回 SOL
+- **[12. 关闭 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#12-关闭-wsol-ata)** - 关闭 WSOL ATA 并将剩余 WSOL 转换为 SOL
+
+##### 代币操作
+- **[13. 转账 SPL 代币](INTERACTIVE_TUTORIAL_CN.md#13-转账-spl-代币)** - 向其他地址发送 SPL 代币
+
+##### 交易工具
+- **[14. 创建 Nonce 账户](INTERACTIVE_TUTORIAL_CN.md#14-创建-nonce-账户)** - 创建持久化 nonce 以防止交易重放
+
+##### DEX 操作
+- **[15. Pump.fun 卖出代币](INTERACTIVE_TUTORIAL_CN.md#15-pumpfun-卖出代币)** - 在 Pump.fun DEX 上卖出代币（内盘）
+- **[16. PumpSwap 卖出代币](INTERACTIVE_TUTORIAL_CN.md#16-pumpswap-卖出代币)** - 在 PumpSwap DEX 上卖出代币
+
+##### 返现操作
+- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现-查看与领取)** - 查看并领取 pump.fun 返现（原生 SOL）
+- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现-查看与领取)** - 查看并领取 PumpSwap 返现（WSOL）
+
+#### 🎯 快速访问
+- 🔑 **[钱包设置](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** - 解锁钱包并开始使用
+- 💰 **[查询余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)** - 快速查询 SOL 余额
+- 🔑 **[Nonce 账户](INTERACTIVE_TUTORIAL_CN.md#14-创建-nonce-账户)** - 创建持久化 nonce 用于交易机器人
+- 🏪 **[DEX 操作](INTERACTIVE_TUTORIAL_CN.md#15-pumpfun-卖出代币)** - 访问 Pump.fun 和 PumpSwap 卖出功能
+
 ---
 
 ## ✨ 特性
@@ -96,63 +144,6 @@ std::fs::write("keystore.json", json)?;
 let json = std::fs::read_to_string("keystore.json")?;
 let keypair = KeyManager::keypair_from_encrypted_json(&json, "password")?;
 ```
-
----
-
-## 📋 完整菜单索引
-
-所有 18 个交互式菜单操作的快速概览，按类别组织：
-
-### 🔑 核心功能（选项 1-3）
-
-- **[1. 创建明文私钥](INTERACTIVE_TUTORIAL_CN.md#1-创建明文私钥（选项-1）)** - 生成并保存未加密的 Solana 密钥对（仅用于测试）
-- **[2. 创建加密私钥(bot)](INTERACTIVE_TUTORIAL_CN.md#2-创建加密私钥bot)（选项-2）)** - 加密现有私钥并保存到 keystore
-- **[3. 解密私钥](INTERACTIVE_TUTORIAL_CN.md#3-解密私钥（选项-3）)** - 解密 keystore 并显示私钥
-
-### 🔒 钱包管理（选项 U）
-
-- **[U. 解锁钱包](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** - 解锁钱包以进行 Solana 操作
-
-### 🛡️ 高级安全功能（选项 4-6）
-
-- **[4. 设置 2FA 认证](INTERACTIVE_TUTORIAL_CN.md#4-设置-2fa-认证)** - 配置双因素认证
-- **[5. 生成三因子钱包](INTERACTIVE_TUTORIAL_CN.md#5-生成三因子钱包)** - 创建 3FA 钱包（硬件 + 密码 + 安全问题 + 2FA）
-- **[6. 解锁三因子钱包](INTERACTIVE_TUTORIAL_CN.md#6-解锁三因子钱包)** - 解密 3FA 加密钱包
-
-### 💰 Solana 链上操作（选项 7-18）
-
-#### 余额与转账
-- **[7. 查询 SOL 余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)** - 查询钱包 SOL 余额
-- **[8. 转账 SOL](INTERACTIVE_TUTORIAL_CN.md#8-转账-sol)** - 向其他地址发送 SOL
-
-#### WSOL 操作
-- **[9. 创建 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#9-创建-wsol-ata)** - 创建包装 SOL 关联代币账户
-- **[10. 包装 SOL → WSOL](INTERACTIVE_TUTORIAL_CN.md#10-包装-sol--wsol)** - 将 SOL 转换为包装 SOL
-- **[11. 解包 WSOL → SOL](INTERACTIVE_TUTORIAL_CN.md#11-解包-wsol--sol)** - 将包装 SOL 转换回 SOL
-- **[12. 关闭 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#12-关闭-wsol-ata)** - 关闭 WSOL ATA 并将剩余 WSOL 转换为 SOL
-
-#### 代币操作
-- **[13. 转账 SPL 代币](INTERACTIVE_TUTORIAL_CN.md#13-转账-spl-代币)** - 向其他地址发送 SPL 代币
-
-#### 交易工具
-- **[14. 创建 Nonce 账户](INTERACTIVE_TUTORIAL_CN.md#14-创建-nonce-账户)** - 创建持久化 nonce 以防止交易重放
-
-#### DEX 操作
-- **[15. Pump.fun 卖出代币](INTERACTIVE_TUTORIAL_CN.md#15-pumpfun-卖出代币)** - 在 Pump.fun DEX 上卖出代币（内盘）
-- **[16. PumpSwap 卖出代币](INTERACTIVE_TUTORIAL_CN.md#16-pumpswap-卖出代币)** - 在 PumpSwap DEX 上卖出代币
-
-#### 返现操作
-- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现-查看与领取)** - 查看并领取 pump.fun 返现（原生 SOL）
-- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现-查看与领取)** - 查看并领取 PumpSwap 返现（WSOL）
-
-### 🎯 快速访问
-
-常用任务及其直接链接：
-
-- 🔑 **[钱包设置](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** - 解锁钱包并开始使用
-- 💰 **[查询余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)** - 快速查询 SOL 余额
-- 🔑 **[Nonce 账户](INTERACTIVE_TUTORIAL_CN.md#14-创建-nonce-账户)** - 创建持久化 nonce 用于交易机器人
-- 🏪 **[DEX 操作](INTERACTIVE_TUTORIAL_CN.md#15-pumpfun-卖出代币)** - 访问 Pump.fun 和 PumpSwap 卖出功能
 
 ---
 
