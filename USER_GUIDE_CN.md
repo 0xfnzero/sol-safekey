@@ -68,93 +68,45 @@ Select / 选择 [1/2]:
 
 #### 🔑 核心功能（选项 1-3）
 
-**1. 创建明文私钥**
-   生成未加密的 Solana 密钥对（仅用于测试）
-   跳转：[#1-create-plaintext-keypair](#1-create-plaintext-keypair)
-
-**2. 创建加密私钥**
-   加密现有私钥并保存到 keystore
-   跳转：[#2-create-encrypted-keystore](#2-create-encrypted-keystore)
-
-**3. 解密私钥**
-   解密 keystore 并显示私钥
-   跳转：[#3-decrypt-keystore](#3-decrypt-keystore)
+- **[1. 创建明文私钥](#1-create-plaintext-keypair)** - 生成未加密的 Solana 密钥对（仅用于测试）
+- **[2. 创建加密私钥](#2-create-encrypted-keystore)** - 加密现有私钥并保存到 keystore
+- **[3. 解密私钥](#3-decrypt-keystore)** - 解密 keystore 并显示私钥
 
 #### 🔒 钱包管理（选项 U）
 
-**U. 解锁钱包**
-   解锁钱包以进行 Solana 操作
-   跳转：[#u-unlock-wallet-session](#u-unlock-wallet-session)
+- **[U. 解锁钱包](#u-unlock-wallet-session)** - 解锁钱包以进行 Solana 操作
 
 #### 🛡️ 高级安全功能（选项 4-6）
 
-**4. 设置 2FA 认证**
-   配置双因素认证
-   跳转：[#4-setup-2fa-authentication](#4-setup-2fa-authentication)
-
-**5. 生成三因子钱包**
-   创建 3FA 钱包（硬件 + 密码 + 安全问题 + 2FA）
-   跳转：[#5-generate-triple-factor-wallet](#5-generate-triple-factor-wallet)
-
-**6. 解锁三因子钱包**
-   解密 3FA 加密钱包
-   跳转：[#6-unlock-triple-factor-wallet](#6-unlock-triple-factor-wallet)
+- **[4. 设置 2FA 认证](#4-setup-2fa-authentication)** - 配置双因素认证
+- **[5. 生成三因子钱包](#5-generate-triple-factor-wallet)** - 创建 3FA 钱包（硬件 + 密码 + 安全问题 + 2FA）
+- **[6. 解锁三因子钱包](#6-unlock-triple-factor-wallet)** - 解密 3FA 加密钱包
 
 #### 💰 Solana 链上操作（选项 7-18）
 
 ##### 余额与转账
-**7. 查询 SOL 余额**
-   查询钱包 SOL 余额
-   跳转：[#7-check-sol-balance](#7-check-sol-balance)
-
-**8. 转账 SOL**
-   向其他地址发送 SOL
-   跳转：[#8-transfer-sol](#8-transfer-sol)
+- **[7. 查询 SOL 余额](#7-check-sol-balance)** - 查询钱包 SOL 余额
+- **[8. 转账 SOL](#8-transfer-sol)** - 向其他地址发送 SOL
 
 ##### WSOL 操作
-**9. 创建 WSOL ATA**
-   创建包装 SOL 关联代币账户
-   跳转：[#9-create-wsol-ata](#9-create-wsol-ata)
-
-**10. 包装 SOL → WSOL**
-   将 SOL 转换为包装 SOL
-   跳转：[#10-wrap-sol-to-wsol](#10-wrap-sol-to-wsol)
-
-**11. 解包 WSOL → SOL**
-   将包装 SOL 转换回 SOL
-   跳转：[#11-unwrap-wsol-to-sol](#11-unwrap-wsol-to-sol)
-
-**12. 关闭 WSOL ATA**
-   关闭 WSOL ATA 并将剩余 WSOL 转换为 SOL
-   跳转：[#12-close-wsol-ata](#12-close-wsol-ata)
+- **[9. 创建 WSOL ATA](#9-create-wsol-ata)** - 创建包装 SOL 关联代币账户
+- **[10. 包装 SOL → WSOL](#10-wrap-sol-to-wsol)** - 将 SOL 转换为包装 SOL
+- **[11. 解包 WSOL → SOL](#11-unwrap-wsol-to-sol)** - 将包装 SOL 转换回 SOL
+- **[12. 关闭 WSOL ATA](#12-close-wsol-ata)** - 关闭 WSOL ATA 并将剩余 WSOL 转换为 SOL
 
 ##### 代币操作
-**13. 转账 SPL 代币**
-   向其他地址发送 SPL 代币
-   跳转：[#13-transfer-spl-token](#13-transfer-spl-token)
+- **[13. 转账 SPL 代币](#13-transfer-spl-token)** - 向其他地址发送 SPL 代币
 
 ##### 交易工具
-**14. 创建 Nonce 账户**
-   创建持久化 nonce 以防止交易重放
-   跳转：[#14-create-durable-nonce-account](#14-create-durable-nonce-account)
+- **[14. 创建 Nonce 账户](#14-create-durable-nonce-account)** - 创建持久化 nonce 以防止交易重放
 
 ##### DEX 操作
-**15. Pump.fun 卖出代币**
-   在 Pump.fun DEX 上卖出代币（内盘）
-   跳转：[#15-pumpfun-sell-token](#15-pumpfun-sell-token)
-
-**16. PumpSwap 卖出代币**
-   在 PumpSwap DEX 上卖出代币
-   跳转：[#16-pumpswap-sell-token](#16-pumpswap-sell-token)
+- **[15. Pump.fun 卖出代币](#15-pumpfun-sell-token)** - 在 Pump.fun DEX 上卖出代币（内盘）
+- **[16. PumpSwap 卖出代币](#16-pumpswap-sell-token)** - 在 PumpSwap DEX 上卖出代币
 
 ##### 返现操作
-**17. Pump.fun 返现**
-   查看并领取 pump.fun 返现（原生 SOL）
-   跳转：[#17-pumpfun-cashback-view-claim](#17-pumpfun-cashback-view-claim)
-
-**18. PumpSwap 返现**
-   查看并领取 PumpSwap 返现（WSOL）
-   跳转：[#18-pumpswap-cashback-view-claim](#18-pumpswap-cashback-view-claim)
+- **[17. Pump.fun 返现](#17-pumpfun-cashback-view-claim)** - 查看并领取 pump.fun 返现（原生 SOL）
+- **[18. PumpSwap 返现](#18-pumpswap-cashback-view-claim)** - 查看并领取 PumpSwap 返现（WSOL）
 
 #### 🎯 快速访问常用任务
 
@@ -923,3 +875,137 @@ echo "你的密码" | ./你的bot
 - 在使用 mainnet 前备份所有内容
 - 从小额开始
 - 仔细验证所有地址
+#### 🔑 核心功能（选项 1-3）
+
+- **[1. 创建明文私钥](#1-create-plaintext-keypair)** - 生成未加密的 Solana 密钥对（仅用于测试）
+- **[2. 创建加密私钥](#2-create-encrypted-keystore)** - 加密现有私钥并保存到 keystore
+- **[3. 解密私钥](#3-decrypt-keystore)** - 解密 keystore 并显示私钥
+
+#### 🔒 钱包管理（选项 U）
+
+- **[U. 解锁钱包](#u-unlock-wallet-session)** - 解锁钱包以进行 Solana 操作
+
+#### 🛡️ 高级安全功能（选项 4-6）
+
+- **[4. 设置 2FA 认证](#4-setup-2fa-authentication)** - 配置双因素认证
+- **[5. 生成三因子钱包](#5-generate-triple-factor-wallet)** - 创建 3FA 钱包（硬件 + 密码 + 安全问题 + 2FA）
+- **[6. 解锁三因子钱包](#6-unlock-triple-factor-wallet)** - 解密 3FA 加密钱包
+
+#### 💰 Solana 链上操作（选项 7-18）
+
+##### 余额与转账
+- **[7. 查询 SOL 余额](#7-check-sol-balance)** - 查询钱包 SOL 余额
+- **[8. 转账 SOL](#8-transfer-sol)** - 向其他地址发送 SOL
+
+##### WSOL 操作
+- **[9. 创建 WSOL ATA](#9-create-wsol-ata)** - 创建包装 SOL 关联代币账户
+- **[10. 包装 SOL → WSOL](#10-wrap-sol-to-wsol)** - 将 SOL 转换为包装 SOL
+- **[11. 解包 WSOL → SOL](#11-unwrap-wsol-to-sol)** - 将包装 SOL 转换回 SOL
+- **[12. 关闭 WSOL ATA](#12-close-wsol-ata)** - 关闭 WSOL ATA 并将剩余 WSOL 转换为 SOL
+
+##### 代币操作
+- **[13. 转账 SPL 代币](#13-transfer-spl-token)** - 向其他地址发送 SPL 代币
+
+##### 交易工具
+- **[14. 创建 Nonce 账户](#14-create-durable-nonce-account)** - 创建持久化 nonce 以防止交易重放
+
+##### DEX 操作
+- **[15. Pump.fun 卖出代币](#15-pumpfun-sell-token)** - 在 Pump.fun DEX 上卖出代币（内盘）
+- **[16. PumpSwap 卖出代币](#16-pumpswap-sell-token)** - 在 PumpSwap DEX 上卖出代币
+
+##### 返现操作
+- **[17. Pump.fun 返现](#17-pumpfun-cashback-view-claim)** - 查看并领取 pump.fun 返现（原生 SOL）
+- **[18. PumpSwap 返现](#18-pumpswap-cashback-view-claim)** - 查看并领取 PumpSwap 返现（WSOL）
+
+#### 🎯 快速访问常用任务
+
+- **[解锁钱包](#u-unlock-wallet-session)** - 解锁钱包并开始使用
+- **[查询余额](#7-check-sol-balance)** - 快速查询 SOL 余额
+- **[创建 Nonce](#14-create-durable-nonce-account)** - 创建持久化 nonce 用于交易机器人
+- **[DEX 操作](#15-pumpfun-sell-token)** - 访问 Pump.fun 和 PumpSwap 卖出功能
+
+---
+
+## 钱包操作
+
+### 1. 创建明文密钥对
+
+**用途**: 生成未加密的密钥对（仅用于测试）
+
+**警告**: 不建议在生产环境使用。密钥以明文存储。
+
+**步骤**:
+1. 从主菜单选择选项 `1`
+2. 选择生成方式:
+   - 选项 1: 生成新的随机密钥对
+   - 选项 2: 导入现有私钥
+3. 选择输出格式:
+   - 选项 1: 保存为 JSON 文件
+   - 选项 2: 在终端显示（base58）
+
+**示例**:
+```
+📝 明文密钥对选项:
+  1. 生成新密钥对
+  2. 导入现有私钥
+
+请选择 [1/2]: 1
+
+✅ 密钥对生成成功！
+📍 公钥: E7Rmd6piasPNs9jqRBUfS8nvNqDx6j5qPDE6Le7us5bp
+
+输出格式:
+  1. 保存为 JSON 文件
+  2. 显示 base58 私钥
+
+请选择 [1/2]: 1
+
+文件路径（默认: wallet.json）: test-wallet.json
+
+✅ 已保存到 test-wallet.json
+```
+
+### 2. 创建加密密钥对（推荐）
+
+**用途**: 生成或导入带 AES-256 加密的密钥对
+
+**安全性**: 军事级加密配合 PBKDF2 密钥派生
+
+**步骤**:
+1. 从主菜单选择选项 `2`
+2. 选择生成方式:
+   - 选项 1: 生成新密钥对并加密
+   - 选项 2: 导入现有私钥并加密
+3. 设置加密密码（最少 10 个字符）
+4. 确认密码
+5. 选择输出格式:
+   - 选项 1: 保存为 Keystore 文件（推荐）
+   - 选项 2: 显示加密字符串
+
+**示例**:
+```
+🔐 加密密钥对选项:
+  1. 生成新密钥对并加密
+  2. 导入现有私钥并加密
+
+请选择 [1/2]: 1
+
+🔒 设置加密密码（至少 10 个字符）:
+新密码: ************
+确认密码: ************
+
+✅ 密码已接受！
+
+输出格式:
+  1. 保存为 Keystore 文件（推荐）
+  2. 显示加密字符串
+
+请选择 [1/2]: 1
+
+文件路径（默认: wallet.json）: keystore.json
+
+✅ Keystore 创建成功！
+📍 公钥: E7Rmd6piasPNs9jqRBUfS8nvNqDx6j5qPDE6Le7us5bp
+📁 位置: keystore.json
+
+⚠️  重要: 记住你的密码！密码无法恢复。
