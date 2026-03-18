@@ -68,52 +68,52 @@ Quick overview of all 18 interactive menu operations organized by category. Clic
 
 #### 🔑 Core Functions (Options 1-3)
 
-- **[1. Create Plaintext Key](#1-create-plaintext-keypair)** - Generate and save unencrypted Solana keypair (for testing only)
-- **[2. Create Encrypted Key (bot)](#2-create-encrypted-keystore)** - Encrypt existing private key and save to keystore
-- **[3. Decrypt Key](#3-decrypt-keystore)** - Decrypt keystore and reveal private key
+- **[1. Create Plaintext Key](INTERACTIVE_TUTORIAL.md#1-create-plaintext-keypair)** - Generate and save unencrypted Solana keypair (for testing only)
+- **[2. Create Encrypted Key (bot)](INTERACTIVE_TUTORIAL.md#2-create-encrypted-keystore)** - Encrypt existing private key and save to keystore
+- **[3. Decrypt Key](INTERACTIVE_TUTORIAL.md#3-decrypt-keystore)** - Decrypt keystore and reveal private key
 
 #### 🔒 Wallet Management (Option U)
 
-- **[U. Unlock Wallet](#u-unlock-wallet-session)** - Unlock wallet for Solana operations
+- **[U. Unlock Wallet](INTERACTIVE_TUTORIAL.md#u-unlock-wallet-session)** - Unlock wallet for Solana operations
 
 #### 🛡️ Advanced Security Features (Options 4-6)
 
-- **[4. Setup 2FA Authentication](#4-setup-2fa-authentication)** - Configure two-factor authentication
-- **[5. Generate Triple-Factor Wallet](#5-generate-triple-factor-wallet)** - Create wallet with 3FA (hardware + password + security question + 2FA)
-- **[6. Unlock Triple-Factor Wallet](#6-unlock-triple-factor-wallet)** - Decrypt 3FA encrypted wallet
+- **[4. Setup 2FA Authentication](INTERACTIVE_TUTORIAL.md#4-setup-2fa-authentication)** - Configure two-factor authentication
+- **[5. Generate Triple-Factor Wallet](INTERACTIVE_TUTORIAL.md#5-generate-triple-factor-wallet)** - Create wallet with 3FA (hardware + password + security question + 2FA)
+- **[6. Unlock Triple-Factor Wallet](INTERACTIVE_TUTORIAL.md#6-unlock-triple-factor-wallet)** - Decrypt 3FA encrypted wallet
 
 #### 💰 Solana On-Chain Operations (Options 7-18)
 
 ##### Balance & Transfer
-- **[7. Check SOL Balance](#7-check-sol-balance)** - Query wallet SOL balance
-- **[8. Transfer SOL](#8-transfer-sol)** - Send SOL to another address
+- **[7. Check SOL Balance](INTERACTIVE_TUTORIAL.md#7-check-sol-balance)** - Query wallet SOL balance
+- **[8. Transfer SOL](INTERACTIVE_TUTORIAL.md#8-transfer-sol)** - Send SOL to another address
 
 ##### WSOL Operations
-- **[9. Create WSOL ATA](#9-create-wsol-ata)** - Create Wrapped SOL Associated Token Account
-- **[10. Wrap SOL → WSOL](#10-wrap-sol-to-wsol)** - Convert SOL to Wrapped SOL
-- **[11. Unwrap WSOL → SOL](#11-unwrap-wsol-to-sol)** - Convert Wrapped SOL back to SOL
-- **[12. Close WSOL ATA](#12-close-wsol-ata)** - Close WSOL ATA and convert remaining WSOL to SOL
+- **[9. Create WSOL ATA](INTERACTIVE_TUTORIAL.md#9-create-wsol-ata)** - Create Wrapped SOL Associated Token Account
+- **[10. Wrap SOL → WSOL](INTERACTIVE_TUTORIAL.md#10-wrap-sol-to-wsol)** - Convert SOL to Wrapped SOL
+- **[11. Unwrap WSOL → SOL](INTERACTIVE_TUTORIAL.md#11-unwrap-wsol-to-sol)** - Convert Wrapped SOL back to SOL
+- **[12. Close WSOL ATA](INTERACTIVE_TUTORIAL.md#12-close-wsol-ata)** - Close WSOL ATA and convert remaining WSOL to SOL
 
 ##### Token Operations
-- **[13. Transfer SPL Token](#13-transfer-spl-token)** - Send SPL tokens to another address
+- **[13. Transfer SPL Token](INTERACTIVE_TUTORIAL.md#13-transfer-spl-token)** - Send SPL tokens to another address
 
 ##### Transaction Tools
-- **[14. Create Nonce Account](#14-create-durable-nonce-account)** - Create durable nonce for transaction replay protection
+- **[14. Create Nonce Account](INTERACTIVE_TUTORIAL.md#14-create-durable-nonce-account)** - Create durable nonce for transaction replay protection
 
 ##### DEX Operations
-- **[15. Pump.fun Sell Token](#15-pumpfun-sell-token)** - Sell tokens on Pump.fun DEX (internal market)
-- **[16. PumpSwap Sell Token](#16-pumpswap-sell-token)** - Sell tokens on PumpSwap DEX
+- **[15. Pump.fun Sell Token](INTERACTIVE_TUTORIAL.md#15-pumpfun-sell-token)** - Sell tokens on Pump.fun DEX (internal market)
+- **[16. PumpSwap Sell Token](INTERACTIVE_TUTORIAL.md#16-pumpswap-sell-token)** - Sell tokens on PumpSwap DEX
 
 ##### Cashback Operations
-- **[17. Pump.fun Cashback (View & Claim)](#17-pumpfun-cashback-view-claim)** - View and claim pump.fun cashback (native SOL)
-- **[18. PumpSwap Cashback (View & Claim)](#18-pumpswap-cashback-view-claim)** - View and claim PumpSwap cashback (WSOL)
+- **[17. Pump.fun Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback)** - View and claim pump.fun cashback (native SOL)
+- **[18. PumpSwap Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback)** - View and claim PumpSwap cashback (WSOL)
 
 #### 🎯 Quick Access to Common Tasks
 
-- 🔑 **[Unlock Wallet](#u-unlock-wallet-session)** - Unlock wallet to get started
-- 💰 **[Check Balance](#7-check-sol-balance)** - Query SOL balance quickly
-- 🔑 **[Create Nonce](#14-create-durable-nonce-account)** - Create durable nonce for trading bots
-- 🏪 **[DEX Operations](#15-pumpfun-sell-token)** - Access Pump.fun and PumpSwap sell functions
+- 🔑 **[Unlock Wallet](INTERACTIVE_TUTORIAL.md#u-unlock-wallet-session)** - Unlock wallet to get started
+- 💰 **[Check Balance](INTERACTIVE_TUTORIAL.md#7-check-sol-balance)** - Query SOL balance quickly
+- 🔑 **[Create Nonce](INTERACTIVE_TUTORIAL.md#14-create-durable-nonce-account)** - Create durable nonce for trading bots
+- 🏪 **[DEX Operations](INTERACTIVE_TUTORIAL.md#15-pumpfun-sell-token)** - Access Pump.fun and PumpSwap sell functions
 
 ---
 

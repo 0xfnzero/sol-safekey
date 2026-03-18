@@ -140,8 +140,8 @@ Quick overview of all 18 interactive menu operations organized by category:
 - **[16. PumpSwap Sell Token](INTERACTIVE_TUTORIAL.md#16-pumpswap-sell-token)** - Sell tokens on PumpSwap DEX
 
 #### Cashback Operations
-- **[17. Pump.fun Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback-view--claim)** - View and claim pump.fun cashback (native SOL)
-- **[18. PumpSwap Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback-view--claim)** - View and claim PumpSwap cashback (WSOL)
+- **[17. Pump.fun Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback)** - View and claim pump.fun cashback (native SOL)
+- **[18. PumpSwap Cashback (View & Claim)](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback)** - View and claim PumpSwap cashback (WSOL)
 
 ### 🎯 Quick Access
 

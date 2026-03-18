@@ -105,8 +105,8 @@ Select / 选择 [1/2]:
 - **[16. PumpSwap 卖出代币](INTERACTIVE_TUTORIAL_CN.md#16-pumpswap-卖出代币)** - 在 PumpSwap DEX 上卖出代币
 
 ##### 返现操作
-- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现（查看与领取）)** - 查看并领取 pump.fun 返现（原生 SOL）
-- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现（查看与领取）)** - 查看并领取 PumpSwap 返现（WSOL）
+- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现-查看与领取)** - 查看并领取 pump.fun 返现（原生 SOL）
+- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现-查看与领取)** - 查看并领取 PumpSwap 返现（WSOL）
 
 #### 🎯 快速访问常用任务
 
