@@ -62,45 +62,108 @@ Select / 选择 [1/2]:
 
 选择语言后，主菜单显示所有可用操作。
 
-### 📋 完整菜单索引
+### 📋 完整菜单索引（Word 风格）
 
-```
-==================================================
-  Sol-SafeKey - Solana 密钥管理工具
-==================================================
+所有 18 个交互式菜单操作的快速概览，按类别组织。点击任一操作可跳转到详细指南：
 
-核心功能 (只需3个操作):
+#### 🔑 核心功能（选项 1-3）
 
-  1.  创建明文私钥
-  2.  创建加密私钥(bot)
-  3.  解密私钥
+**1. 创建明文私钥**
+   生成未加密的 Solana 密钥对（仅用于测试）
+   跳转：[#1-create-plaintext-keypair](#1-create-plaintext-keypair)
 
-  🔒 钱包状态: 未解锁
-  U.  解锁钱包（用于Solana操作）
+**2. 创建加密私钥**
+   加密现有私钥并保存到 keystore
+   跳转：[#2-create-encrypted-keystore](#2-create-encrypted-keystore)
 
-  高级安全功能:
-  4.  设置 2FA 认证
-  5.  生成三因子钱包
-  6.  解锁三因子钱包
+**3. 解密私钥**
+   解密 keystore 并显示私钥
+   跳转：[#3-decrypt-keystore](#3-decrypt-keystore)
 
-  Solana 链上操作:
-  7.  查询 SOL 余额
-  8.  转账 SOL
-  9.  创建 WSOL ATA
-  10.  包装 SOL → WSOL
-  11.  解包 WSOL → SOL
-  12.  关闭 WSOL ATA
-  13.  转账 SPL 代币
-  14.  创建 Nonce 账户
-  15.  Pump.fun 卖出代币
-  16.  PumpSwap 卖出代币
-  17.  Pump.fun 返现（查看与领取）
-  18.  PumpSwap 返现（查看与领取）
+#### 🔒 钱包管理（选项 U）
 
-  0.  退出
+**U. 解锁钱包**
+   解锁钱包以进行 Solana 操作
+   跳转：[#u-unlock-wallet-session](#u-unlock-wallet-session)
 
-选择操作 (0-18/U): _
-```
+#### 🛡️ 高级安全功能（选项 4-6）
+
+**4. 设置 2FA 认证**
+   配置双因素认证
+   跳转：[#4-setup-2fa-authentication](#4-setup-2fa-authentication)
+
+**5. 生成三因子钱包**
+   创建 3FA 钱包（硬件 + 密码 + 安全问题 + 2FA）
+   跳转：[#5-generate-triple-factor-wallet](#5-generate-triple-factor-wallet)
+
+**6. 解锁三因子钱包**
+   解密 3FA 加密钱包
+   跳转：[#6-unlock-triple-factor-wallet](#6-unlock-triple-factor-wallet)
+
+#### 💰 Solana 链上操作（选项 7-18）
+
+##### 余额与转账
+**7. 查询 SOL 余额**
+   查询钱包 SOL 余额
+   跳转：[#7-check-sol-balance](#7-check-sol-balance)
+
+**8. 转账 SOL**
+   向其他地址发送 SOL
+   跳转：[#8-transfer-sol](#8-transfer-sol)
+
+##### WSOL 操作
+**9. 创建 WSOL ATA**
+   创建包装 SOL 关联代币账户
+   跳转：[#9-create-wsol-ata](#9-create-wsol-ata)
+
+**10. 包装 SOL → WSOL**
+   将 SOL 转换为包装 SOL
+   跳转：[#10-wrap-sol-to-wsol](#10-wrap-sol-to-wsol)
+
+**11. 解包 WSOL → SOL**
+   将包装 SOL 转换回 SOL
+   跳转：[#11-unwrap-wsol-to-sol](#11-unwrap-wsol-to-sol)
+
+**12. 关闭 WSOL ATA**
+   关闭 WSOL ATA 并将剩余 WSOL 转换为 SOL
+   跳转：[#12-close-wsol-ata](#12-close-wsol-ata)
+
+##### 代币操作
+**13. 转账 SPL 代币**
+   向其他地址发送 SPL 代币
+   跳转：[#13-transfer-spl-token](#13-transfer-spl-token)
+
+##### 交易工具
+**14. 创建 Nonce 账户**
+   创建持久化 nonce 以防止交易重放
+   跳转：[#14-create-durable-nonce-account](#14-create-durable-nonce-account)
+
+##### DEX 操作
+**15. Pump.fun 卖出代币**
+   在 Pump.fun DEX 上卖出代币（内盘）
+   跳转：[#15-pumpfun-sell-token](#15-pumpfun-sell-token)
+
+**16. PumpSwap 卖出代币**
+   在 PumpSwap DEX 上卖出代币
+   跳转：[#16-pumpswap-sell-token](#16-pumpswap-sell-token)
+
+##### 返现操作
+**17. Pump.fun 返现**
+   查看并领取 pump.fun 返现（原生 SOL）
+   跳转：[#17-pumpfun-cashback-view-claim](#17-pumpfun-cashback-view-claim)
+
+**18. PumpSwap 返现**
+   查看并领取 PumpSwap 返现（WSOL）
+   跳转：[#18-pumpswap-cashback-view-claim](#18-pumpswap-cashback-view-claim)
+
+#### 🎯 快速访问常用任务
+
+- **[解锁钱包](#u-unlock-wallet-session)** - 解锁钱包并开始使用
+- **[查询余额](#7-check-sol-balance)** - 快速查询 SOL 余额
+- **[创建 Nonce](#14-create-durable-nonce-account)** - 创建持久化 nonce 用于交易机器人
+- **[DEX 操作](#15-pumpfun-sell-token)** - 访问 Pump.fun 和 PumpSwap 卖出功能
+
+---
 
 ## 钱包操作
 

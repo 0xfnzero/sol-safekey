@@ -62,45 +62,60 @@ Select / 选择 [1/2]:
 
 After selecting your language, the main menu appears with all available operations.
 
-### 📋 Complete Menu Index
+### 📋 Complete Menu Index with Quick Links
 
-```
-==================================================
-  Sol-SafeKey - Solana Key Management Tool
-==================================================
+Quick overview of all 18 interactive menu operations organized by category. Click any operation to jump to its detailed guide:
 
-Core Functions (3 operations):
+#### 🔑 Core Functions (Options 1-3)
 
-  1.  Create Plaintext Key
-  2.  Create Encrypted Key (bot)
-  3.  Decrypt Key
+- **[1. Create Plaintext Key](#1-create-plaintext-keypair)** - Generate and save unencrypted Solana keypair (for testing only)
+- **[2. Create Encrypted Key (bot)](#2-create-encrypted-keystore)** - Encrypt existing private key and save to keystore
+- **[3. Decrypt Key](#3-decrypt-keystore)** - Decrypt keystore and reveal private key
 
-  🔒 Wallet Status: Unlocked
-  U.  Unlock Wallet (for Solana Operations)
+#### 🔒 Wallet Management (Option U)
 
-  Advanced Security Features:
-  4.  Setup 2FA Authentication
-  5.  Generate Triple-Factor Wallet
-  6.  Unlock Triple-Factor Wallet
+- **[U. Unlock Wallet](#u-unlock-wallet-session)** - Unlock wallet for Solana operations
 
-  Solana On-Chain Operations:
-  7.  Check SOL Balance
-  8.  Transfer SOL
-  9.  Create WSOL ATA
-  10.  Wrap SOL → WSOL
-  11.  Unwrap WSOL → SOL
-  12.  Close WSOL ATA
-  13.  Transfer SPL Token
-  14.  Create Nonce Account
-  15.  Pump.fun Sell Token
-  16.  PumpSwap Sell Token
-  17.  Pump.fun Cashback (View & Claim)
-  18.  PumpSwap Cashback (View & Claim)
+#### 🛡️ Advanced Security Features (Options 4-6)
 
-  0.  Exit
+- **[4. Setup 2FA Authentication](#4-setup-2fa-authentication)** - Configure two-factor authentication
+- **[5. Generate Triple-Factor Wallet](#5-generate-triple-factor-wallet)** - Create wallet with 3FA (hardware + password + security question + 2FA)
+- **[6. Unlock Triple-Factor Wallet](#6-unlock-triple-factor-wallet)** - Decrypt 3FA encrypted wallet
 
-Select operation (0-18/U): _
-```
+#### 💰 Solana On-Chain Operations (Options 7-18)
+
+##### Balance & Transfer
+- **[7. Check SOL Balance](#7-check-sol-balance)** - Query wallet SOL balance
+- **[8. Transfer SOL](#8-transfer-sol)** - Send SOL to another address
+
+##### WSOL Operations
+- **[9. Create WSOL ATA](#9-create-wsol-ata)** - Create Wrapped SOL Associated Token Account
+- **[10. Wrap SOL → WSOL](#10-wrap-sol-to-wsol)** - Convert SOL to Wrapped SOL
+- **[11. Unwrap WSOL → SOL](#11-unwrap-wsol-to-sol)** - Convert Wrapped SOL back to SOL
+- **[12. Close WSOL ATA](#12-close-wsol-ata)** - Close WSOL ATA and convert remaining WSOL to SOL
+
+##### Token Operations
+- **[13. Transfer SPL Token](#13-transfer-spl-token)** - Send SPL tokens to another address
+
+##### Transaction Tools
+- **[14. Create Nonce Account](#14-create-durable-nonce-account)** - Create durable nonce for transaction replay protection
+
+##### DEX Operations
+- **[15. Pump.fun Sell Token](#15-pumpfun-sell-token)** - Sell tokens on Pump.fun DEX (internal market)
+- **[16. PumpSwap Sell Token](#16-pumpswap-sell-token)** - Sell tokens on PumpSwap DEX
+
+##### Cashback Operations
+- **[17. Pump.fun Cashback (View & Claim)](#17-pumpfun-cashback-view-claim)** - View and claim pump.fun cashback (native SOL)
+- **[18. PumpSwap Cashback (View & Claim)](#18-pumpswap-cashback-view-claim)** - View and claim PumpSwap cashback (WSOL)
+
+#### 🎯 Quick Access to Common Tasks
+
+- 🔑 **[Unlock Wallet](#u-unlock-wallet-session)** - Unlock wallet to get started
+- 💰 **[Check Balance](#7-check-sol-balance)** - Query SOL balance quickly
+- 🔑 **[Create Nonce](#14-create-durable-nonce-account)** - Create durable nonce for trading bots
+- 🏪 **[DEX Operations](#15-pumpfun-sell-token)** - Access Pump.fun and PumpSwap sell functions
+
+---
 
 ## Wallet Operations
 
