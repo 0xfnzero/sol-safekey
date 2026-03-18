@@ -62,6 +62,46 @@ Select / 选择 [1/2]:
 
 After selecting your language, the main menu appears with all available operations.
 
+### 📋 Complete Menu Index
+
+```
+==================================================
+  Sol-SafeKey - Solana Key Management Tool
+==================================================
+
+Core Functions (3 operations):
+
+  1.  Create Plaintext Key
+  2.  Create Encrypted Key (bot)
+  3.  Decrypt Key
+
+  🔒 Wallet Status: Unlocked
+  U.  Unlock Wallet (for Solana Operations)
+
+  Advanced Security Features:
+  4.  Setup 2FA Authentication
+  5.  Generate Triple-Factor Wallet
+  6.  Unlock Triple-Factor Wallet
+
+  Solana On-Chain Operations:
+  7.  Check SOL Balance
+  8.  Transfer SOL
+  9.  Create WSOL ATA
+  10.  Wrap SOL → WSOL
+  11.  Unwrap WSOL → SOL
+  12.  Close WSOL ATA
+  13.  Transfer SPL Token
+  14.  Create Nonce Account
+  15.  Pump.fun Sell Token
+  16.  PumpSwap Sell Token
+  17.  Pump.fun Cashback (View & Claim)
+  18.  PumpSwap Cashback (View & Claim)
+
+  0.  Exit
+
+Select operation (0-18/U): _
+```
+
 ## Wallet Operations
 
 ### 1. Create Plain Text Keypair
