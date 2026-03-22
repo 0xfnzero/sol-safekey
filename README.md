@@ -97,6 +97,57 @@
 
 ---
 
+## 📦 Installation
+
+### Install from crates.io (Recommended)
+
+The latest stable release is available on [crates.io](https://crates.io/crates/sol-safekey):
+
+```bash
+# Install with all features enabled
+cargo install sol-safekey --features full
+
+# Verify installation
+sol-safekey --version
+
+# Start interactive menu
+sol-safekey start
+```
+
+This installs the complete CLI with all features:
+- 🔐 **Core encryption** - AES-256 password-based encryption
+- 🔑 **2FA/TOTP** - Two-factor authentication support
+- 🌐 **Solana operations** - Full Solana transaction support
+- 💱 **DEX operations** - Pump.fun & PumpSwap trading
+- 💰 **Cashback** - Claim trading cashback rewards
+
+### Install from source
+
+```bash
+# Clone repository
+git clone https://github.com/0xfnzero/sol-safekey.git
+cd sol-safekey
+
+# Build and install
+cargo install --path . --features full
+```
+
+### System Requirements
+
+- **Rust**: 1.70+ (install from [rustup.rs](https://rustup.rs/))
+- **Operating System**: Linux, macOS, or Windows
+- **Network**: Internet connection for Solana RPC calls
+
+### Cargo Feature Flags
+
+- `full` - Enable all features (default for CLI)
+- `cli` - Command-line interface with colored output
+- `2fa` - Two-factor authentication (TOTP) support
+- `solana-ops` - Solana blockchain operations
+- `sol-trade-sdk` - Trading operations (Pump.fun, PumpSwap)
+
+---
+
 ## 📖 Complete Interactive Menu Guide
 
 📖 **[View Complete Interactive Menu Guide → INTERACTIVE_TUTORIAL.md]**

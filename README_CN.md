@@ -118,6 +118,57 @@ sol-safekey start
 ---
 ---
 
+## 📦 安装
+
+### 从 crates.io 安装（推荐）
+
+最新稳定版本已发布在 [crates.io](https://crates.io/crates/sol-safekey)：
+
+```bash
+# 启用所有功能安装
+cargo install sol-safekey --features full
+
+# 验证安装
+sol-safekey --version
+
+# 启动交互式菜单
+sol-safekey start
+```
+
+这将安装完整的 CLI 工具，包含所有功能：
+- 🔐 **核心加密** - 基于 AES-256 的密码加密
+- 🔑 **2FA/TOTP** - 双因素认证支持
+- 🌐 **Solana 操作** - 完整的 Solana 交易功能
+- 💱 **DEX 操作** - Pump.fun & PumpSwap 交易
+- 💰 **返现** - 领取交易返现奖励
+
+### 从源码安装
+
+```bash
+# 克隆仓库
+git clone https://github.com/0xfnzero/sol-safekey.git
+cd sol-safekey
+
+# 编译并安装
+cargo install --path . --features full
+```
+
+### 系统要求
+
+- **Rust**: 1.70+ （从 [rustup.rs](https://rustup.rs/) 安装）
+- **操作系统**: Linux、macOS 或 Windows
+- **网络**: 进行 Solana RPC 调用需要互联网连接
+
+### Cargo 功能特性
+
+- `full` - 启用所有功能（CLI 默认）
+- `cli` - 命令行界面（带彩色输出）
+- `2fa` - 双因素认证（TOTP）支持
+- `solana-ops` - Solana 区块链操作
+- `sol-trade-sdk` - 交易操作（Pump.fun、PumpSwap）
+
+---
+
 ## 📚 文档
 
 - **[Bot 集成指南](BOT_INTEGRATION_CN.md)** - 如何将 sol-safekey 集成到你的 bot
