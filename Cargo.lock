@@ -4296,7 +4296,7 @@ dependencies = [
 
 [[package]]
 name = "sol-safekey"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "atty",
@@ -4325,9 +4325,9 @@ dependencies = [
 
 [[package]]
 name = "sol-trade-sdk"
-version = "4.0.0"
+version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67f2ea32af1f2c49335da969841c060738e94a4dee2af9e8ab230f5e0156adec"
+checksum = "eae72823a010e534bf5da33754a479179cf3fefdbb240d94fbebfea05463afa0"
 dependencies = [
  "anyhow",
  "arc-swap",
