@@ -493,16 +493,18 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
 
                 let keypair = load_encrypted_keypair(encrypted_file)?;
                 let payer = std::sync::Arc::new(keypair.insecure_clone());
-                let config = TradeConfig {
-                    rpc_url: rpc_url.clone(),
-                    swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url.clone())],
-                    commitment: CommitmentConfig::confirmed(),
-                    create_wsol_ata_on_startup: false,
-                    use_seed_optimize: false,
-                    check_min_tip: false,
-                    log_enabled: false,
-                    swqos_cores_from_end: false,
-                };
+                let config = TradeConfig::builder(
+                    rpc_url.clone(),
+                    vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url.clone())],
+                    CommitmentConfig::confirmed(),
+                )
+                .create_wsol_ata_on_startup(false)
+                .use_seed_optimize(false)
+                .check_min_tip(false)
+                .log_enabled(false)
+                .swqos_cores_from_end(false)
+                .mev_protection(false)
+                .build();
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
                 println!("\n{}", "💰 Claiming Pump (Pump.fun) cashback (native SOL)...".cyan());
@@ -528,16 +530,18 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
 
                 let keypair = load_encrypted_keypair(encrypted_file)?;
                 let payer = std::sync::Arc::new(keypair.insecure_clone());
-                let config = TradeConfig {
-                    rpc_url: rpc_url.clone(),
-                    swqos_configs: vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url.clone())],
-                    commitment: CommitmentConfig::confirmed(),
-                    create_wsol_ata_on_startup: false,
-                    use_seed_optimize: false,
-                    check_min_tip: false,
-                    log_enabled: false,
-                    swqos_cores_from_end: false,
-                };
+                let config = TradeConfig::builder(
+                    rpc_url.clone(),
+                    vec![sol_trade_sdk::swqos::SwqosConfig::Default(rpc_url.clone())],
+                    CommitmentConfig::confirmed(),
+                )
+                .create_wsol_ata_on_startup(false)
+                .use_seed_optimize(false)
+                .check_min_tip(false)
+                .log_enabled(false)
+                .swqos_cores_from_end(false)
+                .mev_protection(false)
+                .build();
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
                 println!("\n{}", "💰 Claiming PumpSwap cashback (WSOL)...".cyan());

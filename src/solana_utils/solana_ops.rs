@@ -495,16 +495,18 @@ impl SolanaClientSdk {
         use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
         use solana_commitment_config::CommitmentConfig;
 
-        let trade_config = TradeConfig {
-            rpc_url: self.rpc_url.clone(),
-            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
-            commitment: CommitmentConfig::confirmed(),
-            create_wsol_ata_on_startup: false,  // 不在启动时创建，由手动调用
-            use_seed_optimize: self.use_seed_optimize,
-            check_min_tip: false,
-            log_enabled: false,
-            swqos_cores_from_end: false,
-        };
+        let trade_config = TradeConfig::builder(
+            self.rpc_url.clone(),
+            vec![SwqosConfig::Default(self.rpc_url.clone())],
+            CommitmentConfig::confirmed(),
+        )
+        .create_wsol_ata_on_startup(false)  // 不在启动时创建，由手动调用
+        .use_seed_optimize(self.use_seed_optimize)
+        .check_min_tip(false)
+        .log_enabled(false)
+        .swqos_cores_from_end(false)
+        .mev_protection(false)
+        .build();
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
         let signature_str = trade_client.create_wsol_ata().await?;
@@ -520,16 +522,18 @@ impl SolanaClientSdk {
             return Err(anyhow!("Wrap amount cannot be zero"));
         }
 
-        let trade_config = TradeConfig {
-            rpc_url: self.rpc_url.clone(),
-            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
-            commitment: CommitmentConfig::confirmed(),
-            create_wsol_ata_on_startup: false,  // 不在启动时创建
-            use_seed_optimize: self.use_seed_optimize,
-            check_min_tip: false,
-            log_enabled: false,
-            swqos_cores_from_end: false,
-        };
+        let trade_config = TradeConfig::builder(
+            self.rpc_url.clone(),
+            vec![SwqosConfig::Default(self.rpc_url.clone())],
+            CommitmentConfig::confirmed(),
+        )
+        .create_wsol_ata_on_startup(false)  // 不在启动时创建
+        .use_seed_optimize(self.use_seed_optimize)
+        .check_min_tip(false)
+        .log_enabled(false)
+        .swqos_cores_from_end(false)
+        .mev_protection(false)
+        .build();
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
         let signature_str = trade_client.wrap_sol_to_wsol(amount).await?;
@@ -541,16 +545,18 @@ impl SolanaClientSdk {
         use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
         use solana_commitment_config::CommitmentConfig;
 
-        let trade_config = TradeConfig {
-            rpc_url: self.rpc_url.clone(),
-            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
-            commitment: CommitmentConfig::confirmed(),
-            create_wsol_ata_on_startup: false,
-            use_seed_optimize: self.use_seed_optimize,
-            check_min_tip: false,
-            log_enabled: false,
-            swqos_cores_from_end: false,
-        };
+        let trade_config = TradeConfig::builder(
+            self.rpc_url.clone(),
+            vec![SwqosConfig::Default(self.rpc_url.clone())],
+            CommitmentConfig::confirmed(),
+        )
+        .create_wsol_ata_on_startup(false)
+        .use_seed_optimize(self.use_seed_optimize)
+        .check_min_tip(false)
+        .log_enabled(false)
+        .swqos_cores_from_end(false)
+        .mev_protection(false)
+        .build();
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
         let signature_str = trade_client.close_wsol().await?;
@@ -566,16 +572,18 @@ impl SolanaClientSdk {
             return Err(anyhow!("Unwrap amount cannot be zero"));
         }
 
-        let trade_config = TradeConfig {
-            rpc_url: self.rpc_url.clone(),
-            swqos_configs: vec![SwqosConfig::Default(self.rpc_url.clone())],
-            commitment: CommitmentConfig::confirmed(),
-            create_wsol_ata_on_startup: false,
-            use_seed_optimize: self.use_seed_optimize,
-            check_min_tip: false,
-            log_enabled: false,
-            swqos_cores_from_end: false,
-        };
+        let trade_config = TradeConfig::builder(
+            self.rpc_url.clone(),
+            vec![SwqosConfig::Default(self.rpc_url.clone())],
+            CommitmentConfig::confirmed(),
+        )
+        .create_wsol_ata_on_startup(false)
+        .use_seed_optimize(self.use_seed_optimize)
+        .check_min_tip(false)
+        .log_enabled(false)
+        .swqos_cores_from_end(false)
+        .mev_protection(false)
+        .build();
 
         let trade_client = SolanaTrade::new(Arc::new(keypair.insecure_clone()), trade_config).await;
         let signature_str = trade_client.wrap_wsol_to_sol(amount).await?;

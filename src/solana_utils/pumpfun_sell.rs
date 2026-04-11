@@ -51,16 +51,14 @@ pub async fn handle_pumpfun_sell(
     let commitment = CommitmentConfig::confirmed();
     let swqos_configs: Vec<SwqosConfig> = vec![SwqosConfig::Default(rpc_url.to_string())];
 
-    let trade_config = TradeConfig {
-        rpc_url: rpc_url.to_string(),
-        swqos_configs,
-        commitment,
-        create_wsol_ata_on_startup: false,
-        use_seed_optimize: use_seed,
-        check_min_tip: false,
-        log_enabled: false,
-        swqos_cores_from_end: false,
-    };
+    let trade_config = TradeConfig::builder(rpc_url.to_string(), swqos_configs, commitment)
+        .create_wsol_ata_on_startup(false)
+        .use_seed_optimize(use_seed)
+        .check_min_tip(false)
+        .log_enabled(false)
+        .swqos_cores_from_end(false)
+        .mev_protection(false)
+        .build();
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
 
@@ -147,7 +145,7 @@ pub async fn handle_pumpfun_sell(
     println!("{}", "📤 发送交易到链上...".bright_blue());
 
     match client.sell(sell_params).await {
-        Ok((success, signatures, error)) => {
+        Ok((success, signatures, error, _latency_info)) => {
             if success {
                 println!("\n{}", "✅ 卖出成功！".green().bold());
                 println!("   卖出数量: {} tokens", token_balance);
@@ -262,16 +260,14 @@ pub async fn handle_pumpfun_sell_no_prompt(
     let commitment = CommitmentConfig::confirmed();
     let swqos_configs: Vec<SwqosConfig> = vec![SwqosConfig::Default(rpc_url.to_string())];
 
-    let trade_config = TradeConfig {
-        rpc_url: rpc_url.to_string(),
-        swqos_configs,
-        commitment,
-        create_wsol_ata_on_startup: false,
-        use_seed_optimize: use_seed,
-        check_min_tip: false,
-        log_enabled: false,
-        swqos_cores_from_end: false,
-    };
+    let trade_config = TradeConfig::builder(rpc_url.to_string(), swqos_configs, commitment)
+        .create_wsol_ata_on_startup(false)
+        .use_seed_optimize(use_seed)
+        .check_min_tip(false)
+        .log_enabled(false)
+        .swqos_cores_from_end(false)
+        .mev_protection(false)
+        .build();
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
 
@@ -403,7 +399,7 @@ pub async fn handle_pumpfun_sell_no_prompt(
     }
 
     match client.sell(sell_params).await {
-        Ok((success, signatures, error)) => {
+        Ok((success, signatures, error, _latency_info)) => {
             if success {
                 if language == Language::Chinese {
                     println!("\n{}", "✅ 卖出成功！".green().bold());
