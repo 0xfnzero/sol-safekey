@@ -1,6 +1,6 @@
 [package]
 name = "sol-safekey"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 default-run = "sol-safekey"
 description = "A powerful command-line tool for secure Solana key management with Triple-Factor 2FA"
@@ -14,6 +14,8 @@ categories = ["cryptography", "command-line-utilities"]
 
 # Core dependencies (always required)
 [dependencies]
+# Transitive via solana-sdk → sha3; pin so Cargo does not select yanked keccak 0.1.5.
+keccak = { version = "=0.1.4" }
 base64 = "0.22.1"
 ring = "0.17.8"
 solana-sdk = "3.0.0"

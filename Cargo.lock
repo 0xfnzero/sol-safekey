@@ -2764,9 +2764,9 @@ dependencies = [
 
 [[package]]
 name = "keccak"
-version = "0.1.5"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
+checksum = "8f6d5ed8676d904364de097082f4e7d240b571b67989ced0240f08b7f966f940"
 dependencies = [
  "cpufeatures",
 ]
@@ -4412,7 +4412,7 @@ dependencies = [
 
 [[package]]
 name = "sol-safekey"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "atty",
@@ -4424,6 +4424,7 @@ dependencies = [
  "data-encoding",
  "dotenv",
  "hex",
+ "keccak",
  "openssl",
  "qrcode",
  "rand 0.8.5",
