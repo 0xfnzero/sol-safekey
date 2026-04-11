@@ -4442,8 +4442,9 @@ dependencies = [
 
 [[package]]
 name = "sol-trade-sdk"
-version = "4.0.2"
-source = "git+https://github.com/0xfnzero/sol-trade-sdk.git?rev=4b451af#4b451af5ff4bd1e041c8b31e21779376179db693"
+version = "4.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ef06f4d22d3754c293f5a5075f680e07ded2ecbd608960b4d28d5aba11e9587"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4467,7 +4468,6 @@ dependencies = [
  "hex",
  "indicatif",
  "isahc",
- "lazy_static",
  "libc",
  "memmap2",
  "num-derive",
