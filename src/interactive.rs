@@ -10,6 +10,35 @@ use solana_sdk::signer::Signer;
 
 use crate::KeyManager;
 
+/// Search for a keystore file recursively in subdirectories (max 3 levels deep).
+/// Returns the first match as a relative path, or None if not found.
+fn search_keystore_in_subdirs(filename: &str) -> Option<String> {
+    fn search(dir: &std::path::Path, filename: &str, depth: usize, max_depth: usize) -> Option<String> {
+        if depth > max_depth {
+            return None;
+        }
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    // Skip hidden dirs and common large dirs
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    if name.starts_with('.') || name == "target" || name == "node_modules" {
+                        continue;
+                    }
+                    if let Some(found) = search(&path, filename, depth + 1, max_depth) {
+                        return Some(found);
+                    }
+                } else if path.file_name().unwrap_or_default() == filename {
+                    return Some(path.to_string_lossy().to_string());
+                }
+            }
+        }
+        None
+    }
+    search(std::path::Path::new("."), filename, 0, 3)
+}
+
 /// Language selection
 #[derive(Clone, Copy, PartialEq)]
 pub enum Language {
@@ -838,32 +867,19 @@ fn decrypt_key_interactive(texts: &Texts) -> Result<(), String> {
     Ok(())
 }
 
-/// 读取密码（临时显示明文用于调试）
-/// Prompt and read password securely
+/// 在 **stdout** 打印提示，在 TTY 上无回显读取密码（避免 `prompt_password` 仅写 TTY 导致 IDE 终端里看不到提示）。
 fn prompt_password(prompt: &str, texts: &Texts) -> Result<String, String> {
     print!("{}", prompt);
     io::stdout().flush().map_err(|e| e.to_string())?;
 
-    // 临时使用明文输入进行调试
-    let mut password = String::new();
-    io::stdin().read_line(&mut password)
+    let password = rpassword::read_password()
         .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
 
-    let password = password.trim().to_string();
-    println!("DEBUG: 读取到的密码: '{}' (长度: {})", password, password.len());
-
-    Ok(password)
-
-    // 原来的隐藏输入代码（调试完成后恢复）
-    // let password = rpassword::read_password()
-    //     .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
-    // Ok(password.trim().to_string())
+    Ok(password.trim().to_string())
 }
 
 /// Unlock wallet interactively and store in session
 fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> Result<(), String> {
-    use rpassword;
-
     println!();
     if language == Language::Chinese {
         println!("{}", "  解锁钱包".cyan().bold());
@@ -877,15 +893,36 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
     let mut keystore_path = String::new();
     io::stdin().read_line(&mut keystore_path).map_err(|e| e.to_string())?;
     let keystore_path = keystore_path.trim();
-    let keystore_path = if keystore_path.is_empty() {
-        "keystore.json"
+    let is_default = keystore_path.is_empty();
+    let keystore_path = if is_default { "keystore.json" } else { keystore_path };
+
+    // If file not found at the given path, search recursively in subdirectories
+    let keystore_path = if !std::path::Path::new(keystore_path).exists() {
+        if let Some(found) = search_keystore_in_subdirs(keystore_path) {
+            if language == Language::Chinese {
+                println!("🔍 在子目录中找到: {}", found);
+            } else {
+                println!("🔍 Found in subdirectory: {}", found);
+            }
+            found
+        } else {
+            keystore_path.to_string()
+        }
     } else {
-        keystore_path
+        keystore_path.to_string()
     };
 
     // Read encrypted file
-    let file_content = std::fs::read_to_string(keystore_path)
-        .map_err(|e| format!("Failed to read keystore: {}", e))?;
+    let file_content = std::fs::read_to_string(&keystore_path).map_err(|e| {
+        if language == Language::Chinese {
+            format!(
+                "无法读取 Keystore 文件「{}」: {}（请确认路径正确、当前工作目录是否为文件所在目录）",
+                keystore_path, e
+            )
+        } else {
+            format!("Failed to read keystore '{}': {}", keystore_path, e)
+        }
+    })?;
 
     // Parse JSON to get encryption type
     let json: serde_json::Value = serde_json::from_str(&file_content)
@@ -893,15 +930,11 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
 
     let encryption_type = json["encryption_type"].as_str().unwrap_or("password_only");
 
-    // Decrypt keypair
+    // Decrypt keypair: use bot_helper::unlock_wallet for password_only to guarantee
+    // the exact same code path as bot startup (config/mod.rs → ensure_wallet_ready).
     let keypair = match encryption_type {
         "password_only" => {
-            // Simple password-based decryption
-            let password = rpassword::prompt_password(
-                if language == Language::Chinese { "输入密码: " } else { "Enter password: " }
-            ).map_err(|e| format!("Failed to read password: {}", e))?;
-
-            KeyManager::keypair_from_encrypted_json(&file_content, &password)
+            crate::bot_helper::unlock_wallet(&keystore_path)
                 .map_err(|e| format!("Failed to decrypt keystore: {}", e))?
         }
         "triple_factor_v1" => {

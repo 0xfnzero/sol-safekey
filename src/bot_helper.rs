@@ -103,7 +103,7 @@ fn create_wallet(output_path: &str) -> Result<()> {
 }
 
 /// Unlock wallet interactively (prompts for password)
-fn unlock_wallet(wallet_path: &str) -> Result<Keypair> {
+pub fn unlock_wallet(wallet_path: &str) -> Result<Keypair> {
     if !wallet_exists(wallet_path) {
         return Err(format!("Wallet file not found: {}", wallet_path));
     }
