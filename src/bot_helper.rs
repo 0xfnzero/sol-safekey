@@ -18,7 +18,7 @@ use std::io::Write;
 use serde_json::Value;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use crate::{decrypt_key, generate_encryption_key_simple, interactive};
+use crate::{interactive, KeyManager};
 
 /// Result type for bot helper operations
 pub type Result<T> = std::result::Result<T, String>;
@@ -113,23 +113,15 @@ pub fn unlock_wallet(wallet_path: &str) -> Result<Keypair> {
     let content = fs::read_to_string(wallet_path)
         .map_err(|e| format!("Failed to read wallet: {}", e))?;
 
-    let data: Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Invalid wallet format: {}", e))?;
-
-    let encrypted_key = data["encrypted_private_key"]
-        .as_str()
-        .ok_or_else(|| "Encrypted private key not found in wallet file".to_string())?;
-
     print!("🔑 Enter wallet password: ");
     std::io::stdout().flush().unwrap();
 
-    // 与 wick-bot 完全一致：密码原样使用，不做 trim（wick-bot 的 bot_helper 亦不 trim）
     let password = rpassword::read_password()
         .map_err(|e| format!("Failed to read password: {}", e))?;
 
-    let encryption_key = generate_encryption_key_simple(&password);
-    let private_key = decrypt_key(encrypted_key, &encryption_key)?;
-    let keypair = Keypair::from_base58_string(&private_key);
+    // 使用与 bot 启动 (config/mod.rs) 完全一致的解密路径
+    let keypair = KeyManager::keypair_from_encrypted_json(&content, &password)
+        .map_err(|e| format!("{}", e))?;
 
     println!("✅ Wallet unlocked successfully!");
     println!("📍 Address: {}", keypair.pubkey());

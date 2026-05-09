@@ -12,31 +12,37 @@ use crate::KeyManager;
 
 /// Search for a keystore file recursively in subdirectories (max 3 levels deep).
 /// Returns the first match as a relative path, or None if not found.
+/// Skips directories named "dev" and prefers "prod" paths.
 fn search_keystore_in_subdirs(filename: &str) -> Option<String> {
-    fn search(dir: &std::path::Path, filename: &str, depth: usize, max_depth: usize) -> Option<String> {
+    fn search(dir: &std::path::Path, filename: &str, depth: usize, max_depth: usize, results: &mut Vec<String>) {
         if depth > max_depth {
-            return None;
+            return;
         }
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    // Skip hidden dirs and common large dirs
                     let name = path.file_name().unwrap_or_default().to_string_lossy();
-                    if name.starts_with('.') || name == "target" || name == "node_modules" {
+                    // Skip hidden dirs, common large dirs, and "dev" dirs
+                    if name.starts_with('.') || name == "target" || name == "node_modules" || name == "dev" {
                         continue;
                     }
-                    if let Some(found) = search(&path, filename, depth + 1, max_depth) {
-                        return Some(found);
-                    }
+                    search(&path, filename, depth + 1, max_depth, results);
                 } else if path.file_name().unwrap_or_default() == filename {
-                    return Some(path.to_string_lossy().to_string());
+                    results.push(path.to_string_lossy().to_string());
                 }
             }
         }
-        None
     }
-    search(std::path::Path::new("."), filename, 0, 3)
+    let mut results = Vec::new();
+    search(std::path::Path::new("."), filename, 0, 3, &mut results);
+    // Prefer prod path
+    results.into_iter().find(|p| p.contains("prod")).or_else(|| {
+        // Fallback: return first non-dev result (shouldn't happen since we skip dev dirs)
+        let mut results = Vec::new();
+        search(std::path::Path::new("."), filename, 0, 3, &mut results);
+        results.into_iter().next()
+    })
 }
 
 /// Language selection
@@ -893,12 +899,10 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
     let mut keystore_path = String::new();
     io::stdin().read_line(&mut keystore_path).map_err(|e| e.to_string())?;
     let keystore_path = keystore_path.trim();
-    let is_default = keystore_path.is_empty();
-    let keystore_path = if is_default { "keystore.json" } else { keystore_path };
 
-    // If file not found at the given path, search recursively in subdirectories
-    let keystore_path = if !std::path::Path::new(keystore_path).exists() {
-        if let Some(found) = search_keystore_in_subdirs(keystore_path) {
+    // Only search subdirectories when user pressed Enter without typing a path
+    let keystore_path = if keystore_path.is_empty() {
+        if let Some(found) = search_keystore_in_subdirs("keystore.json") {
             if language == Language::Chinese {
                 println!("🔍 在子目录中找到: {}", found);
             } else {
@@ -906,7 +910,7 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
             }
             found
         } else {
-            keystore_path.to_string()
+            "keystore.json".to_string()
         }
     } else {
         keystore_path.to_string()
