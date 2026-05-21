@@ -46,9 +46,9 @@ tokio = { version = "1.0", features = ["full"], optional = true }
 atty = { version = "0.2", optional = true }
 bincode = { version = "1.3", optional = true }
 solana-commitment-config = { version = "3.1.1", optional = true }
-# Use git source to always include latest fixes (bonding curve deserialization, creator_vault, etc.)
-# Cargo locks by commit hash in Cargo.lock — no stale cache issue.
-sol-trade-sdk = { git = "https://github.com/0xfnzero/sol-trade-sdk", branch = "main", optional = true }
+# Keep bot-integrated builds on the same local SDK as snipe-bot so transaction
+# assembly fixes cannot diverge between direct bot code and safekey helpers.
+sol-trade-sdk = { path = "../../sol-trade-sdk-repo/sol-trade-sdk", optional = true }
 
 # Optional: Other utilities
 dotenv = { version = "0.15", optional = true }

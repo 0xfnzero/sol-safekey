@@ -4443,8 +4443,7 @@ dependencies = [
 
 [[package]]
 name = "sol-trade-sdk"
-version = "4.0.7"
-source = "git+https://github.com/0xfnzero/sol-trade-sdk?branch=main#8e0210af97dab473231c8350cb1b311829b58f76"
+version = "4.0.10"
 dependencies = [
  "anyhow",
  "arc-swap",
