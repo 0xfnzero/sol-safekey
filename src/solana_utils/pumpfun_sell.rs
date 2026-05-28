@@ -139,6 +139,7 @@ pub async fn handle_pumpfun_sell(
         fixed_output_token_amount: None,
         gas_fee_strategy,
         simulate: false,
+        wait_for_all_submits: false,
         grpc_recv_us: None,
     };
 
@@ -389,6 +390,7 @@ pub async fn handle_pumpfun_sell_no_prompt(
         fixed_output_token_amount: None,
         gas_fee_strategy,
         simulate: false,
+        wait_for_all_submits: false,
         grpc_recv_us: None,
     };
 
