@@ -43,6 +43,7 @@
 
 ## 📑 目录
 
+- [这个项目提供什么](#这个项目提供什么)
 - [✨ 特性](#-特性)
 - [🚀 快速开始](#-快速开始)
 - [📦 安装](#-安装)
@@ -52,9 +53,18 @@
 - [📖 示例](#-示例)
 - [🤝 贡献](#-贡献)
 - [📄 许可证](#-许可证)
-- [📖 示例](#-示例)
-- [🤝 贡献](#-贡献)
-- [📄 许可证](#-许可证)
+
+## 这个项目提供什么
+
+Sol-SafeKey 是一个 Rust CLI 与库，用于 Solana 钱包密钥管理、加密 keystore 工作流、Bot 集成，以及可选的 2FA/3FA 保护。它适合需要更安全本地私钥流程，同时仍要执行常见 Solana 钱包和交易操作的开发者。
+
+| 范围 | 覆盖内容 |
+|------|----------|
+| 密钥存储 | AES-256 加密密钥、keystore 文件、基于密码解锁、硬件指纹支持 |
+| 认证保护 | 2FA/TOTP 设置、三因子钱包生成、3FA 钱包解锁 |
+| Solana 操作 | SOL 余额、SOL 转账、SPL Token 转账、WSOL 封装/解封/关闭、Nonce 账户 |
+| 交易工具 | Pump.fun 卖出、PumpSwap 卖出、Pump.fun 返现、PumpSwap 返现 |
+| 集成方式 | CLI 菜单、Rust 库、Bot helper API、示例代码、中英双语文档 |
 
 ### 📋 功能指南
 
@@ -81,7 +91,7 @@ sol-safekey start
 
 #### 🔑 核心功能（选项 1-3）
 - **[1. 创建明文私钥](INTERACTIVE_TUTORIAL_CN.md#1-创建明文私钥（选项-1）)** - 生成未加密密钥对（仅测试）
-- **[2. 创建加密私钥](INTERACTIVE_TUTORIAL_CN.md#2-创建加密私钥bot)（选项-2）)** - 加密并保存到 keystore
+- **[2. 创建加密私钥](INTERACTIVE_TUTORIAL_CN.md)** - 加密并保存到 keystore
 - **[3. 解密私钥](INTERACTIVE_TUTORIAL_CN.md#3-解密私钥（选项-3）)** - 解密 keystore 显示私钥
 
 #### 🔒 钱包管理（选项 U）

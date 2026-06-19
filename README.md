@@ -43,6 +43,7 @@
 
 ## 📑 Table of Contents
 
+- [What This Project Provides](#what-this-project-provides)
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [📦 Installation](#-installation)
@@ -50,6 +51,18 @@
 - [📚 Documentation](#-documentation)
 - [🔐 Security](#-security)
 - [💬 Contact](#-contact)
+
+## What This Project Provides
+
+Sol-SafeKey is a Rust CLI and library for Solana wallet key management, encrypted keystore workflows, bot integration, and optional 2FA/3FA protection. It is designed for developers who need a safer local workflow for private keys while still supporting common Solana wallet and trading operations.
+
+| Area | Coverage |
+|------|----------|
+| Key storage | AES-256 encrypted keys, keystore files, password-based unlock, hardware fingerprint support |
+| Authentication | 2FA/TOTP setup, triple-factor wallet generation, 3FA wallet unlock |
+| Solana operations | SOL balance, SOL transfer, SPL token transfer, WSOL wrap/unwrap/close, durable nonce accounts |
+| Trading utilities | Pump.fun sell, PumpSwap sell, Pump.fun cashback, PumpSwap cashback |
+| Integration | CLI menu, Rust library, bot helper APIs, examples, bilingual user guides |
 
 ### 📋 Feature Guide
 
@@ -150,7 +163,7 @@ cargo install --path . --features full
 
 ## 📖 Complete Interactive Menu Guide
 
-📖 **[View Complete Interactive Menu Guide → INTERACTIVE_TUTORIAL.md]**
+📖 **[View Complete Interactive Menu Guide → INTERACTIVE_TUTORIAL.md](INTERACTIVE_TUTORIAL.md)**
 
 Comprehensive step-by-step guide for all interactive menu operations, including detailed instructions, use cases, and example outputs for each of the 18 menu options.
 
