@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-proxy-api-request"
+description = "Proxy HTTP calls from the UI to the local sol-safekey API (reqwest in Rust)."
+commands.allow = ["proxy_api_request"]

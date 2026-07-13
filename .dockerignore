@@ -1,0 +1,11 @@
+.git
+.DS_Store
+build-cache
+target
+ui/node_modules
+ui/.next
+ui/out
+ui/data
+ui/logs
+ui/src-tauri/target
+*.log

@@ -47,6 +47,7 @@
 - [✨ 特性](#-特性)
 - [🚀 快速开始](#-快速开始)
 - [📦 安装](#-安装)
+- [🖥️ Web 与桌面 UI](#️-web-与桌面-ui)
 - [📋 功能指南](#-功能指南)
 - [📚 文档](#-文档)
 - [🔐 安全性](#-安全性)
@@ -169,6 +170,36 @@ cargo install --path . --features full
 - **操作系统**: Linux、macOS 或 Windows
 - **网络**: 进行 Solana RPC 调用需要互联网连接
 
+## 🖥️ Web 与桌面 UI
+
+Web 界面、本地 Rust API 与 Tauri 桌面壳现已统一放在本仓库的 [`ui/`](ui/README.md) 下。API 直接依赖根目录的 `sol-safekey` crate，因此 CLI、核心库、Web 与桌面端共用同一份源码和 Cargo 锁文件。
+
+```bash
+# 安装 JavaScript 与 Rust 依赖
+make install
+
+# 启动 :3840 的 Next.js 与 :3841 的本地 API
+make ui-dev
+
+# 构建内嵌 Web 页面的 API 二进制
+make api-build
+
+# 启动 Tauri 桌面应用
+make desktop-dev
+```
+
+开发时可访问 `http://127.0.0.1:3840/en/` 或 `http://127.0.0.1:3840/zh/`。发布版 API 二进制会内嵌静态前端，并在 `http://127.0.0.1:3841` 提供服务。
+
+### 创建或导入第一个钱包
+
+1. 打开 UI，选择 **创建新钱包** 或 **导入钱包**。
+2. 创建钱包时填写名称和 10-20 位密码；导入钱包时选择 `keystore.json` 并输入对应密码。
+3. 存入资产前先下载并备份加密 Keystore。钱包密码无法找回。
+4. 在顶部钱包选择器中切换当前钱包，然后从钱包页使用 **接收**、**发送** 或 **交易**。
+5. 每次签名前，在 **设置** 中确认网络和 RPC 是否正确。
+
+完整的钱包管理、转账、交易、多签、备份恢复与故障排查说明见 **[UI 钱包用户指南](UI_USER_GUIDE_CN.md)**。
+
 ### Cargo 功能特性
 
 - `full` - 启用所有功能（CLI 默认）
@@ -181,6 +212,7 @@ cargo install --path . --features full
 
 ## 📚 文档
 
+- **[UI 钱包用户指南](UI_USER_GUIDE_CN.md)** - 在 Web 或桌面 UI 中创建、导入、备份和使用钱包
 - **[Bot 集成指南](BOT_INTEGRATION_CN.md)** - 如何将 sol-safekey 集成到你的 bot
 - **[使用手册](USER_GUIDE_CN.md)** - 完整的使用说明和示例
 

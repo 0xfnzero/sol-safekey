@@ -18,6 +18,21 @@ open-source
 build-cache
 keystore.json
 
+# Integrated web and desktop UI
+/ui/node_modules/
+/ui/.next/
+/ui/.next-build/
+/ui/out/
+/ui/coverage/
+/ui/data/
+/ui/logs/
+/ui/tmp/
+/ui/.env*
+/ui/.vercel/
+/ui/next-env.d.ts
+/ui/*.tsbuildinfo
+/ui/*.pid
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

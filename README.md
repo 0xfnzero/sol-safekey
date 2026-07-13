@@ -47,6 +47,7 @@
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [📦 Installation](#-installation)
+- [🖥️ Web and Desktop UI](#️-web-and-desktop-ui)
 - [📋 Feature Guide](#-feature-guide)
 - [📚 Documentation](#-documentation)
 - [🔐 Security](#-security)
@@ -151,6 +152,36 @@ cargo install --path . --features full
 - **Operating System**: Linux, macOS, or Windows
 - **Network**: Internet connection for Solana RPC calls
 
+## 🖥️ Web and Desktop UI
+
+The web interface, local Rust API, and Tauri desktop shell now live in this repository under [`ui/`](ui/README.md). The API depends directly on the root `sol-safekey` crate, so the CLI, library, web app, and desktop app use one source tree and one Cargo lockfile.
+
+```bash
+# Install JavaScript and Rust dependencies
+make install
+
+# Start Next.js on :3840 and the local API on :3841
+make ui-dev
+
+# Build the embedded web/API binary
+make api-build
+
+# Start the Tauri desktop app
+make desktop-dev
+```
+
+Open `http://127.0.0.1:3840/en/` or `http://127.0.0.1:3840/zh/` during development. The release API binary embeds the static frontend and serves it on `http://127.0.0.1:3841`.
+
+### Create or import your first wallet
+
+1. Open the UI and select **Create New Wallet** or **Import Wallet**.
+2. For a new wallet, enter a name and a 10-20 character password. For an existing wallet, select its `keystore.json` and enter its password.
+3. Download and back up the encrypted Keystore before depositing funds. The password cannot be recovered.
+4. Select the wallet from the wallet picker, then use **Receive**, **Send**, or **Trade** from the wallet page.
+5. Check the selected network and RPC under **Settings** before signing any transaction.
+
+See the **[UI Wallet User Guide](UI_USER_GUIDE.md)** for wallet management, transfers, trading, multisig workflows, backups, and troubleshooting.
+
 ### Cargo Feature Flags
 
 - `full` - Enable all features (default for CLI)
@@ -171,6 +202,7 @@ Comprehensive step-by-step guide for all interactive menu operations, including 
 
 ## 📚 Documentation
 
+- **[UI Wallet User Guide](UI_USER_GUIDE.md)** - Create, import, back up, and use wallets in the web or desktop UI
 - **[Bot Integration Guide](BOT_INTEGRATION.md)** - How to integrate sol-safekey into your bot
 - **[User Guide](USER_GUIDE.md)** - Complete usage instructions and examples
 
