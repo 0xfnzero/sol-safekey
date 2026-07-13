@@ -1,10 +1,10 @@
 <div align="center">
-    <h1>🔐 Sol-SafeKey</h1>
-    <h3><em>Secure Solana key management library with AES-256 encryption</em></h3>
+    <h1>🔐 Sol SafeKey - Secure Solana Wallet &amp; Keystore</h1>
+    <h3><em>Rust SDK · CLI · Web UI · Tauri Desktop Wallet</em></h3>
 </div>
 
 <p align="center">
-    <strong>Military-grade wallet security with simple bot integration - secure password handling, encrypted keystores, and full Solana operations support.</strong>
+    <strong>Open-source, local-first Solana wallet security toolkit with encrypted keystores, 2FA, bot integration, token operations, Pump trading, and Squads multisig.</strong>
 </p>
 
 <p align="center">
@@ -55,15 +55,16 @@
 
 ## What This Project Provides
 
-Sol-SafeKey is a Rust CLI and library for Solana wallet key management, encrypted keystore workflows, bot integration, and optional 2FA/3FA protection. It is designed for developers who need a safer local workflow for private keys while still supporting common Solana wallet and trading operations.
+Sol SafeKey is an open-source, local-first Solana wallet and key management toolkit. It combines a Rust SDK, CLI, self-hosted web wallet, and Tauri desktop app in one repository, with encrypted Keystore workflows for developers, bot operators, multisig teams, and individual wallet users.
 
 | Area | Coverage |
 |------|----------|
-| Key storage | AES-256 encrypted keys, keystore files, password-based unlock, hardware fingerprint support |
-| Authentication | 2FA/TOTP setup, triple-factor wallet generation, 3FA wallet unlock |
-| Solana operations | SOL balance, SOL transfer, SPL token transfer, WSOL wrap/unwrap/close, durable nonce accounts |
-| Trading utilities | Pump.fun sell, PumpSwap sell, Pump.fun cashback, PumpSwap cashback |
-| Integration | CLI menu, Rust library, bot helper APIs, examples, bilingual user guides |
+| Interfaces | Rust SDK, interactive CLI, Next.js web wallet, Tauri desktop wallet |
+| Wallet security | AES-256 encrypted Keystore files, password unlock, hardware fingerprint, optional TOTP 2FA/3FA |
+| Solana operations | SOL and SPL Token transfers, Token-2022 assets, WSOL, durable nonce accounts, transaction history |
+| Trading | Pump.fun and PumpSwap sells, balance shortcuts, cashback claims |
+| Teams and programs | Squads v4 multisig proposals, program deployment, upgrades, and authority management |
+| Automation | Bot helper APIs, local Rust API, examples, and bilingual documentation |
 
 ### 📋 Feature Guide
 
@@ -154,7 +155,7 @@ cargo install --path . --features full
 
 ## 🖥️ Web and Desktop UI
 
-The web interface, local Rust API, and Tauri desktop shell now live in this repository under [`ui/`](ui/README.md). The API depends directly on the root `sol-safekey` crate, so the CLI, library, web app, and desktop app use one source tree and one Cargo lockfile.
+The self-hosted web wallet, local Rust API, and Tauri desktop app live in this repository under [`ui/`](https://github.com/0xfnzero/sol-safekey/tree/main/ui). The API depends directly on the root `sol-safekey` crate, so the CLI, Rust SDK, web wallet, and desktop wallet use one source tree and one Cargo lockfile.
 
 ```bash
 # Install JavaScript and Rust dependencies

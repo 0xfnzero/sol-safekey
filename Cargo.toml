@@ -3,13 +3,13 @@ name = "sol-safekey"
 version = "0.1.8"
 edition = "2021"
 default-run = "sol-safekey"
-description = "A powerful command-line tool for secure Solana key management with Triple-Factor 2FA"
+description = "Secure Solana wallet key management library and CLI with encrypted keystores, bot integration, and optional 2FA"
 license = "MIT"
 repository = "https://github.com/0xfnzero/sol-safekey"
 documentation = "https://docs.rs/sol-safekey"
 homepage = "https://github.com/0xfnzero/sol-safekey"
 readme = "README.md"
-keywords = ["solana", "encryption", "2fa", "wallet", "security"]
+keywords = ["solana", "wallet", "keystore", "encryption", "2fa"]
 categories = ["cryptography", "command-line-utilities"]
 exclude = ["ui/**", "Dockerfile", "Makefile", ".dockerignore"]
 

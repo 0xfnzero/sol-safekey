@@ -1,10 +1,10 @@
 <div align="center">
-    <h1>🔐 Sol-SafeKey</h1>
-    <h3><em>安全的 Solana 密钥管理库，支持 AES-256 加密</em></h3>
+    <h1>🔐 Sol SafeKey - 安全的 Solana 钱包与 Keystore</h1>
+    <h3><em>Rust SDK · CLI · Web UI · Tauri 桌面钱包</em></h3>
 </div>
 
 <p align="center">
-    <strong>军事级钱包安全，简单的 Bot 集成 - 安全的密码处理、加密的密钥存储和完整的 Solana 操作支持。</strong>
+    <strong>开源、本地优先的 Solana 钱包安全工具，支持加密 Keystore、2FA、Bot 集成、Token 操作、Pump 交易和 Squads 多签。</strong>
 </p>
 
 <p align="center">
@@ -57,15 +57,16 @@
 
 ## 这个项目提供什么
 
-Sol-SafeKey 是一个 Rust CLI 与库，用于 Solana 钱包密钥管理、加密 keystore 工作流、Bot 集成，以及可选的 2FA/3FA 保护。它适合需要更安全本地私钥流程，同时仍要执行常见 Solana 钱包和交易操作的开发者。
+Sol SafeKey 是一个开源、本地优先的 Solana 钱包和密钥管理工具。本仓库统一提供 Rust SDK、CLI、自托管 Web 钱包和 Tauri 桌面应用，适用于开发者、Bot 运营者、多签团队和个人钱包用户的加密 Keystore 工作流。
 
 | 范围 | 覆盖内容 |
 |------|----------|
-| 密钥存储 | AES-256 加密密钥、keystore 文件、基于密码解锁、硬件指纹支持 |
-| 认证保护 | 2FA/TOTP 设置、三因子钱包生成、3FA 钱包解锁 |
-| Solana 操作 | SOL 余额、SOL 转账、SPL Token 转账、WSOL 封装/解封/关闭、Nonce 账户 |
-| 交易工具 | Pump.fun 卖出、PumpSwap 卖出、Pump.fun 返现、PumpSwap 返现 |
-| 集成方式 | CLI 菜单、Rust 库、Bot helper API、示例代码、中英双语文档 |
+| 使用界面 | Rust SDK、交互式 CLI、Next.js Web 钱包、Tauri 桌面钱包 |
+| 钱包安全 | AES-256 加密 Keystore、密码解锁、硬件指纹、可选 TOTP 2FA/3FA |
+| Solana 操作 | SOL 与 SPL Token 转账、Token-2022 资产、WSOL、Nonce 账户、交易记录 |
+| 交易工具 | Pump.fun 与 PumpSwap 卖出、余额比例快捷操作、返现领取 |
+| 团队与程序 | Squads v4 多签提案、程序部署、升级和权限管理 |
+| 自动化集成 | Bot helper API、本地 Rust API、示例代码和中英双语文档 |
 
 ### 📋 功能指南
 
@@ -172,7 +173,7 @@ cargo install --path . --features full
 
 ## 🖥️ Web 与桌面 UI
 
-Web 界面、本地 Rust API 与 Tauri 桌面壳现已统一放在本仓库的 [`ui/`](ui/README.md) 下。API 直接依赖根目录的 `sol-safekey` crate，因此 CLI、核心库、Web 与桌面端共用同一份源码和 Cargo 锁文件。
+自托管 Web 钱包、本地 Rust API 与 Tauri 桌面应用统一放在本仓库的 [`ui/`](https://github.com/0xfnzero/sol-safekey/tree/main/ui) 下。API 直接依赖根目录的 `sol-safekey` crate，因此 CLI、Rust SDK、Web 钱包与桌面钱包共用同一份源码和 Cargo 锁文件。
 
 ```bash
 # 安装 JavaScript 与 Rust 依赖
