@@ -19,6 +19,7 @@ export interface SavedWallet {
   public_key: string;
   created_at: number;
   updated_at: number;
+  keystore_version: "v2" | "legacy_v1" | "unknown";
 }
 
 export type WalletAuthTab = "keystore" | "encrypted" | "private";

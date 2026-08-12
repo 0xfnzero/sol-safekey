@@ -7,6 +7,10 @@
   ],
   "permissions": [
     "core:default",
-    "allow-proxy-api-request"
+    "allow-proxy-api-request",
+    "allow-open-external-url",
+    "allow-pick-source-directory",
+    "allow-save-download-file",
+    "allow-open-download-file-location"
   ]
 }

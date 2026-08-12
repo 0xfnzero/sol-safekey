@@ -1,15 +1,16 @@
 use clap::{Parser, Subcommand};
+use colored::*;
 use sol_safekey::{
-    encrypt_key, decrypt_key, generate_encryption_key_simple,
-    encrypt_with_triple_factor, decrypt_with_triple_factor_and_2fa,
-    derive_totp_secret_from_hardware_and_password,
-    totp::*, hardware_fingerprint::*, security_question::*,
+    decrypt_key, decrypt_with_triple_factor_and_2fa, derive_totp_secret_from_hardware_and_password,
+    encrypt_key, encrypt_with_triple_factor, generate_encryption_key_simple,
+    hardware_fingerprint::*, security_question::*, totp::*,
 };
 use solana_sdk::signer::Signer;
-use std::{fs, process, io::{self, Write}};
-use serde_json;
-use colored::*;
-use rpassword;
+use std::{
+    fs,
+    io::{self, Write},
+    process,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -62,7 +63,6 @@ enum Commands {
     },
 }
 
-
 /// Print colored help message with bilingual content
 fn print_colored_help() {
     println!("{}", "=".repeat(60).cyan());
@@ -72,66 +72,137 @@ fn print_colored_help() {
     println!();
 
     println!("{}", "Usage:".bright_yellow().bold());
-    println!("  {} {}", "sol-safekey".bright_green(), "start               # 启动交互式菜单（推荐）".bright_white());
-    println!("  {} {}", "sol-safekey".bright_green(), "<COMMAND>           # 运行特定命令".bright_white());
+    println!(
+        "  {} {}",
+        "sol-safekey".bright_green(),
+        "start               # 启动交互式菜单（推荐）".bright_white()
+    );
+    println!(
+        "  {} {}",
+        "sol-safekey".bright_green(),
+        "<COMMAND>           # 运行特定命令".bright_white()
+    );
     println!();
 
     println!("{}", "核心命令 | Core Commands:".bright_yellow().bold());
     println!();
-    println!("  {} {}", "start".bright_green().bold(), "启动交互式菜单 (创建/加密/解密私钥)".white());
+    println!(
+        "  {} {}",
+        "start".bright_green().bold(),
+        "启动交互式菜单 (创建/加密/解密私钥)".white()
+    );
     println!("        Start interactive menu (create/encrypt/decrypt keys)");
-    println!("        {} 无需记忆命令，选择语言后跟随提示操作即可", "→".bright_cyan());
-    println!("        {} No commands to remember, just follow the prompts", "→".bright_cyan());
+    println!(
+        "        {} 无需记忆命令，选择语言后跟随提示操作即可",
+        "→".bright_cyan()
+    );
+    println!(
+        "        {} No commands to remember, just follow the prompts",
+        "→".bright_cyan()
+    );
     println!();
 
     println!("{}", "高级命令 | Advanced Commands:".bright_yellow().bold());
     println!();
-    println!("  {} {}", "setup-2fa".bright_green().bold(), "设置 2FA 三因子认证".white());
+    println!(
+        "  {} {}",
+        "setup-2fa".bright_green().bold(),
+        "设置 2FA 三因子认证".white()
+    );
     println!("            Setup 2FA triple-factor authentication");
     println!("            硬件指纹 + 主密码 + 安全问题 + 2FA验证码");
     println!();
 
-    println!("  {} {}", "gen-2fa-wallet".bright_green().bold(), "生成 2FA 加密钱包".white());
+    println!(
+        "  {} {}",
+        "gen-2fa-wallet".bright_green().bold(),
+        "生成 2FA 加密钱包".white()
+    );
     println!("                 Generate 2FA encrypted wallet");
     println!("                 生成两个文件: 三因子钱包 + 跨设备备份");
     println!();
 
-    println!("  {} {}", "unlock-2fa-wallet".bright_green().bold(), "解锁 2FA 钱包".white());
+    println!(
+        "  {} {}",
+        "unlock-2fa-wallet".bright_green().bold(),
+        "解锁 2FA 钱包".white()
+    );
     println!("                    Unlock 2FA wallet");
     println!();
 
-    println!("  {} {}", "sol-ops".bright_green().bold(), "Solana 链上操作 (转账/查询余额等)".white());
+    println!(
+        "  {} {}",
+        "sol-ops".bright_green().bold(),
+        "Solana 链上操作 (转账/查询余额等)".white()
+    );
     println!("          Solana operations (transfer/check balance)");
     println!();
 
     println!("{}", "使用示例 | Usage Examples:".bright_cyan().bold());
     println!();
     println!("  {} 交互式模式（推荐新手使用）:", "1.".bright_yellow());
-    println!("     {} {}", "$".bright_white(), "sol-safekey start".bright_green());
+    println!(
+        "     {} {}",
+        "$".bright_white(),
+        "sol-safekey start".bright_green()
+    );
     println!();
 
     println!("  {} 2FA 三因子安全钱包:", "2.".bright_yellow());
-    println!("     {} {}", "$".bright_white(), "sol-safekey setup-2fa".bright_green());
-    println!("     {} {}", "$".bright_white(), "sol-safekey gen-2fa-wallet -o wallet.json".bright_green());
-    println!("     {} {}", "$".bright_white(), "sol-safekey unlock-2fa-wallet -f wallet.json".bright_green());
+    println!(
+        "     {} {}",
+        "$".bright_white(),
+        "sol-safekey setup-2fa".bright_green()
+    );
+    println!(
+        "     {} {}",
+        "$".bright_white(),
+        "sol-safekey gen-2fa-wallet -o wallet.json".bright_green()
+    );
+    println!(
+        "     {} {}",
+        "$".bright_white(),
+        "sol-safekey unlock-2fa-wallet -f wallet.json".bright_green()
+    );
     println!();
 
     println!("  {} Solana 操作:", "3.".bright_yellow());
-    println!("     {} {}", "$".bright_white(), "sol-safekey sol-ops -f wallet.json balance".bright_green());
-    println!("     {} {}", "$".bright_white(), "sol-safekey sol-ops -f wallet.json transfer -t <地址> -a 0.1".bright_green());
+    println!(
+        "     {} {}",
+        "$".bright_white(),
+        "sol-safekey sol-ops -f wallet.json balance".bright_green()
+    );
+    println!(
+        "     {} {}",
+        "$".bright_white(),
+        "sol-safekey sol-ops -f wallet.json transfer -t <地址> -a 0.1".bright_green()
+    );
     println!();
 
     println!("{}", "选项 | Options:".bright_yellow().bold());
-    println!("  {} {}", "-h, --help".bright_magenta(), "     显示帮助信息 | Show help information".white());
-    println!("  {} {}", "-V, --version".bright_magenta(), "  显示版本信息 | Show version information".white());
+    println!(
+        "  {} {}",
+        "-h, --help".bright_magenta(),
+        "     显示帮助信息 | Show help information".white()
+    );
+    println!(
+        "  {} {}",
+        "-V, --version".bright_magenta(),
+        "  显示版本信息 | Show version information".white()
+    );
     println!();
 
     println!("{}", "💡 提示:".bright_green().bold());
-    println!("   - 大多数用户只需要 {} 命令", "start".bright_cyan().bold());
-    println!("   - 运行 {} 查看某个命令的详细说明", "sol-safekey <COMMAND> --help".bright_white());
+    println!(
+        "   - 大多数用户只需要 {} 命令",
+        "start".bright_cyan().bold()
+    );
+    println!(
+        "   - 运行 {} 查看某个命令的详细说明",
+        "sol-safekey <COMMAND> --help".bright_white()
+    );
     println!();
 }
-
 
 /// Encrypt private key with password
 fn encrypt_private_key(private_key: &str, password: &str) -> Result<String, String> {
@@ -150,7 +221,10 @@ fn decrypt_private_key(encrypted_data: &str, password: &str) -> Result<String, S
 fn check_password_strength(password: &str) -> Result<(), String> {
     // 检查密码长度下限
     if password.len() < sol_safekey::MIN_PASSWORD_LENGTH {
-        return Err(format!("密码长度至少需要{}位", sol_safekey::MIN_PASSWORD_LENGTH));
+        return Err(format!(
+            "密码长度至少需要{}位",
+            sol_safekey::MIN_PASSWORD_LENGTH
+        ));
     }
 
     // 检查密码长度上限
@@ -219,7 +293,10 @@ fn split_private_key_into_segments(private_key: &str, segments: usize) -> Vec<St
 
 /// Save keypair to JSON file (Solana standard format)
 #[allow(dead_code)]
-fn save_keypair_to_file(keypair: &solana_sdk::signature::Keypair, file_path: &str) -> Result<(), String> {
+fn save_keypair_to_file(
+    keypair: &solana_sdk::signature::Keypair,
+    file_path: &str,
+) -> Result<(), String> {
     let private_key_bytes = keypair.to_bytes();
     let data = serde_json::json!(private_key_bytes.to_vec());
 
@@ -229,7 +306,12 @@ fn save_keypair_to_file(keypair: &solana_sdk::signature::Keypair, file_path: &st
 
 /// Save private key as string with segments to JSON file
 #[allow(dead_code)]
-fn save_private_key_string_to_file(private_key: &str, public_key: &str, segments: &[String], file_path: &str) -> Result<(), String> {
+fn save_private_key_string_to_file(
+    private_key: &str,
+    public_key: &str,
+    segments: &[String],
+    file_path: &str,
+) -> Result<(), String> {
     let data = serde_json::json!({
         "private_key": private_key,
         "public_key": public_key,
@@ -243,7 +325,12 @@ fn save_private_key_string_to_file(private_key: &str, public_key: &str, segments
 
 /// Save encrypted key with segments to JSON file
 #[allow(dead_code)]
-fn save_encrypted_key_to_file(encrypted_data: &str, public_key: &str, segments: &[String], file_path: &str) -> Result<(), String> {
+fn save_encrypted_key_to_file(
+    encrypted_data: &str,
+    public_key: &str,
+    segments: &[String],
+    file_path: &str,
+) -> Result<(), String> {
     let data = serde_json::json!({
         "encrypted_private_key": encrypted_data,
         "public_key": public_key,
@@ -257,7 +344,11 @@ fn save_encrypted_key_to_file(encrypted_data: &str, public_key: &str, segments: 
 
 /// Save encrypted keystore to JSON file (standard format)
 #[allow(dead_code)]
-fn save_keystore_to_file(encrypted_data: &str, public_key: &str, file_path: &str) -> Result<(), String> {
+fn save_keystore_to_file(
+    encrypted_data: &str,
+    public_key: &str,
+    file_path: &str,
+) -> Result<(), String> {
     let data = serde_json::json!({
         "encrypted_private_key": encrypted_data,
         "public_key": public_key,
@@ -319,8 +410,7 @@ fn main() {
             let master_password = loop {
                 print!("{} ", "请输入主密码:".bright_yellow());
                 io::stdout().flush().unwrap();
-                let password = rpassword::read_password()
-                    .expect("读取密码失败");
+                let password = rpassword::read_password().expect("读取密码失败");
 
                 if password.is_empty() {
                     eprintln!("{} 主密码不能为空", "❌".red());
@@ -335,8 +425,7 @@ fn main() {
 
                 print!("{} ", "请再次输入主密码确认:".bright_yellow());
                 io::stdout().flush().unwrap();
-                let password_confirm = rpassword::read_password()
-                    .expect("读取密码失败");
+                let password_confirm = rpassword::read_password().expect("读取密码失败");
 
                 if password != password_confirm {
                     eprintln!("{} 两次输入的密码不一致", "❌".red());
@@ -388,7 +477,10 @@ fn main() {
             let totp_manager = TOTPManager::new(config.clone());
 
             // 显示 QR 码
-            println!("{}", "📱 请使用 Google Authenticator 或 Authy 扫描以下 QR 码：".bright_yellow());
+            println!(
+                "{}",
+                "📱 请使用 Google Authenticator 或 Authy 扫描以下 QR 码：".bright_yellow()
+            );
             println!();
             match totp_manager.generate_qr_code() {
                 Ok(qr_code) => {
@@ -402,12 +494,19 @@ fn main() {
             }
 
             println!();
-            println!("{} 或者手动输入密钥: {}", "🔑".bright_cyan(), twofa_secret.bright_white());
+            println!(
+                "{} 或者手动输入密钥: {}",
+                "🔑".bright_cyan(),
+                twofa_secret.bright_white()
+            );
             println!();
 
             // 验证2FA设置
             loop {
-                print!("{} ", "请输入认证器显示的 6 位验证码以确认设置:".bright_yellow());
+                print!(
+                    "{} ",
+                    "请输入认证器显示的 6 位验证码以确认设置:".bright_yellow()
+                );
                 io::stdout().flush().unwrap();
                 let mut input = String::new();
                 io::stdin().read_line(&mut input).unwrap();
@@ -434,10 +533,17 @@ fn main() {
             println!();
             println!("{}", "📝 重要信息（请妥善保管）:".bright_yellow().bold());
             println!("  • 硬件指纹: 已绑定到当前设备");
-            println!("  • 安全问题: 问题 {} - {}", question_index + 1, SECURITY_QUESTIONS[question_index]);
+            println!(
+                "  • 安全问题: 问题 {} - {}",
+                question_index + 1,
+                SECURITY_QUESTIONS[question_index]
+            );
             println!("  • 2FA密钥: 已添加到认证器");
             println!();
-            println!("{}", "💡 下一步: 使用 gen-2fa-wallet 命令生成安全钱包".bright_blue());
+            println!(
+                "{}",
+                "💡 下一步: 使用 gen-2fa-wallet 命令生成安全钱包".bright_blue()
+            );
         }
         Commands::Gen2FAWallet { output } => {
             println!("{}", "🔐 生成三因子加密钱包".bright_cyan().bold());
@@ -464,7 +570,8 @@ fn main() {
                 .map_err(|e| {
                     eprintln!("{} 读取密码失败: {}", "❌".red(), e);
                     process::exit(1);
-                }).unwrap();
+                })
+                .unwrap();
 
             if master_password.is_empty() {
                 eprintln!("{} 主密码不能为空", "❌".red());
@@ -553,7 +660,11 @@ fn main() {
 
                     match fs::write(&output, serde_json::to_string_pretty(&data).unwrap()) {
                         Ok(()) => {
-                            println!("{} 钱包已保存: {}", "✅".bright_green(), output.bright_white());
+                            println!(
+                                "{} 钱包已保存: {}",
+                                "✅".bright_green(),
+                                output.bright_white()
+                            );
                             println!();
 
                             // 生成跨设备的 keystore 备份
@@ -564,7 +675,8 @@ fn main() {
                                 Ok(keystore_encrypted) => {
                                     // 使用钱包地址前8位作为文件名前缀
                                     let addr_prefix = &public_key[..8];
-                                    let keystore_filename = format!("{}_keystore.json", addr_prefix);
+                                    let keystore_filename =
+                                        format!("{}_keystore.json", addr_prefix);
 
                                     let keystore_data = serde_json::json!({
                                         "encrypted_private_key": keystore_encrypted,
@@ -574,47 +686,98 @@ fn main() {
                                         "note": "此文件可在任何设备上使用主密码解锁"
                                     });
 
-                                    match fs::write(&keystore_filename, serde_json::to_string_pretty(&keystore_data).unwrap()) {
+                                    match fs::write(
+                                        &keystore_filename,
+                                        serde_json::to_string_pretty(&keystore_data).unwrap(),
+                                    ) {
                                         Ok(()) => {
-                                            println!("{} Keystore 备份: {}", "✅".bright_green(), keystore_filename.bright_white());
+                                            println!(
+                                                "{} Keystore 备份: {}",
+                                                "✅".bright_green(),
+                                                keystore_filename.bright_white()
+                                            );
                                             println!();
                                             println!("{}", "📝 备份说明:".bright_cyan());
                                             println!("  • 此文件仅用主密码加密，可在任何设备恢复");
-                                            println!("  • 恢复命令: {}", format!("sol-safekey unlock -f {} -p <主密码>", keystore_filename).bright_white());
+                                            println!(
+                                                "  • 恢复命令: {}",
+                                                format!(
+                                                    "sol-safekey unlock -f {} -p <主密码>",
+                                                    keystore_filename
+                                                )
+                                                .bright_white()
+                                            );
                                             println!();
-                                            println!("{} 请妥善备份此文件到多个安全位置", "⚠️".yellow());
+                                            println!(
+                                                "{} 请妥善备份此文件到多个安全位置",
+                                                "⚠️".yellow()
+                                            );
                                         }
                                         Err(e) => {
-                                            eprintln!("{} 警告: Keystore 备份保存失败: {}", "⚠️".yellow(), e);
+                                            eprintln!(
+                                                "{} 警告: Keystore 备份保存失败: {}",
+                                                "⚠️".yellow(),
+                                                e
+                                            );
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("{} 警告: Keystore 备份加密失败: {}", "⚠️".yellow(), e);
+                                    eprintln!(
+                                        "{} 警告: Keystore 备份加密失败: {}",
+                                        "⚠️".yellow(),
+                                        e
+                                    );
                                 }
                             }
-                            println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_blue());
+                            println!(
+                                "{}",
+                                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_blue()
+                            );
 
                             println!();
                             println!("{}", "🔒 安全架构:".bright_blue().bold());
                             println!("  ✓ 硬件指纹: 绑定到当前设备");
                             println!("  ✓ 主密码: 强密码保护");
-                            println!("  ✓ 安全问题: 问题 {} - {}", question_index + 1, SECURITY_QUESTIONS[question_index]);
+                            println!(
+                                "  ✓ 安全问题: 问题 {} - {}",
+                                question_index + 1,
+                                SECURITY_QUESTIONS[question_index]
+                            );
                             println!("  ✓ 2FA验证码: 动态验证（每30秒更新）");
                             println!();
                             println!("{}", "📁 生成的文件:".bright_cyan().bold());
                             println!();
-                            println!("{} 文件 1: {} (三因子加密钱包)", "1️⃣".bright_white(), output.bright_green());
+                            println!(
+                                "{} 文件 1: {} (三因子加密钱包)",
+                                "1️⃣".bright_white(),
+                                output.bright_green()
+                            );
                             println!("   安全等级: ⭐⭐⭐⭐⭐ (最高)");
                             println!("   限制: 仅限当前设备使用");
                             println!("   解锁需要: 硬件指纹 + 主密码 + 安全问题 + 2FA验证码");
-                            println!("   解锁命令: {}", format!("sol-safekey unlock-2fa-wallet -f {}", output).bright_white());
+                            println!(
+                                "   解锁命令: {}",
+                                format!("sol-safekey unlock-2fa-wallet -f {}", output)
+                                    .bright_white()
+                            );
                             println!();
-                            println!("{} 文件 2: {} (Keystore跨设备备份)", "2️⃣".bright_white(), format!("{}_keystore.json", &public_key[..8]).bright_green());
+                            println!(
+                                "{} 文件 2: {} (Keystore跨设备备份)",
+                                "2️⃣".bright_white(),
+                                format!("{}_keystore.json", &public_key[..8]).bright_green()
+                            );
                             println!("   安全等级: ⭐⭐⭐ (中等)");
                             println!("   限制: 无设备限制");
                             println!("   解锁需要: 仅需主密码");
-                            println!("   解锁命令: {}", format!("sol-safekey unlock -f {}_keystore.json -p <主密码>", &public_key[..8]).bright_white());
+                            println!(
+                                "   解锁命令: {}",
+                                format!(
+                                    "sol-safekey unlock -f {}_keystore.json -p <主密码>",
+                                    &public_key[..8]
+                                )
+                                .bright_white()
+                            );
                             println!();
                             println!("{}", "❓ 为什么需要 Keystore 备份？".bright_yellow().bold());
                             println!("  • 硬件损坏: 如果当前设备损坏，三因子钱包将无法使用");
@@ -624,20 +787,44 @@ fn main() {
                             println!();
                             println!("{}", "🔓 如何恢复私钥（三种方式）:".bright_cyan().bold());
                             println!();
-                            println!("{} 当前设备 - 使用三因子钱包（推荐）:", "方式1".bright_green());
-                            println!("   {}", format!("sol-safekey unlock-2fa-wallet -f {}", output).bright_white());
+                            println!(
+                                "{} 当前设备 - 使用三因子钱包（推荐）:",
+                                "方式1".bright_green()
+                            );
+                            println!(
+                                "   {}",
+                                format!("sol-safekey unlock-2fa-wallet -f {}", output)
+                                    .bright_white()
+                            );
                             println!("   输入: 主密码 → 安全问题答案 → 2FA验证码");
                             println!();
                             println!("{} 任意设备 - 使用 Keystore 备份:", "方式2".bright_yellow());
-                            println!("   {}", format!("sol-safekey unlock -f {}_keystore.json -p <主密码>", &public_key[..8]).bright_white());
+                            println!(
+                                "   {}",
+                                format!(
+                                    "sol-safekey unlock -f {}_keystore.json -p <主密码>",
+                                    &public_key[..8]
+                                )
+                                .bright_white()
+                            );
                             println!("   仅需输入主密码即可恢复");
                             println!();
                             println!("{} 任意设备 - 查看钱包地址:", "方式3".bright_green());
-                            println!("   {}", format!("sol-safekey address -f {}_keystore.json -p <主密码>", &public_key[..8]).bright_white());
+                            println!(
+                                "   {}",
+                                format!(
+                                    "sol-safekey address -f {}_keystore.json -p <主密码>",
+                                    &public_key[..8]
+                                )
+                                .bright_white()
+                            );
                             println!();
                             println!("{}", "⚠️  重要提醒:".bright_red().bold());
                             println!("  • {} - 日常使用（最安全）", output.bright_green());
-                            println!("  • {}_keystore.json - 离线冷备份（多地备份）", &public_key[..8]);
+                            println!(
+                                "  • {}_keystore.json - 离线冷备份（多地备份）",
+                                &public_key[..8]
+                            );
                             println!("  • 主密码务必牢记，丢失无法恢复");
                             println!("  • 建议将 Keystore 备份到 U盘/云盘/纸质 等多个地方");
                         }
@@ -680,9 +867,7 @@ fn main() {
                 .unwrap_or("")
                 .to_string();
 
-            let question_index = data["question_index"]
-                .as_u64()
-                .unwrap_or(0) as usize;
+            let question_index = data["question_index"].as_u64().unwrap_or(0) as usize;
 
             if encrypted_data.is_empty() {
                 eprintln!("{} 加密数据缺失", "❌".red());
@@ -712,7 +897,8 @@ fn main() {
                 .map_err(|e| {
                     eprintln!("{} 读取密码失败: {}", "❌".red(), e);
                     process::exit(1);
-                }).unwrap();
+                })
+                .unwrap();
             println!();
 
             // 步骤3: 回答安全问题

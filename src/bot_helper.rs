@@ -12,13 +12,13 @@
 //! let keypair = bot_helper::ensure_wallet_ready("wallet.json").unwrap();
 //! ```
 
-use std::path::Path;
-use std::fs;
-use std::io::Write;
+use crate::{interactive, KeyManager};
 use serde_json::Value;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use crate::{interactive, KeyManager};
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 
 /// Result type for bot helper operations
 pub type Result<T> = std::result::Result<T, String>;
@@ -69,11 +69,11 @@ pub fn wallet_exists(path: &str) -> bool {
 ///
 /// * `wallet_path` - Path to the encrypted wallet file
 pub fn get_wallet_pubkey(wallet_path: &str) -> Result<String> {
-    let content = fs::read_to_string(wallet_path)
-        .map_err(|e| format!("Failed to read wallet: {}", e))?;
+    let content =
+        fs::read_to_string(wallet_path).map_err(|e| format!("Failed to read wallet: {}", e))?;
 
-    let data: Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Invalid wallet format: {}", e))?;
+    let data: Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid wallet format: {}", e))?;
 
     data["public_key"]
         .as_str()
@@ -94,7 +94,10 @@ fn create_wallet(output_path: &str) -> Result<()> {
         println!("\n⚠️  Note: Wallet was not saved to the expected path.");
         println!("   Expected: {}", output_path);
         println!("   Please make sure to save your wallet to this location.");
-        return Err(format!("Wallet not created at expected path: {}", output_path));
+        return Err(format!(
+            "Wallet not created at expected path: {}",
+            output_path
+        ));
     }
 
     println!("\n✅ Wallet created successfully!");
@@ -110,18 +113,18 @@ pub fn unlock_wallet(wallet_path: &str) -> Result<Keypair> {
 
     println!("🔓 Unlocking wallet: {}", wallet_path);
 
-    let content = fs::read_to_string(wallet_path)
-        .map_err(|e| format!("Failed to read wallet: {}", e))?;
+    let content =
+        fs::read_to_string(wallet_path).map_err(|e| format!("Failed to read wallet: {}", e))?;
 
     print!("🔑 Enter wallet password: ");
     std::io::stdout().flush().unwrap();
 
-    let password = rpassword::read_password()
-        .map_err(|e| format!("Failed to read password: {}", e))?;
+    let password =
+        rpassword::read_password().map_err(|e| format!("Failed to read password: {}", e))?;
 
     // 使用与 bot 启动 (config/mod.rs) 完全一致的解密路径
-    let keypair = KeyManager::keypair_from_encrypted_json(&content, &password)
-        .map_err(|e| format!("{}", e))?;
+    let keypair =
+        KeyManager::keypair_from_encrypted_json(&content, &password).map_err(|e| e.to_string())?;
 
     println!("✅ Wallet unlocked successfully!");
     println!("📍 Address: {}", keypair.pubkey());

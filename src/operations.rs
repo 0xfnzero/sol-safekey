@@ -3,23 +3,23 @@
 //! Provides interactive Solana operations using encrypted keystore
 //! 提供使用加密 keystore 的交互式 Solana 操作
 
+use solana_sdk::signature::Keypair;
 #[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use std::io::{self, Write};
-use solana_sdk::signature::Keypair;
 
 #[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use colored::*;
+#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
+use solana_sdk::bs58;
 #[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use solana_sdk::pubkey::Pubkey;
 #[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use solana_sdk::signer::Signer;
 #[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
-use solana_sdk::bs58;
-#[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use std::str::FromStr;
 
 #[cfg(feature = "solana-ops")]
-use crate::solana_utils::{SolanaClient, SolanaClientSdk, lamports_to_sol};
+use crate::solana_utils::{lamports_to_sol, SolanaClient, SolanaClientSdk};
 
 #[cfg(any(feature = "solana-ops", feature = "sol-trade-sdk"))]
 use solana_client::rpc_client::RpcClient;
@@ -57,26 +57,46 @@ fn read_input(prompt: &str, default: &str) -> String {
 #[cfg(feature = "solana-ops")]
 pub fn show_operations_menu(keypair: &Keypair, language: Language) -> Result<(), String> {
     loop {
-        println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+        println!(
+            "\n{}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+        );
         if language == Language::English {
-            println!("  {} - Solana Operations", "🔧 Sol-SafeKey".bright_yellow().bold());
+            println!(
+                "  {} - Solana Operations",
+                "🔧 Sol-SafeKey".bright_yellow().bold()
+            );
         } else {
-            println!("  {} - Solana 操作", "🔧 Sol-SafeKey".bright_yellow().bold());
+            println!(
+                "  {} - Solana 操作",
+                "🔧 Sol-SafeKey".bright_yellow().bold()
+            );
         }
-        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+        println!(
+            "{}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+        );
 
-        println!("\n{}", if language == Language::English {
-            "Current Wallet:"
-        } else {
-            "当前钱包:"
-        }.bright_green());
+        println!(
+            "\n{}",
+            if language == Language::English {
+                "Current Wallet:"
+            } else {
+                "当前钱包:"
+            }
+            .bright_green()
+        );
         println!("  📍 {}", keypair.pubkey().to_string().bright_white());
 
-        println!("\n{}", if language == Language::English {
-            "Available Operations:"
-        } else {
-            "可用操作:"
-        }.bright_green());
+        println!(
+            "\n{}",
+            if language == Language::English {
+                "Available Operations:"
+            } else {
+                "可用操作:"
+            }
+            .bright_green()
+        );
 
         if language == Language::English {
             println!("  {}  Check SOL Balance", "1.".bright_cyan());
@@ -147,13 +167,19 @@ pub fn show_operations_menu(_keypair: &Keypair, language: Language) -> Result<()
 
 #[cfg(feature = "solana-ops")]
 pub fn check_balance(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "📊 Check SOL Balance".bright_yellow().bold());
     } else {
         println!("  {}", "📊 查询 SOL 余额".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -162,12 +188,26 @@ pub fn check_balance(keypair: &Keypair, language: Language) -> Result<(), String
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     if language == Language::English {
-        println!("\n🔍 Checking balance on {}...", if network == "2" { "Devnet" } else { "Mainnet" });
+        println!(
+            "\n🔍 Checking balance on {}...",
+            if network == "2" { "Devnet" } else { "Mainnet" }
+        );
     } else {
-        println!("\n🔍 正在查询{}余额...", if network == "2" { "测试网" } else { "主网" });
+        println!(
+            "\n🔍 正在查询{}余额...",
+            if network == "2" {
+                "测试网"
+            } else {
+                "主网"
+            }
+        );
     }
 
     let client = SolanaClient::new(rpc_url.to_string());
@@ -192,13 +232,19 @@ pub fn check_balance(keypair: &Keypair, language: Language) -> Result<(), String
 
 #[cfg(feature = "solana-ops")]
 pub fn transfer_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "💸 Transfer SOL".bright_yellow().bold());
     } else {
         println!("  {}", "💸 转账 SOL".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -207,7 +253,11 @@ pub fn transfer_sol(keypair: &Keypair, language: Language) -> Result<(), String>
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     let recipient_prompt = if language == Language::English {
         "\nRecipient address: "
@@ -216,12 +266,13 @@ pub fn transfer_sol(keypair: &Keypair, language: Language) -> Result<(), String>
     };
     let recipient_str = read_input(recipient_prompt, "");
 
-    let recipient = Pubkey::from_str(&recipient_str)
-        .map_err(|_| if language == Language::English {
+    let recipient = Pubkey::from_str(&recipient_str).map_err(|_| {
+        if language == Language::English {
             "❌ Invalid recipient address".to_string()
         } else {
             "❌ 无效的接收地址".to_string()
-        })?;
+        }
+    })?;
 
     let amount_prompt = if language == Language::English {
         "Amount (SOL): "
@@ -229,19 +280,23 @@ pub fn transfer_sol(keypair: &Keypair, language: Language) -> Result<(), String>
         "金额 (SOL): "
     };
     let amount_str = read_input(amount_prompt, "");
-    let amount_sol: f64 = amount_str.parse()
-        .map_err(|_| if language == Language::English {
+    let amount_sol: f64 = amount_str.parse().map_err(|_| {
+        if language == Language::English {
             "❌ Invalid amount".to_string()
         } else {
             "❌ 无效的金额".to_string()
-        })?;
+        }
+    })?;
 
     let amount_lamports = (amount_sol * 1_000_000_000.0) as u64;
 
     println!("\n{}", "📋 Transaction Summary:".bright_yellow());
     println!("  From: {}", keypair.pubkey().to_string().bright_white());
     println!("  To: {}", recipient.to_string().bright_white());
-    println!("  Amount: {} SOL", amount_sol.to_string().bright_white().bold());
+    println!(
+        "  Amount: {} SOL",
+        amount_sol.to_string().bright_white().bold()
+    );
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm transaction? (yes/no) [no]: "
@@ -272,7 +327,10 @@ pub fn transfer_sol(keypair: &Keypair, language: Language) -> Result<(), String>
             println!("\n{}", "✅ Transfer successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+                format!(
+                    "https://explorer.solana.com/tx/{}?cluster=devnet",
+                    signature
+                )
             } else {
                 format!("https://explorer.solana.com/tx/{}", signature)
             };
@@ -313,9 +371,7 @@ where
 /// Helper: Calculate and print WSOL ATA address
 #[cfg(feature = "solana-ops")]
 fn print_wsol_ata_address(owner: &Pubkey, language: Language, _use_seed: bool) {
-    use sol_trade_sdk::common::fast_fn::{
-        get_associated_token_address_with_program_id_fast,
-    };
+    use sol_trade_sdk::common::fast_fn::get_associated_token_address_with_program_id_fast;
 
     let wsol_mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let token_program = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
@@ -323,23 +379,33 @@ fn print_wsol_ata_address(owner: &Pubkey, language: Language, _use_seed: bool) {
     // SDK 强制对 WSOL 使用标准 ATA（不支持 seed 优化）
     let ata = get_associated_token_address_with_program_id_fast(owner, &wsol_mint, &token_program);
 
-    println!("\n{}", if language == Language::English {
-        "📍 WSOL ATA Address:"
-    } else {
-        "📍 WSOL ATA 地址:"
-    }.bright_yellow());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "📍 WSOL ATA Address:"
+        } else {
+            "📍 WSOL ATA 地址:"
+        }
+        .bright_yellow()
+    );
     println!("  {}", ata.to_string().bright_white().bold());
 }
 
 #[cfg(feature = "solana-ops")]
 pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "🏦 Create WSOL ATA Account".bright_yellow().bold());
     } else {
         println!("  {}", "🏦 创建 WSOL ATA 账户".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -348,7 +414,11 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     // WSOL 强制使用标准 ATA（SDK 设计）
     let use_seed_optimize = false;
@@ -364,8 +434,7 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
     }
 
     let client_sdk = SolanaClientSdk::new(rpc_url.to_string(), use_seed_optimize);
-    let wsol_balance = client_sdk.get_wsol_balance(&keypair.pubkey())
-        .unwrap_or(0);
+    let wsol_balance = client_sdk.get_wsol_balance(&keypair.pubkey()).unwrap_or(0);
 
     // 如果能查到余额（即使是0），说明账号已存在
     let rpc_client = RpcClient::new(rpc_url.to_string());
@@ -374,16 +443,27 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
 
     let ata = {
         use sol_trade_sdk::common::fast_fn::get_associated_token_address_with_program_id_fast;
-        get_associated_token_address_with_program_id_fast(&keypair.pubkey(), &wsol_mint, &token_program)
+        get_associated_token_address_with_program_id_fast(
+            &keypair.pubkey(),
+            &wsol_mint,
+            &token_program,
+        )
     };
 
     let account_exists = rpc_client.get_account(&ata).is_ok();
 
     if account_exists {
-        println!("\n{}", "ℹ️  WSOL ATA account already exists!".bright_yellow().bold());
-        println!("  💰 Balance: {} lamports ({} SOL)",
+        println!(
+            "\n{}",
+            "ℹ️  WSOL ATA account already exists!"
+                .bright_yellow()
+                .bold()
+        );
+        println!(
+            "  💰 Balance: {} lamports ({} SOL)",
             wsol_balance.to_string().bright_white(),
-            lamports_to_sol(wsol_balance).to_string().bright_white());
+            lamports_to_sol(wsol_balance).to_string().bright_white()
+        );
 
         if language == Language::English {
             println!("\n✅ Account is ready to use. No need to create.");
@@ -393,11 +473,15 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
         return Ok(());
     }
 
-    println!("\n{}", if language == Language::English {
-        "ℹ️  Account does not exist. Creating new WSOL ATA..."
-    } else {
-        "ℹ️  账号不存在，将创建新的 WSOL ATA..."
-    }.bright_yellow());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "ℹ️  Account does not exist. Creating new WSOL ATA..."
+        } else {
+            "ℹ️  账号不存在，将创建新的 WSOL ATA..."
+        }
+        .bright_yellow()
+    );
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm operation? (yes/no) [no]: "
@@ -425,10 +509,16 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
     // 使用run_async执行异步操作
     match run_async(client_sdk.create_wsol_ata(keypair)) {
         Ok(signature) => {
-            println!("\n{}", "✅ WSOL ATA created successfully!".bright_green().bold());
+            println!(
+                "\n{}",
+                "✅ WSOL ATA created successfully!".bright_green().bold()
+            );
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+                format!(
+                    "https://explorer.solana.com/tx/{}?cluster=devnet",
+                    signature
+                )
             } else {
                 format!("https://explorer.solana.com/tx/{}", signature)
             };
@@ -448,13 +538,19 @@ pub fn create_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Stri
 
 #[cfg(feature = "solana-ops")]
 pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "🔄 Wrap SOL → WSOL".bright_yellow().bold());
     } else {
         println!("  {}", "🔄 包装 SOL → WSOL".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -463,7 +559,11 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     // WSOL 强制使用标准 ATA（SDK 设计）
     let use_seed_optimize = false;
@@ -477,17 +577,21 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
         "\n包装金额 (SOL): "
     };
     let amount_str = read_input(amount_prompt, "");
-    let amount_sol: f64 = amount_str.parse()
-        .map_err(|_| if language == Language::English {
+    let amount_sol: f64 = amount_str.parse().map_err(|_| {
+        if language == Language::English {
             "❌ Invalid amount".to_string()
         } else {
             "❌ 无效的金额".to_string()
-        })?;
+        }
+    })?;
 
     let amount_lamports = (amount_sol * 1_000_000_000.0) as u64;
 
     println!("\n{}", "📋 Operation Summary:".bright_yellow());
-    println!("  Wrap: {} SOL → WSOL", amount_sol.to_string().bright_white().bold());
+    println!(
+        "  Wrap: {} SOL → WSOL",
+        amount_sol.to_string().bright_white().bold()
+    );
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm operation? (yes/no) [no]: "
@@ -521,7 +625,10 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
             println!("\n{}", "✅ Wrap successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+                format!(
+                    "https://explorer.solana.com/tx/{}?cluster=devnet",
+                    signature
+                )
             } else {
                 format!("https://explorer.solana.com/tx/{}", signature)
             };
@@ -541,13 +648,19 @@ pub fn wrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
 
 #[cfg(feature = "solana-ops")]
 pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "🔄 Unwrap WSOL → SOL".bright_yellow().bold());
     } else {
         println!("  {}", "🔄 解包 WSOL → SOL".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -556,7 +669,11 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     // WSOL 强制使用标准 ATA（SDK 设计）
     let use_seed_optimize = false;
@@ -575,21 +692,26 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
 
     let (is_partial, amount_lamports) = if amount_input.is_empty() {
         // 解包全部
-        println!("\n{}", if language == Language::English {
-            "ℹ️  Will unwrap ALL WSOL back to SOL"
-        } else {
-            "ℹ️  将解包所有 WSOL 回 SOL"
-        }.bright_yellow());
+        println!(
+            "\n{}",
+            if language == Language::English {
+                "ℹ️  Will unwrap ALL WSOL back to SOL"
+            } else {
+                "ℹ️  将解包所有 WSOL 回 SOL"
+            }
+            .bright_yellow()
+        );
         (false, 0)
     } else {
         // 解包指定金额
-        let amount_sol: f64 = amount_input.parse()
-            .map_err(|_| if language == Language::English {
+        let amount_sol: f64 = amount_input.parse().map_err(|_| {
+            if language == Language::English {
                 "❌ Invalid amount".to_string()
             } else {
                 "❌ 无效的金额".to_string()
-            })?;
-        
+            }
+        })?;
+
         if amount_sol <= 0.0 {
             return Err(if language == Language::English {
                 "❌ Amount must be greater than 0".to_string()
@@ -599,11 +721,15 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
         }
 
         let lamports = (amount_sol * 1_000_000_000.0) as u64;
-        println!("\n{}", if language == Language::English {
-            format!("ℹ️  Will unwrap {} SOL from WSOL", amount_sol)
-        } else {
-            format!("ℹ️  将从 WSOL 解包 {} SOL", amount_sol)
-        }.bright_yellow());
+        println!(
+            "\n{}",
+            if language == Language::English {
+                format!("ℹ️  Will unwrap {} SOL from WSOL", amount_sol)
+            } else {
+                format!("ℹ️  将从 WSOL 解包 {} SOL", amount_sol)
+            }
+            .bright_yellow()
+        );
         (true, lamports)
     };
 
@@ -639,13 +765,16 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
     } else {
         run_async(client.unwrap_sol(keypair))
     };
-    
+
     match result {
         Ok(signature) => {
             println!("\n{}", "✅ Unwrap successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+                format!(
+                    "https://explorer.solana.com/tx/{}?cluster=devnet",
+                    signature
+                )
             } else {
                 format!("https://explorer.solana.com/tx/{}", signature)
             };
@@ -666,13 +795,19 @@ pub fn unwrap_sol(keypair: &Keypair, language: Language) -> Result<(), String> {
 #[cfg(feature = "solana-ops")]
 /// Close WSOL ATA account and reclaim rent
 pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "🗑️  Close WSOL ATA Account".bright_yellow().bold());
     } else {
         println!("  {}", "🗑️  关闭 WSOL ATA 账号".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -681,7 +816,11 @@ pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Strin
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     // WSOL 强制使用标准 ATA（SDK 设计）
     let use_seed_optimize = false;
@@ -689,12 +828,17 @@ pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Strin
     // 打印WSOL ATA地址
     print_wsol_ata_address(&keypair.pubkey(), language, use_seed_optimize);
 
-    println!("\n{}", if language == Language::English {
-        "ℹ️  This operation will:"
-    } else {
-        "ℹ️  此操作将:"
-    }.bright_yellow().bold());
-    
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "ℹ️  This operation will:"
+        } else {
+            "ℹ️  此操作将:"
+        }
+        .bright_yellow()
+        .bold()
+    );
+
     if language == Language::English {
         println!("     • Unwrap ALL WSOL back to SOL automatically");
         println!("     • Close the WSOL ATA account");
@@ -705,11 +849,16 @@ pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Strin
         println!("     • 回收租金 (~0.00203928 SOL) 到您的钱包");
     }
 
-    println!("\n{}", if language == Language::English {
-        "💰 All SOL (unwrapped WSOL + rent) will be returned to your wallet!"
-    } else {
-        "�� 所有 SOL（解包的 WSOL + 租金）将返回到您的钱包!"
-    }.green().bold());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "💰 All SOL (unwrapped WSOL + rent) will be returned to your wallet!"
+        } else {
+            "�� 所有 SOL（解包的 WSOL + 租金）将返回到您的钱包!"
+        }
+        .green()
+        .bold()
+    );
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm operation? (yes/no) [no]: "
@@ -740,19 +889,29 @@ pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Strin
     // 使用run_async执行异步操作
     match run_async(client.unwrap_sol(keypair)) {
         Ok(signature) => {
-            println!("\n{}", "✅ WSOL ATA closed successfully!".bright_green().bold());
+            println!(
+                "\n{}",
+                "✅ WSOL ATA closed successfully!".bright_green().bold()
+            );
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+                format!(
+                    "https://explorer.solana.com/tx/{}?cluster=devnet",
+                    signature
+                )
             } else {
                 format!("https://explorer.solana.com/tx/{}", signature)
             };
             println!("  🔗 Explorer: {}", explorer_url.bright_blue());
-            println!("\n{}", if language == Language::English {
-                "💰 Rent reclaimed to your wallet!"
-            } else {
-                "💰 租金已返还到您的钱包!"
-            }.green());
+            println!(
+                "\n{}",
+                if language == Language::English {
+                    "💰 Rent reclaimed to your wallet!"
+                } else {
+                    "💰 租金已返还到您的钱包!"
+                }
+                .green()
+            );
             Ok(())
         }
         Err(e) => {
@@ -768,13 +927,19 @@ pub fn close_wsol_ata(keypair: &Keypair, language: Language) -> Result<(), Strin
 
 #[cfg(feature = "solana-ops")]
 pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "💎 Transfer SPL Token".bright_yellow().bold());
     } else {
         println!("  {}", "💎 转账 SPL 代币".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -783,7 +948,11 @@ pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), Strin
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
+    } else {
+        DEFAULT_RPC_URL
+    };
 
     let mint_prompt = if language == Language::English {
         "\nToken Mint address: "
@@ -792,12 +961,13 @@ pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), Strin
     };
     let mint_str = read_input(mint_prompt, "");
 
-    let mint = Pubkey::from_str(&mint_str)
-        .map_err(|_| if language == Language::English {
+    let mint = Pubkey::from_str(&mint_str).map_err(|_| {
+        if language == Language::English {
             "❌ Invalid mint address".to_string()
         } else {
             "❌ 无效的 Mint 地址".to_string()
-        })?;
+        }
+    })?;
 
     let recipient_prompt = if language == Language::English {
         "Recipient address: "
@@ -806,12 +976,13 @@ pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), Strin
     };
     let recipient_str = read_input(recipient_prompt, "");
 
-    let recipient = Pubkey::from_str(&recipient_str)
-        .map_err(|_| if language == Language::English {
+    let recipient = Pubkey::from_str(&recipient_str).map_err(|_| {
+        if language == Language::English {
             "❌ Invalid recipient address".to_string()
         } else {
             "❌ 无效的接收地址".to_string()
-        })?;
+        }
+    })?;
 
     let amount_prompt = if language == Language::English {
         "Amount (smallest units): "
@@ -819,18 +990,22 @@ pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), Strin
         "金额 (最小单位): "
     };
     let amount_str = read_input(amount_prompt, "");
-    let amount: u64 = amount_str.parse()
-        .map_err(|_| if language == Language::English {
+    let amount: u64 = amount_str.parse().map_err(|_| {
+        if language == Language::English {
             "❌ Invalid amount".to_string()
         } else {
             "❌ 无效的金额".to_string()
-        })?;
+        }
+    })?;
 
     println!("\n{}", "📋 Transaction Summary:".bright_yellow());
     println!("  From: {}", keypair.pubkey().to_string().bright_white());
     println!("  To: {}", recipient.to_string().bright_white());
     println!("  Token: {}", mint.to_string().bright_white());
-    println!("  Amount: {} (smallest units)", amount.to_string().bright_white().bold());
+    println!(
+        "  Amount: {} (smallest units)",
+        amount.to_string().bright_white().bold()
+    );
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm transaction? (yes/no) [no]: "
@@ -861,7 +1036,10 @@ pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), Strin
             println!("\n{}", "✅ Transfer successful!".bright_green().bold());
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/tx/{}?cluster=devnet", signature)
+                format!(
+                    "https://explorer.solana.com/tx/{}?cluster=devnet",
+                    signature
+                )
             } else {
                 format!("https://explorer.solana.com/tx/{}", signature)
             };
@@ -881,13 +1059,19 @@ pub fn transfer_token(keypair: &Keypair, language: Language) -> Result<(), Strin
 
 #[cfg(feature = "solana-ops")]
 pub fn create_nonce_account(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
     if language == Language::English {
         println!("  {}", "🔑 Create Nonce Account".bright_yellow().bold());
     } else {
         println!("  {}", "🔑 创建 Nonce 账户".bright_yellow().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
+    );
 
     let network_prompt = if language == Language::English {
         "\nSelect network:\n  1. Mainnet\n  2. Devnet\nChoice [1]: "
@@ -896,19 +1080,31 @@ pub fn create_nonce_account(keypair: &Keypair, language: Language) -> Result<(),
     };
 
     let network = read_input(network_prompt, "1");
-    let rpc_url = if network == "2" { DEVNET_RPC_URL } else { DEFAULT_RPC_URL };
-
-    println!("\n{}", if language == Language::English {
-        "ℹ️  A nonce account will be created for durable transactions"
+    let rpc_url = if network == "2" {
+        DEVNET_RPC_URL
     } else {
-        "ℹ️  将创建一个用于持久交易的 Nonce 账户"
-    }.bright_yellow());
+        DEFAULT_RPC_URL
+    };
 
-    println!("{}", if language == Language::English {
-        "ℹ️  This requires ~0.00144 SOL for rent exemption"
-    } else {
-        "ℹ️  这需要约 0.00144 SOL 用于租金豁免"
-    }.bright_yellow());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "ℹ️  A nonce account will be created for durable transactions"
+        } else {
+            "ℹ️  将创建一个用于持久交易的 Nonce 账户"
+        }
+        .bright_yellow()
+    );
+
+    println!(
+        "{}",
+        if language == Language::English {
+            "ℹ️  This requires ~0.00144 SOL for rent exemption"
+        } else {
+            "ℹ️  这需要约 0.00144 SOL 用于租金豁免"
+        }
+        .bright_yellow()
+    );
 
     let confirm_prompt = if language == Language::English {
         "\nConfirm creation? (yes/no) [no]: "
@@ -936,20 +1132,35 @@ pub fn create_nonce_account(keypair: &Keypair, language: Language) -> Result<(),
     let client = SolanaClient::new(rpc_url.to_string());
     match client.create_nonce_account(keypair) {
         Ok((nonce_pubkey, signature)) => {
-            println!("\n{}", "✅ Nonce account created successfully!".bright_green().bold());
-            println!("  🔑 Nonce Account: {}", nonce_pubkey.to_string().bright_white().bold());
+            println!(
+                "\n{}",
+                "✅ Nonce account created successfully!"
+                    .bright_green()
+                    .bold()
+            );
+            println!(
+                "  🔑 Nonce Account: {}",
+                nonce_pubkey.to_string().bright_white().bold()
+            );
             println!("  📝 Signature: {}", signature.to_string().bright_white());
             let explorer_url = if network == "2" {
-                format!("https://explorer.solana.com/address/{}?cluster=devnet", nonce_pubkey)
+                format!(
+                    "https://explorer.solana.com/address/{}?cluster=devnet",
+                    nonce_pubkey
+                )
             } else {
                 format!("https://explorer.solana.com/address/{}", nonce_pubkey)
             };
             println!("  🔗 Explorer: {}", explorer_url.bright_blue());
-            println!("\n{}", if language == Language::English {
-                "💡 Save this nonce account address for future use!"
-            } else {
-                "💡 请保存此 Nonce 账户地址以供将来使用！"
-            }.bright_yellow());
+            println!(
+                "\n{}",
+                if language == Language::English {
+                    "💡 Save this nonce account address for future use!"
+                } else {
+                    "💡 请保存此 Nonce 账户地址以供将来使用！"
+                }
+                .bright_yellow()
+            );
             Ok(())
         }
         Err(e) => {
@@ -1004,21 +1215,20 @@ pub fn show_solana_operations_menu(language: crate::interactive::Language) -> Re
 
         print!("{}", password_prompt);
         io::stdout().flush().map_err(|e| e.to_string())?;
-        let password = rpassword::read_password()
-            .map_err(|e| format!("Failed to read password: {}", e))?;
+        let password =
+            rpassword::read_password().map_err(|e| format!("Failed to read password: {}", e))?;
 
         // Load keystore
-        let keystore_json = std::fs::read_to_string(&file_path)
-            .map_err(|e| {
-                if ops_language == Language::English {
-                    format!("❌ Failed to read file: {}", e)
-                } else {
-                    format!("❌ 读取文件失败: {}", e)
-                }
-            })?;
+        let keystore_json = std::fs::read_to_string(&file_path).map_err(|e| {
+            if ops_language == Language::English {
+                format!("❌ Failed to read file: {}", e)
+            } else {
+                format!("❌ 读取文件失败: {}", e)
+            }
+        })?;
 
-        let keypair = KeyManager::keypair_from_encrypted_json(&keystore_json, &password)
-            .map_err(|e| {
+        let keypair =
+            KeyManager::keypair_from_encrypted_json(&keystore_json, &password).map_err(|e| {
                 if ops_language == Language::English {
                     format!("❌ Failed to decrypt keystore: {}", e)
                 } else {
@@ -1026,11 +1236,15 @@ pub fn show_solana_operations_menu(language: crate::interactive::Language) -> Re
                 }
             })?;
 
-        println!("\n{}", if ops_language == Language::English {
-            "✅ Wallet unlocked successfully!"
-        } else {
-            "✅ 钱包解锁成功！"
-        }.bright_green());
+        println!(
+            "\n{}",
+            if ops_language == Language::English {
+                "✅ Wallet unlocked successfully!"
+            } else {
+                "✅ 钱包解锁成功！"
+            }
+            .bright_green()
+        );
 
         // Run synchronous operations menu
         show_operations_menu(&keypair, ops_language)
@@ -1046,19 +1260,29 @@ pub fn show_solana_operations_menu(language: crate::interactive::Language) -> Re
 /// PumpSwap 交互式卖出
 #[cfg(feature = "sol-trade-sdk")]
 pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
     if language == Language::English {
         println!("  {}", "🔥 PumpSwap Sell Tokens".bright_magenta().bold());
     } else {
         println!("  {}", "🔥 PumpSwap 卖出代币".bright_magenta().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
 
-    println!("\n{}", if language == Language::English {
-        "Current Wallet:"
-    } else {
-        "当前钱包:"
-    }.bright_green());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "Current Wallet:"
+        } else {
+            "当前钱包:"
+        }
+        .bright_green()
+    );
     println!("  📍 {}", keypair.pubkey().to_string().bright_white());
 
     // Step 1: 输入 RPC URL（可选）
@@ -1084,40 +1308,61 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
         println!("   如果不确定，建议选择 'yes'（默认）");
     }
 
-    print!("\n{} ", if language == Language::English {
-        "❓ Enable Seed Optimization? (yes/no, default: yes):"
-    } else {
-        "❓ 启用 Seed 优化? (yes/no, 默认 yes):"
-    }.yellow());
+    print!(
+        "\n{} ",
+        if language == Language::English {
+            "❓ Enable Seed Optimization? (yes/no, default: yes):"
+        } else {
+            "❓ 启用 Seed 优化? (yes/no, 默认 yes):"
+        }
+        .yellow()
+    );
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut seed_input = String::new();
-    io::stdin().read_line(&mut seed_input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut seed_input)
+        .map_err(|e| e.to_string())?;
     let seed_input_trimmed = seed_input.trim().to_lowercase();
     // 默认为 yes：空输入或 yes/y 都启用，只有明确输入 no/n 才禁用
-    let use_seed = seed_input_trimmed.is_empty() || seed_input_trimmed == "yes" || seed_input_trimmed == "y";
+    let use_seed =
+        seed_input_trimmed.is_empty() || seed_input_trimmed == "yes" || seed_input_trimmed == "y";
 
     if use_seed {
-        println!("{}", if language == Language::English {
-            "✅ Seed optimization enabled"
-        } else {
-            "✅ 已启用 Seed 优化"
-        }.green());
+        println!(
+            "{}",
+            if language == Language::English {
+                "✅ Seed optimization enabled"
+            } else {
+                "✅ 已启用 Seed 优化"
+            }
+            .green()
+        );
     } else {
-        println!("{}", if language == Language::English {
-            "✅ Using standard ATA"
-        } else {
-            "✅ 使用标准 ATA"
-        }.green());
+        println!(
+            "{}",
+            if language == Language::English {
+                "✅ Using standard ATA"
+            } else {
+                "✅ 使用标准 ATA"
+            }
+            .green()
+        );
     }
 
     // Step 3: 输入 token mint 地址（支持多个，用逗号或空格分割）
     println!();
     if language == Language::English {
-        println!("{}", "💡 You can enter multiple mint addresses separated by commas or spaces".bright_cyan());
+        println!(
+            "{}",
+            "💡 You can enter multiple mint addresses separated by commas or spaces".bright_cyan()
+        );
         println!("   Tokens will be sold in the order entered");
     } else {
-        println!("{}", "💡 可以输入多个 Mint 地址，用逗号或空格分割".bright_cyan());
+        println!(
+            "{}",
+            "💡 可以输入多个 Mint 地址，用逗号或空格分割".bright_cyan()
+        );
         println!("   将按输入顺序依次卖出");
     }
 
@@ -1130,7 +1375,9 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut mint_input = String::new();
-    io::stdin().read_line(&mut mint_input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut mint_input)
+        .map_err(|e| e.to_string())?;
     let mint_input = mint_input.trim();
 
     if mint_input.is_empty() {
@@ -1171,9 +1418,15 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
     // 显示将要处理的 mint 地址
     println!();
     if language == Language::English {
-        println!("{}", format!("📋 Found {} token(s) to sell:", mint_addresses.len()).bright_green());
+        println!(
+            "{}",
+            format!("📋 Found {} token(s) to sell:", mint_addresses.len()).bright_green()
+        );
     } else {
-        println!("{}", format!("📋 找到 {} 个代币待卖出:", mint_addresses.len()).bright_green());
+        println!(
+            "{}",
+            format!("📋 找到 {} 个代币待卖出:", mint_addresses.len()).bright_green()
+        );
     }
     for (idx, mint) in mint_addresses.iter().enumerate() {
         println!("   {}. {}", idx + 1, mint.bright_white());
@@ -1193,22 +1446,38 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
     if total_mints > 1 {
         println!();
         if language == Language::English {
-            println!("{}", format!("⚠️  You are about to sell {} tokens", total_mints).yellow().bold());
+            println!(
+                "{}",
+                format!("⚠️  You are about to sell {} tokens", total_mints)
+                    .yellow()
+                    .bold()
+            );
             println!("   All tokens will be sold automatically without individual confirmation");
         } else {
-            println!("{}", format!("⚠️  您即将卖出 {} 个代币", total_mints).yellow().bold());
+            println!(
+                "{}",
+                format!("⚠️  您即将卖出 {} 个代币", total_mints)
+                    .yellow()
+                    .bold()
+            );
             println!("   所有代币将自动卖出，不会逐个确认");
         }
 
-        print!("\n{}", if language == Language::English {
-            "❓ Confirm batch sell? (yes/no, default: yes): "
-        } else {
-            "❓ 确认批量卖出? (yes/no, 默认 yes): "
-        }.yellow());
+        print!(
+            "\n{}",
+            if language == Language::English {
+                "❓ Confirm batch sell? (yes/no, default: yes): "
+            } else {
+                "❓ 确认批量卖出? (yes/no, 默认 yes): "
+            }
+            .yellow()
+        );
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut confirm = String::new();
-        io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut confirm)
+            .map_err(|e| e.to_string())?;
         let confirm_trimmed = confirm.trim().to_lowercase();
 
         if confirm_trimmed == "no" || confirm_trimmed == "n" {
@@ -1225,15 +1494,27 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
     let skip_confirmation = total_mints > 1;
     for (idx, mint) in mint_addresses.iter().enumerate() {
         println!();
-        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+        println!(
+            "{}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+        );
         if language == Language::English {
-            println!("{}", format!("🚀 Processing token {}/{}", idx + 1, total_mints).bright_blue());
+            println!(
+                "{}",
+                format!("🚀 Processing token {}/{}", idx + 1, total_mints).bright_blue()
+            );
             println!("   Mint: {}", mint.bright_white());
         } else {
-            println!("{}", format!("🚀 处理第 {}/{} 个代币", idx + 1, total_mints).bright_blue());
+            println!(
+                "{}",
+                format!("🚀 处理第 {}/{} 个代币", idx + 1, total_mints).bright_blue()
+            );
             println!("   Mint: {}", mint.bright_white());
         }
-        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+        println!(
+            "{}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+        );
 
         // 使用当前 tokio runtime 执行异步操作
         let result = match tokio::runtime::Handle::try_current() {
@@ -1253,8 +1534,9 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
                             slippage,
                             use_seed,
                             language,
-                            skip_confirmation,  // 传入 skip_confirmation 参数
-                        ).await
+                            skip_confirmation, // 传入 skip_confirmation 参数
+                        )
+                        .await
                     })
                 })
                 .join()
@@ -1271,8 +1553,9 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
                         slippage,
                         use_seed,
                         language,
-                        skip_confirmation,  // 传入 skip_confirmation 参数
-                    ).await
+                        skip_confirmation, // 传入 skip_confirmation 参数
+                    )
+                    .await
                 })
             }
         };
@@ -1281,17 +1564,31 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
         match result {
             Ok(_) => {
                 if language == Language::English {
-                    println!("\n{}", format!("✅ Token {}/{} sold successfully", idx + 1, total_mints).bright_green());
+                    println!(
+                        "\n{}",
+                        format!("✅ Token {}/{} sold successfully", idx + 1, total_mints)
+                            .bright_green()
+                    );
                 } else {
-                    println!("\n{}", format!("✅ 第 {}/{} 个代币卖出成功", idx + 1, total_mints).bright_green());
+                    println!(
+                        "\n{}",
+                        format!("✅ 第 {}/{} 个代币卖出成功", idx + 1, total_mints).bright_green()
+                    );
                 }
             }
             Err(e) => {
                 if language == Language::English {
-                    println!("\n{}", format!("❌ Token {}/{} failed: {}", idx + 1, total_mints, e).bright_red());
+                    println!(
+                        "\n{}",
+                        format!("❌ Token {}/{} failed: {}", idx + 1, total_mints, e).bright_red()
+                    );
                     println!("   Continuing with next token...");
                 } else {
-                    println!("\n{}", format!("❌ 第 {}/{} 个代币卖出失败: {}", idx + 1, total_mints, e).bright_red());
+                    println!(
+                        "\n{}",
+                        format!("❌ 第 {}/{} 个代币卖出失败: {}", idx + 1, total_mints, e)
+                            .bright_red()
+                    );
                     println!("   继续处理下一个代币...");
                 }
             }
@@ -1311,13 +1608,19 @@ pub fn pumpswap_sell_interactive(keypair: &Keypair, language: Language) -> Resul
 
     // 所有交易完成
     println!();
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
     if language == Language::English {
         println!("{}", "🎉 All transactions completed!".bright_green().bold());
     } else {
         println!("{}", "🎉 所有交易已完成！".bright_green().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
 
     Ok(())
 }
@@ -1334,19 +1637,32 @@ pub fn pumpswap_sell_interactive(_keypair: &Keypair, language: Language) -> Resu
 /// Pump.fun 内盘（bonding curve）交互式卖出
 #[cfg(feature = "sol-trade-sdk")]
 pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
     if language == Language::English {
-        println!("  {}", "🔥 Pump.fun Bonding Curve Sell".bright_magenta().bold());
+        println!(
+            "  {}",
+            "🔥 Pump.fun Bonding Curve Sell".bright_magenta().bold()
+        );
     } else {
         println!("  {}", "🔥 Pump.fun 内盘卖出代币".bright_magenta().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
 
-    println!("\n{}", if language == Language::English {
-        "Current Wallet:"
-    } else {
-        "当前钱包:"
-    }.bright_green());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "Current Wallet:"
+        } else {
+            "当前钱包:"
+        }
+        .bright_green()
+    );
     println!("  📍 {}", keypair.pubkey().to_string().bright_white());
 
     let rpc_prompt = if language == Language::English {
@@ -1367,22 +1683,35 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
         println!("   如果不确定，建议选择 'yes'（默认）");
     }
 
-    print!("\n{} ", if language == Language::English {
-        "❓ Enable Seed Optimization? (yes/no, default: yes):"
-    } else {
-        "❓ 启用 Seed 优化? (yes/no, 默认 yes):"
-    }.yellow());
+    print!(
+        "\n{} ",
+        if language == Language::English {
+            "❓ Enable Seed Optimization? (yes/no, default: yes):"
+        } else {
+            "❓ 启用 Seed 优化? (yes/no, 默认 yes):"
+        }
+        .yellow()
+    );
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut seed_input = String::new();
-    io::stdin().read_line(&mut seed_input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut seed_input)
+        .map_err(|e| e.to_string())?;
     let seed_input_trimmed = seed_input.trim().to_lowercase();
-    let use_seed = seed_input_trimmed.is_empty() || seed_input_trimmed == "yes" || seed_input_trimmed == "y";
+    let use_seed =
+        seed_input_trimmed.is_empty() || seed_input_trimmed == "yes" || seed_input_trimmed == "y";
 
     if language == Language::English {
-        println!("{}", "💡 You can enter multiple mint addresses separated by commas or spaces".bright_cyan());
+        println!(
+            "{}",
+            "💡 You can enter multiple mint addresses separated by commas or spaces".bright_cyan()
+        );
     } else {
-        println!("{}", "💡 可以输入多个 Mint 地址，用逗号或空格分割".bright_cyan());
+        println!(
+            "{}",
+            "💡 可以输入多个 Mint 地址，用逗号或空格分割".bright_cyan()
+        );
     }
 
     let mint_prompt = if language == Language::English {
@@ -1394,7 +1723,9 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut mint_input = String::new();
-    io::stdin().read_line(&mut mint_input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut mint_input)
+        .map_err(|e| e.to_string())?;
     let mint_input = mint_input.trim();
 
     if mint_input.is_empty() {
@@ -1432,9 +1763,15 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
 
     println!();
     if language == Language::English {
-        println!("{}", format!("📋 Found {} token(s) to sell:", mint_addresses.len()).bright_green());
+        println!(
+            "{}",
+            format!("📋 Found {} token(s) to sell:", mint_addresses.len()).bright_green()
+        );
     } else {
-        println!("{}", format!("📋 找到 {} 个代币待卖出:", mint_addresses.len()).bright_green());
+        println!(
+            "{}",
+            format!("📋 找到 {} 个代币待卖出:", mint_addresses.len()).bright_green()
+        );
     }
     for (idx, mint) in mint_addresses.iter().enumerate() {
         println!("   {}. {}", idx + 1, mint.bright_white());
@@ -1452,20 +1789,36 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
     if total_mints > 1 {
         println!();
         if language == Language::English {
-            println!("{}", format!("⚠️  You are about to sell {} tokens", total_mints).yellow().bold());
+            println!(
+                "{}",
+                format!("⚠️  You are about to sell {} tokens", total_mints)
+                    .yellow()
+                    .bold()
+            );
         } else {
-            println!("{}", format!("⚠️  您即将卖出 {} 个代币", total_mints).yellow().bold());
+            println!(
+                "{}",
+                format!("⚠️  您即将卖出 {} 个代币", total_mints)
+                    .yellow()
+                    .bold()
+            );
         }
 
-        print!("\n{}", if language == Language::English {
-            "❓ Confirm batch sell? (yes/no, default: yes): "
-        } else {
-            "❓ 确认批量卖出? (yes/no, 默认 yes): "
-        }.yellow());
+        print!(
+            "\n{}",
+            if language == Language::English {
+                "❓ Confirm batch sell? (yes/no, default: yes): "
+            } else {
+                "❓ 确认批量卖出? (yes/no, 默认 yes): "
+            }
+            .yellow()
+        );
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut confirm = String::new();
-        io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut confirm)
+            .map_err(|e| e.to_string())?;
         let confirm_trimmed = confirm.trim().to_lowercase();
 
         if confirm_trimmed == "no" || confirm_trimmed == "n" {
@@ -1480,15 +1833,27 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
     let skip_confirmation = total_mints > 1;
     for (idx, mint) in mint_addresses.iter().enumerate() {
         println!();
-        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+        println!(
+            "{}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+        );
         if language == Language::English {
-            println!("{}", format!("🚀 Processing token {}/{}", idx + 1, total_mints).bright_blue());
+            println!(
+                "{}",
+                format!("🚀 Processing token {}/{}", idx + 1, total_mints).bright_blue()
+            );
             println!("   Mint: {}", mint.bright_white());
         } else {
-            println!("{}", format!("🚀 处理第 {}/{} 个代币", idx + 1, total_mints).bright_blue());
+            println!(
+                "{}",
+                format!("🚀 处理第 {}/{} 个代币", idx + 1, total_mints).bright_blue()
+            );
             println!("   Mint: {}", mint.bright_white());
         }
-        println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+        println!(
+            "{}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+        );
 
         let result = match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
@@ -1507,7 +1872,8 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
                             use_seed,
                             language,
                             skip_confirmation,
-                        ).await
+                        )
+                        .await
                     })
                 })
                 .join()
@@ -1524,7 +1890,8 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
                         use_seed,
                         language,
                         skip_confirmation,
-                    ).await
+                    )
+                    .await
                 })
             }
         };
@@ -1532,16 +1899,30 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
         match result {
             Ok(_) => {
                 if language == Language::English {
-                    println!("\n{}", format!("✅ Token {}/{} sold successfully", idx + 1, total_mints).bright_green());
+                    println!(
+                        "\n{}",
+                        format!("✅ Token {}/{} sold successfully", idx + 1, total_mints)
+                            .bright_green()
+                    );
                 } else {
-                    println!("\n{}", format!("✅ 第 {}/{} 个代币卖出成功", idx + 1, total_mints).bright_green());
+                    println!(
+                        "\n{}",
+                        format!("✅ 第 {}/{} 个代币卖出成功", idx + 1, total_mints).bright_green()
+                    );
                 }
             }
             Err(e) => {
                 if language == Language::English {
-                    println!("\n{}", format!("❌ Token {}/{} failed: {}", idx + 1, total_mints, e).bright_red());
+                    println!(
+                        "\n{}",
+                        format!("❌ Token {}/{} failed: {}", idx + 1, total_mints, e).bright_red()
+                    );
                 } else {
-                    println!("\n{}", format!("❌ 第 {}/{} 个代币卖出失败: {}", idx + 1, total_mints, e).bright_red());
+                    println!(
+                        "\n{}",
+                        format!("❌ 第 {}/{} 个代币卖出失败: {}", idx + 1, total_mints, e)
+                            .bright_red()
+                    );
                 }
             }
         }
@@ -1553,13 +1934,19 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
     }
 
     println!();
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
     if language == Language::English {
         println!("{}", "🎉 All transactions completed!".bright_green().bold());
     } else {
         println!("{}", "🎉 所有交易已完成！".bright_green().bold());
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
 
     Ok(())
 }
@@ -1567,25 +1954,51 @@ pub fn pumpfun_sell_interactive(keypair: &Keypair, language: Language) -> Result
 /// Pump (Pump.fun) 返现：查询余额 → 显示 → 确认 → 领取（原生 SOL）
 #[cfg(feature = "sol-trade-sdk")]
 pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
-    use std::sync::Arc;
     use sol_trade_sdk::{common::TradeConfig, SolanaTrade};
     use solana_commitment_config::CommitmentConfig;
+    use std::sync::Arc;
 
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
     if language == Language::English {
-        println!("  {}", "💰 Pump (Pump.fun) Cashback – View & Claim".bright_magenta().bold());
-        println!("  {}", "   Cashback is native SOL from trading on Pump.fun.".bright_white());
+        println!(
+            "  {}",
+            "💰 Pump (Pump.fun) Cashback – View & Claim"
+                .bright_magenta()
+                .bold()
+        );
+        println!(
+            "  {}",
+            "   Cashback is native SOL from trading on Pump.fun.".bright_white()
+        );
     } else {
-        println!("  {}", "💰 Pump (Pump.fun) 返现 – 查看与领取".bright_magenta().bold());
-        println!("  {}", "   返现为在 Pump.fun 交易累积的原生 SOL。".bright_white());
+        println!(
+            "  {}",
+            "💰 Pump (Pump.fun) 返现 – 查看与领取"
+                .bright_magenta()
+                .bold()
+        );
+        println!(
+            "  {}",
+            "   返现为在 Pump.fun 交易累积的原生 SOL。".bright_white()
+        );
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
 
-    println!("\n{}", if language == Language::English {
-        "Current Wallet:"
-    } else {
-        "当前钱包:"
-    }.bright_green());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "Current Wallet:"
+        } else {
+            "当前钱包:"
+        }
+        .bright_green()
+    );
     println!("  📍 {}", keypair.pubkey().to_string().bright_white());
 
     let rpc_prompt = if language == Language::English {
@@ -1602,12 +2015,16 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
         println!("\n{}", "🔍 正在查询返现余额...".bright_cyan());
     }
 
-    let pda = sol_trade_sdk::instruction::utils::pumpfun::get_user_volume_accumulator_pda(&keypair.pubkey())
-        .ok_or_else(|| if language == Language::English {
+    let pda = sol_trade_sdk::instruction::utils::pumpfun::get_user_volume_accumulator_pda(
+        &keypair.pubkey(),
+    )
+    .ok_or_else(|| {
+        if language == Language::English {
             "Failed to derive UserVolumeAccumulator PDA".to_string()
         } else {
             "无法派生 UserVolumeAccumulator PDA 地址".to_string()
-        })?;
+        }
+    })?;
 
     let rpc_client = RpcClient::new(rpc_url.clone());
     let pda_balance_lamports = rpc_client.get_balance(&pda).unwrap_or(0);
@@ -1616,23 +2033,44 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
     let claimable_sol = claimable_lamports as f64 / 1_000_000_000.0;
 
     // Step 2: 显示余额
-    println!("\n{}", if language == Language::English {
-        "📊 Cashback Info:"
-    } else {
-        "📊 返现信息:"
-    }.bright_yellow());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "📊 Cashback Info:"
+        } else {
+            "📊 返现信息:"
+        }
+        .bright_yellow()
+    );
     println!("  PDA: {}", pda.to_string().bright_white());
     if language == Language::English {
-        println!("  PDA Balance: {} lamports ({:.9} SOL)", pda_balance_lamports, pda_balance_lamports as f64 / 1e9);
-        println!("  Claimable:   {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+        println!(
+            "  PDA Balance: {} lamports ({:.9} SOL)",
+            pda_balance_lamports,
+            pda_balance_lamports as f64 / 1e9
+        );
+        println!(
+            "  Claimable:   {} lamports ({:.9} SOL)",
+            claimable_lamports, claimable_sol
+        );
     } else {
-        println!("  PDA 余额:    {} lamports ({:.9} SOL)", pda_balance_lamports, pda_balance_lamports as f64 / 1e9);
-        println!("  可领取:      {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+        println!(
+            "  PDA 余额:    {} lamports ({:.9} SOL)",
+            pda_balance_lamports,
+            pda_balance_lamports as f64 / 1e9
+        );
+        println!(
+            "  可领取:      {} lamports ({:.9} SOL)",
+            claimable_lamports, claimable_sol
+        );
     }
 
     if claimable_lamports == 0 {
         if language == Language::English {
-            println!("\n{}", "ℹ️  No cashback available to claim.".bright_yellow());
+            println!(
+                "\n{}",
+                "ℹ️  No cashback available to claim.".bright_yellow()
+            );
         } else {
             println!("\n{}", "ℹ️  暂无可领取的返现。".bright_yellow());
         }
@@ -1685,7 +2123,10 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
                 .build();
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
-                    client.claim_cashback_pumpfun().await.map_err(|e| e.to_string())
+                    client
+                        .claim_cashback_pumpfun()
+                        .await
+                        .map_err(|e| e.to_string())
                 })
             })
             .join()
@@ -1707,7 +2148,8 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
             .build();
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));
-            rt.block_on(client.claim_cashback_pumpfun()).map_err(|e| e.to_string())?
+            rt.block_on(client.claim_cashback_pumpfun())
+                .map_err(|e| e.to_string())?
         }
     };
 
@@ -1726,25 +2168,49 @@ pub fn pumpfun_cashback_interactive(keypair: &Keypair, language: Language) -> Re
 /// PumpSwap 返现：查询余额 → 显示 → 确认 → 领取（WSOL）
 #[cfg(feature = "sol-trade-sdk")]
 pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> Result<(), String> {
-    use std::sync::Arc;
     use sol_trade_sdk::{common::TradeConfig, SolanaTrade};
     use solana_commitment_config::CommitmentConfig;
+    use std::sync::Arc;
 
-    println!("\n{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "\n{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
     if language == Language::English {
-        println!("  {}", "💰 PumpSwap Cashback – View & Claim".bright_magenta().bold());
-        println!("  {}", "   Cashback is WSOL from trading on PumpSwap.".bright_white());
+        println!(
+            "  {}",
+            "💰 PumpSwap Cashback – View & Claim"
+                .bright_magenta()
+                .bold()
+        );
+        println!(
+            "  {}",
+            "   Cashback is WSOL from trading on PumpSwap.".bright_white()
+        );
     } else {
-        println!("  {}", "💰 PumpSwap 返现 – 查看与领取".bright_magenta().bold());
-        println!("  {}", "   返现为在 PumpSwap 交易累积的 WSOL。".bright_white());
+        println!(
+            "  {}",
+            "💰 PumpSwap 返现 – 查看与领取".bright_magenta().bold()
+        );
+        println!(
+            "  {}",
+            "   返现为在 PumpSwap 交易累积的 WSOL。".bright_white()
+        );
     }
-    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta());
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_magenta()
+    );
 
-    println!("\n{}", if language == Language::English {
-        "Current Wallet:"
-    } else {
-        "当前钱包:"
-    }.bright_green());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "Current Wallet:"
+        } else {
+            "当前钱包:"
+        }
+        .bright_green()
+    );
     println!("  📍 {}", keypair.pubkey().to_string().bright_white());
 
     let rpc_prompt = if language == Language::English {
@@ -1761,11 +2227,16 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
         println!("\n{}", "🔍 正在查询返现余额...".bright_cyan());
     }
 
-    let wsol_ata = sol_trade_sdk::instruction::utils::pumpswap::get_user_volume_accumulator_wsol_ata(&keypair.pubkey())
-        .ok_or_else(|| if language == Language::English {
-            "Failed to derive PumpSwap UserVolumeAccumulator WSOL ATA".to_string()
-        } else {
-            "无法派生 PumpSwap UserVolumeAccumulator WSOL ATA 地址".to_string()
+    let wsol_ata =
+        sol_trade_sdk::instruction::utils::pumpswap::get_user_volume_accumulator_wsol_ata(
+            &keypair.pubkey(),
+        )
+        .ok_or_else(|| {
+            if language == Language::English {
+                "Failed to derive PumpSwap UserVolumeAccumulator WSOL ATA".to_string()
+            } else {
+                "无法派生 PumpSwap UserVolumeAccumulator WSOL ATA 地址".to_string()
+            }
         })?;
 
     let rpc_client = RpcClient::new(rpc_url.clone());
@@ -1776,21 +2247,34 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
     let claimable_sol = claimable_lamports as f64 / 1_000_000_000.0;
 
     // Step 2: 显示余额
-    println!("\n{}", if language == Language::English {
-        "📊 Cashback Info:"
-    } else {
-        "📊 返现信息:"
-    }.bright_yellow());
+    println!(
+        "\n{}",
+        if language == Language::English {
+            "📊 Cashback Info:"
+        } else {
+            "📊 返现信息:"
+        }
+        .bright_yellow()
+    );
     println!("  WSOL ATA: {}", wsol_ata.to_string().bright_white());
     if language == Language::English {
-        println!("  Claimable: {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+        println!(
+            "  Claimable: {} lamports ({:.9} SOL)",
+            claimable_lamports, claimable_sol
+        );
     } else {
-        println!("  可领取:   {} lamports ({:.9} SOL)", claimable_lamports, claimable_sol);
+        println!(
+            "  可领取:   {} lamports ({:.9} SOL)",
+            claimable_lamports, claimable_sol
+        );
     }
 
     if claimable_lamports == 0 {
         if language == Language::English {
-            println!("\n{}", "ℹ️  No cashback available to claim.".bright_yellow());
+            println!(
+                "\n{}",
+                "ℹ️  No cashback available to claim.".bright_yellow()
+            );
         } else {
             println!("\n{}", "ℹ️  暂无可领取的返现。".bright_yellow());
         }
@@ -1843,7 +2327,10 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
                 .build();
                 handle.block_on(async move {
                     let client = SolanaTrade::new(payer, config).await;
-                    client.claim_cashback_pumpswap().await.map_err(|e| e.to_string())
+                    client
+                        .claim_cashback_pumpswap()
+                        .await
+                        .map_err(|e| e.to_string())
                 })
             })
             .join()
@@ -1865,7 +2352,8 @@ pub fn pumpswap_cashback_interactive(keypair: &Keypair, language: Language) -> R
             .build();
             let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let client = rt.block_on(SolanaTrade::new(payer, config));
-            rt.block_on(client.claim_cashback_pumpswap()).map_err(|e| e.to_string())?
+            rt.block_on(client.claim_cashback_pumpswap())
+                .map_err(|e| e.to_string())?
         }
     };
 

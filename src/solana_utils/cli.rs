@@ -4,9 +4,9 @@ use colored::Colorize;
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 use std::str::FromStr;
 
-use crate::solana_utils::solana_ops::{lamports_to_sol, format_token_amount, SolanaClient};
 #[cfg(feature = "solana-ops")]
 use crate::solana_utils::solana_ops::SolanaClientSdk;
+use crate::solana_utils::solana_ops::{format_token_amount, lamports_to_sol, SolanaClient};
 use crate::KeyManager;
 
 #[derive(Parser)]
@@ -161,9 +161,7 @@ pub fn load_encrypted_keypair(file_path: &str) -> Result<Keypair> {
     // Parse JSON to get encryption type
     let json: serde_json::Value = serde_json::from_str(&encrypted_data)?;
 
-    let encryption_type = json["encryption_type"]
-        .as_str()
-        .unwrap_or("password_only");
+    let encryption_type = json["encryption_type"].as_str().unwrap_or("password_only");
 
     let keypair = match encryption_type {
         "password_only" => {
@@ -177,7 +175,10 @@ pub fn load_encrypted_keypair(file_path: &str) -> Result<Keypair> {
             load_triple_factor_keypair(&encrypted_data)?
         }
         _ => {
-            return Err(anyhow::anyhow!("Unknown encryption type: {}", encryption_type));
+            return Err(anyhow::anyhow!(
+                "Unknown encryption type: {}",
+                encryption_type
+            ));
         }
     };
 
@@ -191,7 +192,10 @@ pub fn load_encrypted_keypair(file_path: &str) -> Result<Keypair> {
 fn load_triple_factor_keypair(encrypted_data: &str) -> Result<Keypair> {
     use crate::hardware_fingerprint::HardwareFingerprint;
 
-    println!("{}", "\n🔐 Triple-Factor Authentication Required".cyan().bold());
+    println!(
+        "{}",
+        "\n🔐 Triple-Factor Authentication Required".cyan().bold()
+    );
 
     // Get hardware fingerprint
     let hw_fp = HardwareFingerprint::collect()
@@ -238,10 +242,18 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
 
             println!("\n{}", "Balance Information:".green().bold());
             println!("Address: {}", pubkey.to_string().yellow());
-            println!("Balance: {} SOL ({} lamports)", sol_amount.to_string().green(), balance);
+            println!(
+                "Balance: {} SOL ({} lamports)",
+                sol_amount.to_string().green(),
+                balance
+            );
         }
 
-        SolanaOpsCommand::TokenBalance { mint, rpc_url, address } => {
+        SolanaOpsCommand::TokenBalance {
+            mint,
+            rpc_url,
+            address,
+        } => {
             let client = SolanaClient::new(rpc_url);
             let mint_pubkey = Pubkey::from_str(&mint)?;
 
@@ -262,7 +274,11 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
             println!("Balance (9 decimals): {}", format_token_amount(balance, 9));
         }
 
-        SolanaOpsCommand::Transfer { to, amount, rpc_url } => {
+        SolanaOpsCommand::Transfer {
+            to,
+            amount,
+            rpc_url,
+        } => {
             let keypair = load_encrypted_keypair(encrypted_file)?;
             let client = SolanaClient::new(rpc_url);
             let to_pubkey = Pubkey::from_str(&to)?;
@@ -294,7 +310,12 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
             println!("Explorer: https://solscan.io/tx/{}", signature);
         }
 
-        SolanaOpsCommand::TransferToken { mint, to, amount, rpc_url } => {
+        SolanaOpsCommand::TransferToken {
+            mint,
+            to,
+            amount,
+            rpc_url,
+        } => {
             let keypair = load_encrypted_keypair(encrypted_file)?;
             let client = SolanaClient::new(rpc_url);
             let to_pubkey = Pubkey::from_str(&to)?;
@@ -359,7 +380,8 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
             let keypair = load_encrypted_keypair(encrypted_file)?;
 
             if let Some(unwrap_amount) = amount {
-                let lamports = (unwrap_amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
+                let lamports =
+                    (unwrap_amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
                 println!("\n{}", "🔄 Unwrapping partial WSOL to SOL...".cyan());
                 println!("Amount: {} SOL ({} lamports)", unwrap_amount, lamports);
@@ -384,7 +406,8 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                     if wsol_balance < lamports {
                         return Err(anyhow::anyhow!(
                             "WSOL余额不足，当前: {} lamports，需要: {} lamports",
-                            wsol_balance, lamports
+                            wsol_balance,
+                            lamports
                         ));
                     }
 
@@ -404,8 +427,16 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                     ));
                 }
             } else {
-                println!("\n{}", "🔄 Unwrapping WSOL to SOL (close WSOL ATA)...".cyan());
-                println!("{}", "⚠️ 注意：该操作会关闭 WSOL ATA，并将所有 SOL 余额返还至钱包，且不可逆。".bright_red().bold());
+                println!(
+                    "\n{}",
+                    "🔄 Unwrapping WSOL to SOL (close WSOL ATA)...".cyan()
+                );
+                println!(
+                    "{}",
+                    "⚠️ 注意：该操作会关闭 WSOL ATA，并将所有 SOL 余额返还至钱包，且不可逆。"
+                        .bright_red()
+                        .bold()
+                );
 
                 print!("\n{}", "Confirm close WSOL ATA? (yes/no): ".yellow());
                 use std::io::{self, Write};
@@ -442,7 +473,11 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
             }
         }
 
-        SolanaOpsCommand::PumpSwapSell { mint, rpc_url, slippage } => {
+        SolanaOpsCommand::PumpSwapSell {
+            mint,
+            rpc_url,
+            slippage,
+        } => {
             #[cfg(not(feature = "sol-trade-sdk"))]
             {
                 return Err(anyhow::anyhow!(
@@ -460,7 +495,11 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
             }
         }
 
-        SolanaOpsCommand::PumpFunSell { mint, rpc_url, slippage } => {
+        SolanaOpsCommand::PumpFunSell {
+            mint,
+            rpc_url,
+            slippage,
+        } => {
             #[cfg(not(feature = "sol-trade-sdk"))]
             {
                 return Err(anyhow::anyhow!(
@@ -507,7 +546,10 @@ pub fn execute_solana_ops(args: SolanaOpsArgs, encrypted_file: &str) -> Result<(
                 .build();
                 let rt = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
                 let client = rt.block_on(SolanaTrade::new(payer, config));
-                println!("\n{}", "💰 Claiming Pump (Pump.fun) cashback (native SOL)...".cyan());
+                println!(
+                    "\n{}",
+                    "💰 Claiming Pump (Pump.fun) cashback (native SOL)...".cyan()
+                );
                 let sig = rt.block_on(client.claim_cashback_pumpfun())?;
                 println!("\n{}", "✅ Claim successful!".green().bold());
                 println!("Signature: {}", sig.yellow());

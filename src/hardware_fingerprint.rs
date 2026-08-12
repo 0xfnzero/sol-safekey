@@ -49,7 +49,7 @@ impl HardwareFingerprint {
         #[cfg(target_os = "macos")]
         {
             let output = Command::new("sysctl")
-                .args(&["-n", "machdep.cpu.brand_string"])
+                .args(["-n", "machdep.cpu.brand_string"])
                 .output()
                 .map_err(|e| format!("获取CPU信息失败: {}", e))?;
 
@@ -80,7 +80,7 @@ impl HardwareFingerprint {
         #[cfg(target_os = "macos")]
         {
             let output = Command::new("ioreg")
-                .args(&["-l"])
+                .args(["-l"])
                 .output()
                 .map_err(|e| format!("获取系统序列号失败: {}", e))?;
 
@@ -151,7 +151,7 @@ impl HardwareFingerprint {
         #[cfg(target_os = "macos")]
         {
             let output = Command::new("diskutil")
-                .args(&["info", "/"])
+                .args(["info", "/"])
                 .output()
                 .map_err(|e| format!("获取硬盘序列号失败: {}", e))?;
 
@@ -170,7 +170,7 @@ impl HardwareFingerprint {
         #[cfg(target_os = "linux")]
         {
             let output = Command::new("lsblk")
-                .args(&["-o", "UUID", "-n"])
+                .args(["-o", "UUID", "-n"])
                 .output()
                 .map_err(|e| format!("获取硬盘UUID失败: {}", e))?;
 

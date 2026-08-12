@@ -12,12 +12,12 @@ use crate::operations::Language;
 #[cfg(feature = "sol-trade-sdk")]
 use sol_trade_sdk::{
     common::{
-        fast_fn::get_associated_token_address_with_program_id_fast_use_seed,
-        TradeConfig, GasFeeStrategy,
+        fast_fn::get_associated_token_address_with_program_id_fast_use_seed, GasFeeStrategy,
+        TradeConfig,
     },
     swqos::SwqosConfig,
     trading::{
-        core::params::{PumpFunParams, DexParamEnum},
+        core::params::{DexParamEnum, PumpFunParams},
         factory::DexType,
     },
     SolanaTrade, TradeSellParams, TradeTokenType,
@@ -35,15 +35,15 @@ pub async fn handle_pumpfun_sell(
     println!("\n{}", "🔥 Pump.fun 内盘卖出操作".bright_cyan().bold());
     println!("{}", "═══════════════════════════════════".cyan());
 
-    let mint_pubkey = Pubkey::from_str(mint)
-        .map_err(|e| anyhow::anyhow!("无效的代币地址: {}", e))?;
+    let mint_pubkey =
+        Pubkey::from_str(mint).map_err(|e| anyhow::anyhow!("无效的代币地址: {}", e))?;
 
     println!("📍 代币地址: {}", mint.yellow());
     println!("🌐 RPC: {}", rpc_url);
     println!("📊 滑点容忍度: {}%", slippage as f64 / 100.0);
 
-    let use_seed = crate::solana_utils::pumpswap_sell::ask_use_seed()
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let use_seed =
+        crate::solana_utils::pumpswap_sell::ask_use_seed().map_err(|e| anyhow::anyhow!("{}", e))?;
 
     println!("\n{}", "🔍 检查代币余额...".cyan());
 
@@ -62,13 +62,8 @@ pub async fn handle_pumpfun_sell(
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
 
-    let (token_balance, decimals, token_program) = check_token_balance(
-        &client,
-        &mint_pubkey,
-        &keypair.pubkey(),
-        use_seed,
-    )
-    .await?;
+    let (token_balance, decimals, token_program) =
+        check_token_balance(&client, &mint_pubkey, &keypair.pubkey(), use_seed).await?;
 
     if token_balance == 0 {
         return Err(anyhow::anyhow!("❌ 代币余额为 0，无法卖出"));
@@ -94,25 +89,31 @@ pub async fn handle_pumpfun_sell(
         return Ok(());
     }
 
-    println!("\n{}", "📡 从链上获取 Pump.fun bonding curve 参数...".cyan());
+    println!(
+        "\n{}",
+        "📡 从链上获取 Pump.fun bonding curve 参数...".cyan()
+    );
 
-    let pump_params = match PumpFunParams::from_mint_by_rpc(&client.infrastructure.rpc, &mint_pubkey).await {
-        Ok(params) => {
-            println!("✅ 找到 Pump.fun 池子");
-            println!("   Bonding Curve: {}", params.bonding_curve.account);
-            params
-        }
-        Err(e) => {
-            println!("{}", "❌ 获取 Pump.fun 参数失败".red().bold());
-            println!("错误详情: {}", e);
-            println!();
-            println!("{}", "🔍 可能的原因:".yellow());
-            println!("   1. 代币未在 Pump.fun 上架或已迁移到 Raydium");
-            println!("   2. RPC 限流或超时");
-            println!("   3. Mint 地址错误: {}", mint_pubkey);
-            return Err(anyhow::anyhow!("无法获取 Pump.fun 池子参数，请检查 RPC 或代币是否在 bonding curve"));
-        }
-    };
+    let pump_params =
+        match PumpFunParams::from_mint_by_rpc(&client.infrastructure.rpc, &mint_pubkey).await {
+            Ok(params) => {
+                println!("✅ 找到 Pump.fun 池子");
+                println!("   Bonding Curve: {}", params.bonding_curve.account);
+                params
+            }
+            Err(e) => {
+                println!("{}", "❌ 获取 Pump.fun 参数失败".red().bold());
+                println!("错误详情: {}", e);
+                println!();
+                println!("{}", "🔍 可能的原因:".yellow());
+                println!("   1. 代币未在 Pump.fun 上架或已迁移到 Raydium");
+                println!("   2. RPC 限流或超时");
+                println!("   3. Mint 地址错误: {}", mint_pubkey);
+                return Err(anyhow::anyhow!(
+                    "无法获取 Pump.fun 池子参数，请检查 RPC 或代币是否在 bonding curve"
+                ));
+            }
+        };
 
     let recent_blockhash = client.infrastructure.rpc.get_latest_blockhash().await?;
 
@@ -161,7 +162,9 @@ pub async fn handle_pumpfun_sell(
                 }
                 println!("\n{}", "💡 提示: 已收到原生 SOL，无需解包".bright_yellow());
             } else {
-                let error_msg = error.map(|e| e.to_string()).unwrap_or_else(|| "Unknown error".to_string());
+                let error_msg = error
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "Unknown error".to_string());
                 return Err(anyhow::anyhow!("卖出失败: {}", error_msg));
             }
         }
@@ -197,7 +200,12 @@ async fn check_token_balance(
 
     println!("   检查标准 ATA: {}", standard_ata);
 
-    if let Ok(balance) = client.infrastructure.rpc.get_token_account_balance(&standard_ata).await {
+    if let Ok(balance) = client
+        .infrastructure
+        .rpc
+        .get_token_account_balance(&standard_ata)
+        .await
+    {
         let amount = balance
             .amount
             .parse::<u64>()
@@ -216,7 +224,12 @@ async fn check_token_balance(
         );
         println!("   检查 Seed ATA: {}", seed_ata);
 
-        if let Ok(balance) = client.infrastructure.rpc.get_token_account_balance(&seed_ata).await {
+        if let Ok(balance) = client
+            .infrastructure
+            .rpc
+            .get_token_account_balance(&seed_ata)
+            .await
+        {
             let amount = balance
                 .amount
                 .parse::<u64>()
@@ -253,7 +266,10 @@ pub async fn handle_pumpfun_sell_no_prompt(
         println!("📍 Token Address: {}", mint.yellow());
         println!("🌐 RPC: {}", rpc_url);
         println!("📊 Slippage: {}%", slippage as f64 / 100.0);
-        println!("🔧 Seed Opt: {}", if use_seed { "Enabled" } else { "Disabled" });
+        println!(
+            "🔧 Seed Opt: {}",
+            if use_seed { "Enabled" } else { "Disabled" }
+        );
         println!("\n{}", "🔍 Checking token balance...".cyan());
     }
 
@@ -272,14 +288,10 @@ pub async fn handle_pumpfun_sell_no_prompt(
 
     let client = SolanaTrade::new(payer.clone(), trade_config).await;
 
-    let (token_balance, decimals, token_program) = check_token_balance(
-        &client,
-        &mint_pubkey,
-        &keypair.pubkey(),
-        use_seed,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let (token_balance, decimals, token_program) =
+        check_token_balance(&client, &mint_pubkey, &keypair.pubkey(), use_seed)
+            .await
+            .map_err(|e| e.to_string())?;
 
     if token_balance == 0 {
         return Err(if language == Language::Chinese {
@@ -311,7 +323,10 @@ pub async fn handle_pumpfun_sell_no_prompt(
         if language == Language::Chinese {
             println!("\n{}", "❓ 确认全部卖出? (yes/no, 默认 yes): ".yellow());
         } else {
-            println!("\n{}", "❓ Confirm sell all? (yes/no, default: yes): ".yellow());
+            println!(
+                "\n{}",
+                "❓ Confirm sell all? (yes/no, default: yes): ".yellow()
+            );
         }
 
         use std::io::{self, Write};
@@ -326,7 +341,9 @@ pub async fn handle_pumpfun_sell_no_prompt(
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut confirm = String::new();
-        io::stdin().read_line(&mut confirm).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut confirm)
+            .map_err(|e| e.to_string())?;
 
         let confirm_trimmed = confirm.trim().to_lowercase();
         if confirm_trimmed == "no" || confirm_trimmed == "n" {

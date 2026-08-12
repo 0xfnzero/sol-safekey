@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-open-external-url"
+description = "Open https URLs in the system default browser."
+commands.allow = ["open_external_url"]

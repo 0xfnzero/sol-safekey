@@ -6,7 +6,7 @@ authors = ["you"]
 license = "MIT"
 repository = ""
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,7 +25,9 @@ tauri = { version = "=2.10.3", features = [] }
 tauri-plugin-log = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 aes-gcm = "0.10"
+aws-lc-rs = { version = "=1.17.3", default-features = false, features = ["non-fips", "prebuilt-nasm"] }
 base64 = "0.22"
+pem-rfc7468 = { version = "0.7", features = ["std"] }
 rand = "0.8"
-rsa = "0.9"
-sha2 = "0.10"
+zeroize = "1"
+rfd = "0.15"

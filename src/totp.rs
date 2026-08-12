@@ -1,10 +1,10 @@
-use totp_rs::{Algorithm, TOTP};
-use qrcode::{QrCode, render::unicode};
 use data_encoding::BASE32_NOPAD;
+use qrcode::{render::unicode, QrCode};
 use rand::{thread_rng, Rng};
-use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
+use totp_rs::{Algorithm, TOTP};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TOTPConfig {
@@ -54,7 +54,8 @@ impl TOTPManager {
             _ => return Err("Unsupported algorithm".to_string()),
         };
 
-        let secret_bytes = BASE32_NOPAD.decode(self.config.secret.as_bytes())
+        let secret_bytes = BASE32_NOPAD
+            .decode(self.config.secret.as_bytes())
             .map_err(|_| "Invalid secret format")?;
 
         TOTP::new(
@@ -63,7 +64,8 @@ impl TOTPManager {
             1,
             self.config.step,
             secret_bytes,
-        ).map_err(|e| format!("TOTP creation failed: {}", e))
+        )
+        .map_err(|e| format!("TOTP creation failed: {}", e))
     }
 
     /// 生成当前的 TOTP 码
@@ -114,7 +116,10 @@ impl TOTPManager {
             let check_time = timestamp as i64 + (window as i64 * self.config.step as i64);
             if check_time > 0 {
                 let expected_code = totp.generate(check_time as u64);
-                debug_info.push_str(&format!("窗口 {}: 时间戳 {}, 验证码 {}\n", window, check_time, expected_code));
+                debug_info.push_str(&format!(
+                    "窗口 {}: 时间戳 {}, 验证码 {}\n",
+                    window, check_time, expected_code
+                ));
                 if expected_code == code {
                     return Ok((true, debug_info));
                 }
@@ -156,10 +161,10 @@ impl TOTPManager {
             self.config.step
         );
 
-        let qr_code = QrCode::new(&uri)
-            .map_err(|e| format!("QR code generation failed: {}", e))?;
+        let qr_code = QrCode::new(&uri).map_err(|e| format!("QR code generation failed: {}", e))?;
 
-        Ok(qr_code.render::<unicode::Dense1x2>()
+        Ok(qr_code
+            .render::<unicode::Dense1x2>()
             .dark_color(unicode::Dense1x2::Light)
             .light_color(unicode::Dense1x2::Dark)
             .build())
@@ -179,7 +184,10 @@ impl TOTPManager {
 
     /// 获取剩余有效时间
     pub fn get_remaining_time(&self) -> u64 {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         self.config.step - (now % self.config.step)
     }
 
@@ -189,9 +197,7 @@ impl TOTPManager {
         let mut rng = thread_rng();
 
         for _ in 0..count {
-            let code: String = (0..8)
-                .map(|_| rng.gen_range(0..=9).to_string())
-                .collect();
+            let code: String = (0..8).map(|_| rng.gen_range(0..=9).to_string()).collect();
             codes.push(format!("{}-{}", &code[0..4], &code[4..8]));
         }
 
@@ -201,31 +207,27 @@ impl TOTPManager {
 
 /// 保存 TOTP 配置到文件
 pub fn save_totp_config(config: &TOTPConfig, file_path: &str) -> Result<(), String> {
-    let json_data = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("JSON 序列化失败: {}", e))?;
+    let json_data =
+        serde_json::to_string_pretty(config).map_err(|e| format!("JSON 序列化失败: {}", e))?;
 
-    fs::write(file_path, json_data)
-        .map_err(|e| format!("文件写入失败: {}", e))
+    fs::write(file_path, json_data).map_err(|e| format!("文件写入失败: {}", e))
 }
 
 /// 从文件加载 TOTP 配置
 pub fn load_totp_config(file_path: &str) -> Result<TOTPConfig, String> {
-    let content = fs::read_to_string(file_path)
-        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+    let content = fs::read_to_string(file_path).map_err(|e| format!("读取配置文件失败: {}", e))?;
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("配置文件解析失败: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("配置文件解析失败: {}", e))
 }
 
 /// 解析加密文件中的加密数据
 pub fn parse_encrypted_file(content: &str) -> Result<String, String> {
     match serde_json::from_str::<serde_json::Value>(content) {
-        Ok(json) => {
-            json.get("encrypted_private_key")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .ok_or("文件中未找到加密私钥".to_string())
-        }
+        Ok(json) => json
+            .get("encrypted_private_key")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or("文件中未找到加密私钥".to_string()),
         Err(_) => {
             // 如果不是 JSON，尝试直接作为加密数据
             Ok(content.trim().to_string())

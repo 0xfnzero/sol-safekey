@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-save-download-file"
+description = "Save generated files into the user's Downloads directory."
+commands.allow = ["save_download_file"]
+
+[[permission]]
+identifier = "allow-open-download-file-location"
+description = "Open the system file manager with a generated Downloads file selected."
+commands.allow = ["open_download_file_location"]

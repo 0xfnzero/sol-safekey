@@ -18,6 +18,14 @@ open-source
 build-cache
 keystore.json
 
+# Local configuration and deployment signing material
+.env
+.env.*
+!.env.example
+*.so
+*-keypair.json
+program-keypair.json
+
 # Integrated web and desktop UI
 /ui/node_modules/
 /ui/.next/

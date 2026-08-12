@@ -63,7 +63,9 @@ impl SolanaClient {
         // Try to get token account
         match client.get_token_account_balance(&ata) {
             Ok(balance) => {
-                let amount = balance.amount.parse::<u64>()
+                let amount = balance
+                    .amount
+                    .parse::<u64>()
                     .map_err(|_| anyhow!("Failed to parse token balance"))?;
                 Ok(amount)
             }
@@ -72,12 +74,7 @@ impl SolanaClient {
     }
 
     /// Transfer SOL from one account to another
-    pub fn transfer_sol(
-        &self,
-        from: &Keypair,
-        to: &Pubkey,
-        amount: u64,
-    ) -> Result<Signature> {
+    pub fn transfer_sol(&self, from: &Keypair, to: &Pubkey, amount: u64) -> Result<Signature> {
         let client = RpcClient::new(self.rpc_url.clone());
 
         if amount == 0 {
@@ -260,8 +257,8 @@ impl SolanaClient {
         let create_account_ix = Instruction {
             program_id: SYSTEM_PROGRAM_ID,
             accounts: vec![
-                AccountMeta::new(payer.pubkey(), true),  // from (payer, signer)
-                AccountMeta::new(nonce_pubkey, true),     // to (new account, signer)
+                AccountMeta::new(payer.pubkey(), true), // from (payer, signer)
+                AccountMeta::new(nonce_pubkey, true),   // to (new account, signer)
             ],
             data: {
                 let mut data = vec![0u32.to_le_bytes()[0], 0, 0, 0]; // CreateAccount 指令ID = 0
@@ -278,14 +275,16 @@ impl SolanaClient {
         let initialize_nonce_ix = Instruction {
             program_id: SYSTEM_PROGRAM_ID,
             accounts: vec![
-                AccountMeta::new(nonce_pubkey, false),              // nonce account
-                AccountMeta::new_readonly(                           // recent_blockhashes sysvar
+                AccountMeta::new(nonce_pubkey, false), // nonce account
+                AccountMeta::new_readonly(
+                    // recent_blockhashes sysvar
                     sysvar::recent_blockhashes::id(),
-                    false
+                    false,
                 ),
-                AccountMeta::new_readonly(                           // rent sysvar
+                AccountMeta::new_readonly(
+                    // rent sysvar
                     sysvar::rent::id(),
-                    false
+                    false,
                 ),
             ],
             data: {
@@ -301,7 +300,7 @@ impl SolanaClient {
         let transaction = Transaction::new_signed_with_payer(
             &instructions,
             Some(&payer.pubkey()),
-            &[payer, &nonce_account],  // Both payer and nonce_account must sign
+            &[payer, &nonce_account], // Both payer and nonce_account must sign
             recent_blockhash,
         );
 
@@ -323,9 +322,8 @@ impl SolanaClient {
 
                     // 提取 nonce 值（blockhash）
                     let nonce_bytes = &account.data[36..68];
-                    let nonce_hex: String = nonce_bytes.iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect();
+                    let nonce_hex: String =
+                        nonce_bytes.iter().map(|b| format!("{:02x}", b)).collect();
 
                     // 检查是否为默认值（全0）
                     let is_initialized = !nonce_bytes.iter().all(|&b| b == 0);
@@ -337,18 +335,30 @@ impl SolanaClient {
                     println!("   📊 版本: {}", version);
 
                     if is_initialized {
-                        println!("   🔐 Nonce值: {}...{}", &nonce_hex[..16], &nonce_hex[nonce_hex.len()-16..]);
+                        println!(
+                            "   🔐 Nonce值: {}...{}",
+                            &nonce_hex[..16],
+                            &nonce_hex[nonce_hex.len() - 16..]
+                        );
                         println!("   ✅ 状态: 已初始化，可以立即使用");
                     } else {
                         println!("   ❌ Nonce值: 全0（未初始化）");
-                        return Err(anyhow!("Nonce account was created but NOT initialized properly"));
+                        return Err(anyhow!(
+                            "Nonce account was created but NOT initialized properly"
+                        ));
                     }
                 } else {
-                    return Err(anyhow!("Nonce account created but data size incorrect: {} bytes (expected 80)", account.data.len()));
+                    return Err(anyhow!(
+                        "Nonce account created but data size incorrect: {} bytes (expected 80)",
+                        account.data.len()
+                    ));
                 }
             }
             Err(e) => {
-                return Err(anyhow!("Failed to verify nonce account after creation: {}", e));
+                return Err(anyhow!(
+                    "Failed to verify nonce account after creation: {}",
+                    e
+                ));
             }
         }
 
@@ -357,19 +367,11 @@ impl SolanaClient {
 }
 
 /// Get associated token address
-fn get_associated_token_address(
-    wallet: &Pubkey,
-    mint: &Pubkey,
-    token_program: &Pubkey,
-) -> Pubkey {
+fn get_associated_token_address(wallet: &Pubkey, mint: &Pubkey, token_program: &Pubkey) -> Pubkey {
     let associated_token_program = Pubkey::from_str(ASSOCIATED_TOKEN_PROGRAM_ID).unwrap();
 
     Pubkey::find_program_address(
-        &[
-            wallet.as_ref(),
-            token_program.as_ref(),
-            mint.as_ref(),
-        ],
+        &[wallet.as_ref(), token_program.as_ref(), mint.as_ref()],
         &associated_token_program,
     )
     .0
@@ -392,10 +394,7 @@ fn create_associated_token_account(
             solana_sdk::instruction::AccountMeta::new(ata, false),
             solana_sdk::instruction::AccountMeta::new_readonly(*wallet, false),
             solana_sdk::instruction::AccountMeta::new_readonly(*mint, false),
-            solana_sdk::instruction::AccountMeta::new_readonly(
-                SYSTEM_PROGRAM_ID,
-                false,
-            ),
+            solana_sdk::instruction::AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
             solana_sdk::instruction::AccountMeta::new_readonly(*token_program, false),
         ],
         data: vec![],
@@ -492,7 +491,7 @@ impl SolanaClientSdk {
 
     /// Create WSOL ATA using sol-trade-sdk (with seed optimization support)
     pub async fn create_wsol_ata(&self, keypair: &Keypair) -> Result<Signature> {
-        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use sol_trade_sdk::{common::TradeConfig, swqos::SwqosConfig, SolanaTrade};
         use solana_commitment_config::CommitmentConfig;
 
         let trade_config = TradeConfig::builder(
@@ -500,7 +499,7 @@ impl SolanaClientSdk {
             vec![SwqosConfig::Default(self.rpc_url.clone())],
             CommitmentConfig::confirmed(),
         )
-        .create_wsol_ata_on_startup(false)  // 不在启动时创建，由手动调用
+        .create_wsol_ata_on_startup(false) // 不在启动时创建，由手动调用
         .use_seed_optimize(self.use_seed_optimize)
         .check_min_tip(false)
         .log_enabled(false)
@@ -515,7 +514,7 @@ impl SolanaClientSdk {
 
     /// Wrap SOL to WSOL using sol-trade-sdk (with seed optimization support)
     pub async fn wrap_sol(&self, keypair: &Keypair, amount: u64) -> Result<Signature> {
-        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use sol_trade_sdk::{common::TradeConfig, swqos::SwqosConfig, SolanaTrade};
         use solana_commitment_config::CommitmentConfig;
 
         if amount == 0 {
@@ -527,7 +526,7 @@ impl SolanaClientSdk {
             vec![SwqosConfig::Default(self.rpc_url.clone())],
             CommitmentConfig::confirmed(),
         )
-        .create_wsol_ata_on_startup(false)  // 不在启动时创建
+        .create_wsol_ata_on_startup(false) // 不在启动时创建
         .use_seed_optimize(self.use_seed_optimize)
         .check_min_tip(false)
         .log_enabled(false)
@@ -542,7 +541,7 @@ impl SolanaClientSdk {
 
     /// Unwrap WSOL to SOL using sol-trade-sdk (with seed optimization support)
     pub async fn unwrap_sol(&self, keypair: &Keypair) -> Result<Signature> {
-        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use sol_trade_sdk::{common::TradeConfig, swqos::SwqosConfig, SolanaTrade};
         use solana_commitment_config::CommitmentConfig;
 
         let trade_config = TradeConfig::builder(
@@ -565,7 +564,7 @@ impl SolanaClientSdk {
 
     /// Unwrap partial WSOL to SOL using sol-trade-sdk (指定金额解包)
     pub async fn unwrap_sol_partial(&self, keypair: &Keypair, amount: u64) -> Result<Signature> {
-        use sol_trade_sdk::{SolanaTrade, common::TradeConfig, swqos::SwqosConfig};
+        use sol_trade_sdk::{common::TradeConfig, swqos::SwqosConfig, SolanaTrade};
         use solana_commitment_config::CommitmentConfig;
 
         if amount == 0 {
@@ -608,7 +607,9 @@ impl SolanaClientSdk {
         let client = RpcClient::new(self.rpc_url.clone());
         match client.get_token_account_balance(&ata) {
             Ok(balance) => {
-                let amount = balance.amount.parse::<u64>()
+                let amount = balance
+                    .amount
+                    .parse::<u64>()
                     .map_err(|_| anyhow!("Failed to parse token balance"))?;
                 Ok(amount)
             }

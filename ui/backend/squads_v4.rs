@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha2::{Digest, Sha256};
-use solana_loader_v3_interface::{get_program_data_address, instruction as loader_v3_instruction};
+use solana_loader_v3_interface::instruction as loader_v3_instruction;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
@@ -181,11 +181,14 @@ pub fn program_config_pda() -> Pubkey {
 }
 
 pub fn multisig_pda(create_key: &Pubkey) -> Pubkey {
+    multisig_pda_with_bump(create_key).0
+}
+
+pub fn multisig_pda_with_bump(create_key: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[SEED_PREFIX, SEED_MULTISIG, create_key.as_ref()],
         &SQUADS_PROGRAM_ID,
     )
-    .0
 }
 
 pub fn vault_pda(multisig: &Pubkey, vault_index: u8) -> Pubkey {
@@ -521,10 +524,6 @@ pub fn set_buffer_authority_ix(
     new_authority: &Pubkey,
 ) -> Instruction {
     loader_v3_instruction::set_buffer_authority(buffer, current_authority, new_authority)
-}
-
-pub fn programdata_address(program_id: &Pubkey) -> Pubkey {
-    get_program_data_address(program_id)
 }
 
 fn compile_transaction_message(

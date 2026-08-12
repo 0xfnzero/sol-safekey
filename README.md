@@ -149,7 +149,7 @@ cargo install --path . --features full
 
 ### System Requirements
 
-- **Rust**: 1.70+ (install from [rustup.rs](https://rustup.rs/))
+- **Rust**: 1.89+ (install from [rustup.rs](https://rustup.rs/))
 - **Operating System**: Linux, macOS, or Windows
 - **Network**: Internet connection for Solana RPC calls
 

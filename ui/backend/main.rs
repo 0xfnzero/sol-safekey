@@ -2,9 +2,13 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use aws_lc_rs::{
+    encoding::{AsDer, PublicKeyX509Der},
+    rsa::{KeySize, OaepPrivateDecryptingKey, PrivateDecryptingKey, OAEP_SHA256_MGF1SHA256},
+};
 use axum::extract::DefaultBodyLimit;
 use axum::{
-    body::{to_bytes, Body},
+    body::{to_bytes, Body, Bytes},
     extract::{Path, Request},
     http::{HeaderMap, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
@@ -18,15 +22,9 @@ use futures::{
     stream::{self, StreamExt},
     FutureExt,
 };
-use rand::rngs::OsRng;
-use rsa::{
-    pkcs8::{EncodePublicKey, LineEnding},
-    Oaep, RsaPrivateKey, RsaPublicKey,
-};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
-use sha2::Sha256;
 use sol_safekey::solana_utils::{lamports_to_sol, SolanaClient};
 use sol_safekey::KeyManager;
 use sol_trade_sdk::{
@@ -45,7 +43,7 @@ use sol_trade_sdk::{
 };
 use solana_account_decoder_client_types::{
     token::{TokenAccountType, UiExtension},
-    UiAccountData, UiAccountEncoding,
+    UiAccount, UiAccountData, UiAccountEncoding,
 };
 use solana_client::rpc_client::{GetConfirmedSignaturesForAddress2Config, RpcClient};
 use solana_commitment_config::CommitmentConfig;
@@ -53,27 +51,35 @@ use solana_loader_v3_interface::{
     get_program_data_address, instruction as loader_v3_instruction, state::UpgradeableLoaderState,
 };
 use solana_rpc_client_api::{
-    config::{RpcAccountInfoConfig, RpcTransactionConfig},
+    config::{RpcAccountInfoConfig, RpcSimulateTransactionConfig, RpcTransactionConfig},
     request::{Address as RpcAddress, TokenAccountsFilter},
     response::RpcKeyedAccount,
 };
+use solana_sdk::account::Account;
+use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::sanitize::Sanitize;
 use solana_sdk::signature::Signer;
 use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::transaction::Transaction;
 use solana_transaction_status_client_types::{
-    option_serializer::OptionSerializer, EncodedTransaction, UiInstruction, UiMessage,
-    UiParsedInstruction, UiTransactionEncoding,
+    option_serializer::OptionSerializer, EncodedTransaction, TransactionStatus, UiInstruction,
+    UiMessage, UiParsedInstruction, UiTransactionEncoding,
 };
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::fs;
+use std::net::{IpAddr, SocketAddr};
 use std::panic::AssertUnwindSafe;
+use std::path::{Path as FsPath, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::OnceLock;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::process::Command;
+use tokio::time::timeout;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use zeroize::{Zeroize, Zeroizing};
 
+mod program_deploy;
 mod squads_v4;
 mod wallet_store;
 use squads_v4::{
@@ -91,7 +97,16 @@ const MAX_JSON_BODY_BYTES: usize = 6 * 1024 * 1024;
 const MAX_SECURE_ENVELOPE_BYTES: usize = MAX_JSON_BODY_BYTES * 2;
 const MAX_KEYSTORE_JSON_BYTES: usize = 128 * 1024;
 const MAX_PROGRAM_SO_BYTES: usize = 3 * 1024 * 1024;
+const MAX_PROGRAM_SO_BASE64_BYTES: usize = 4 * 1024 * 1024;
 const PROGRAM_WRITE_CHUNK_BYTES: usize = 800;
+const UPGRADEABLE_LOADER_ID: Pubkey =
+    Pubkey::from_str_const("BPFLoaderUpgradeab1e11111111111111111111111");
+const SBF_VERIFY_BUSY_MESSAGE: &str = "SBF 验证容量已满，请等待当前验证结束后重试";
+const PROGRAM_DEPLOY_BUSY_MESSAGE: &str =
+    "已有 Program 部署正在进行；为避免重复部署，请等待其完成或进入恢复流程";
+const PROGRAM_SOURCE_BUILD_TIMEOUT_SECS: u64 = 30 * 60;
+const PROGRAM_SOURCE_BUILD_LOG_BYTES: usize = 24 * 1024;
+const PROGRAM_DEPLOY_RPC_TIMEOUT_SECS: u64 = 20;
 const MAX_LABEL_CHARS: usize = 80;
 const MAX_TEXT_FIELD_CHARS: usize = 512;
 const MAX_TOKEN_DECIMALS: u8 = 18;
@@ -189,35 +204,42 @@ const SECURE_BODY_HEADER: &str = "x-sol-safekey-secure-body";
 const SECURE_BODY_VERSION: &str = "1";
 const SECURE_MAX_ENCRYPTED_KEY_BYTES: usize = 1024;
 const SECURE_OPTIONAL_API_PATHS: &[&str] = &["/api/health", "/api/secure/session"];
-const FLASHBLOCK_SWQOS_API_TOKEN: &str = "30acd8201cf946d2";
-const BLOCKRAZOR_SWQOS_API_TOKEN: &str =
-    "DC8FAcSkOyIyOiTJR93XXdRoI2IkwPRSJUlUgwAgRWlLjC22pE9Tq714vyYdgAjp4uskQvInmKY7gM5kEPcfblNFhxGxK42V";
-const ASTRALANE_SWQOS_API_TOKEN: &str =
-    "clienAigpDTkMzcAa39FqYi12DXdSduP6gHuygyrlUPPsOvD1n7Ud692j2WsM10j";
-const SPEEDLANDING_SWQOS_API_TOKEN: &str =
-    "v2rt7TsTHfvUWQQctSc9xHa2knndC2jU9nLMjPDhZ3xzGtMSGeaRdwewVmu1Ww39B39xVtk6HAE4gYcFA6no5vM";
+const FLASHBLOCK_SWQOS_API_TOKEN_ENV: &str = "SOL_SAFEKEY_FLASHBLOCK_SWQOS_API_TOKEN";
+const BLOCKRAZOR_SWQOS_API_TOKEN_ENV: &str = "SOL_SAFEKEY_BLOCKRAZOR_SWQOS_API_TOKEN";
+const ASTRALANE_SWQOS_API_TOKEN_ENV: &str = "SOL_SAFEKEY_ASTRALANE_SWQOS_API_TOKEN";
+const SPEEDLANDING_SWQOS_API_TOKEN_ENV: &str = "SOL_SAFEKEY_SPEEDLANDING_SWQOS_API_TOKEN";
 const DEFAULT_SWQOS_TIP_SOL: f64 = 0.0001;
 
-static SECURE_BODY_KEYPAIR: OnceLock<RsaPrivateKey> = OnceLock::new();
+static SECURE_BODY_KEYPAIR: OnceLock<SecureBodyKeyPair> = OnceLock::new();
+static PROGRAM_DEPLOY_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static PROGRAM_SOURCE_BUILD_JOBS: OnceLock<
+    Arc<tokio::sync::Mutex<HashMap<String, ProgramSourceBuildJob>>>,
+> = OnceLock::new();
+static SBF_VERIFY_LIMIT: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+static KEYSTORE_TASK_LIMIT: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 
 fn official_swqos_configs() -> Vec<SwqosConfig> {
     let region = SwqosRegion::Frankfurt;
-    vec![
-        SwqosConfig::FlashBlock(FLASHBLOCK_SWQOS_API_TOKEN.to_string(), region.clone(), None),
-        SwqosConfig::BlockRazor(
-            BLOCKRAZOR_SWQOS_API_TOKEN.to_string(),
-            region.clone(),
-            None,
-            None,
-        ),
-        SwqosConfig::Astralane(
-            ASTRALANE_SWQOS_API_TOKEN.to_string(),
-            region.clone(),
-            None,
-            None,
-        ),
-        SwqosConfig::Speedlanding(SPEEDLANDING_SWQOS_API_TOKEN.to_string(), region, None),
-    ]
+    let configured_token = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty())
+    };
+    let mut configs = Vec::new();
+    if let Some(token) = configured_token(FLASHBLOCK_SWQOS_API_TOKEN_ENV) {
+        configs.push(SwqosConfig::FlashBlock(token, region.clone(), None));
+    }
+    if let Some(token) = configured_token(BLOCKRAZOR_SWQOS_API_TOKEN_ENV) {
+        configs.push(SwqosConfig::BlockRazor(token, region.clone(), None, None));
+    }
+    if let Some(token) = configured_token(ASTRALANE_SWQOS_API_TOKEN_ENV) {
+        configs.push(SwqosConfig::Astralane(token, region.clone(), None, None));
+    }
+    if let Some(token) = configured_token(SPEEDLANDING_SWQOS_API_TOKEN_ENV) {
+        configs.push(SwqosConfig::Speedlanding(token, region, None));
+    }
+    configs
 }
 
 fn default_swqos_configs(rpc_url: &str) -> Vec<SwqosConfig> {
@@ -264,9 +286,31 @@ fn swqos_only_sell_client(
     Ok(sell_client)
 }
 
-fn secure_body_private_key() -> &'static RsaPrivateKey {
+struct SecureBodyKeyPair {
+    private_key: OaepPrivateDecryptingKey,
+    public_key_pem: String,
+}
+
+fn secure_body_keypair() -> &'static SecureBodyKeyPair {
     SECURE_BODY_KEYPAIR.get_or_init(|| {
-        RsaPrivateKey::new(&mut OsRng, 2048).expect("failed to generate request encryption key")
+        let private_key = PrivateDecryptingKey::generate(KeySize::Rsa2048)
+            .expect("failed to generate request encryption key");
+        let public_key = private_key.public_key();
+        let public_key_der = AsDer::<PublicKeyX509Der<'static>>::as_der(&public_key)
+            .expect("failed to encode request encryption public key");
+        let public_key_pem = pem_rfc7468::encode_string(
+            "PUBLIC KEY",
+            pem_rfc7468::LineEnding::LF,
+            public_key_der.as_ref(),
+        )
+        .expect("failed to encode request encryption public key PEM");
+        let private_key = OaepPrivateDecryptingKey::new(private_key)
+            .expect("failed to initialize request decryption key");
+
+        SecureBodyKeyPair {
+            private_key,
+            public_key_pem,
+        }
     })
 }
 
@@ -293,12 +337,34 @@ struct SecureBodyEnvelope {
     ciphertext: String,
 }
 
+struct SensitiveBodyBytes(Vec<u8>);
+
+impl SensitiveBodyBytes {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl AsRef<[u8]> for SensitiveBodyBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Drop for SensitiveBodyBytes {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 // Helper function to safely create keypair from base58 string
 fn keypair_from_base58_safe(private_key: &str) -> Result<Keypair, String> {
-    let bytes = bs58::decode(private_key)
+    let mut bytes = bs58::decode(private_key)
         .into_vec()
         .map_err(|e| format!("无效的私钥格式: {}", e))?;
-    Keypair::try_from(bytes.as_slice()).map_err(|e| format!("无效的私钥格式: {}", e))
+    let result = Keypair::try_from(bytes.as_slice()).map_err(|e| format!("无效的私钥格式: {}", e));
+    bytes.zeroize();
+    result
 }
 
 #[derive(Deserialize, Default)]
@@ -328,9 +394,12 @@ impl WalletAuthRequest {
             validate_wallet_id(id)?;
             let password = self.required_password("使用已保存钱包时需要提供密码")?;
             let wallet = wallet_store::find(id).map_err(|message| ApiError { message })?;
-            return KeyManager::keypair_from_encrypted_json(&wallet.keystore_json, password)
+            return KeyManager::keypair_from_encrypted_json_v2(&wallet.keystore_json, password)
                 .map_err(|e| ApiError {
-                    message: format!("钱包解锁失败: {}", e),
+                    message: format!(
+                        "钱包解锁失败: {}。签名操作只接受 authenticated v2 keystore",
+                        e
+                    ),
                 });
         }
 
@@ -358,11 +427,14 @@ impl WalletAuthRequest {
             .filter(|s| !s.is_empty())
         {
             let password = self.required_password("使用 keystore 时需要提供密码")?;
-            return KeyManager::keypair_from_encrypted_json(keystore_json, password).map_err(|e| {
-                ApiError {
-                    message: format!("keystore 解密失败: {}", e),
-                }
-            });
+            return KeyManager::keypair_from_encrypted_json_v2(keystore_json, password).map_err(
+                |e| ApiError {
+                    message: format!(
+                        "keystore 解密失败: {}。签名操作只接受 authenticated v2 keystore",
+                        e
+                    ),
+                },
+            );
         }
 
         let private_key = self
@@ -406,6 +478,27 @@ impl WalletAuthRequest {
             .ok_or_else(|| ApiError {
                 message: message.to_string(),
             })
+    }
+
+    fn clear_secrets(&mut self) {
+        for value in [
+            &mut self.private_key,
+            &mut self.secret_key,
+            &mut self.keystore_json,
+            &mut self.encrypted_key,
+            &mut self.password,
+        ] {
+            if let Some(secret) = value.as_mut() {
+                secret.zeroize();
+            }
+            *value = None;
+        }
+    }
+}
+
+impl Drop for WalletAuthRequest {
+    fn drop(&mut self) {
+        self.clear_secrets();
     }
 }
 
@@ -947,7 +1040,7 @@ fn cashback_info(
         _ => {
             return Err(ApiError {
                 message: "不支持的返现类型".to_string(),
-            })
+            });
         }
     };
     let uva = pda_from_seed(program_id, b"user_volume_accumulator", owner)?;
@@ -1231,25 +1324,38 @@ async fn decrypt_secure_request(request: Request) -> Result<Request, ApiError> {
             message: "无效的加密请求正文".to_string(),
         })?;
 
-    let aes_key = secure_body_private_key()
-        .decrypt(Oaep::new::<Sha256>(), &encrypted_key)
+    let secure_keypair = secure_body_keypair();
+    let mut decrypted_key =
+        Zeroizing::new(vec![0_u8; secure_keypair.private_key.min_output_size()]);
+    let aes_key_len = secure_keypair
+        .private_key
+        .decrypt(
+            &OAEP_SHA256_MGF1SHA256,
+            &encrypted_key,
+            decrypted_key.as_mut_slice(),
+            None,
+        )
         .map_err(|_| ApiError {
             message: "解密请求密钥失败".to_string(),
-        })?;
-    if aes_key.len() != 32 {
+        })?
+        .len();
+    if aes_key_len != 32 {
         return Err(ApiError {
             message: "无效的请求密钥长度".to_string(),
         });
     }
 
-    let cipher = Aes256Gcm::new_from_slice(&aes_key).map_err(|_| ApiError {
-        message: "初始化请求解密失败".to_string(),
-    })?;
-    let plaintext = cipher
-        .decrypt(Nonce::from_slice(&iv), ciphertext.as_ref())
-        .map_err(|_| ApiError {
-            message: "解密请求正文失败".to_string(),
+    let cipher =
+        Aes256Gcm::new_from_slice(&decrypted_key[..aes_key_len]).map_err(|_| ApiError {
+            message: "初始化请求解密失败".to_string(),
         })?;
+    let plaintext = SensitiveBodyBytes(
+        cipher
+            .decrypt(Nonce::from_slice(&iv), ciphertext.as_ref())
+            .map_err(|_| ApiError {
+                message: "解密请求正文失败".to_string(),
+            })?,
+    );
     if plaintext.len() > MAX_JSON_BODY_BYTES {
         return Err(ApiError {
             message: "请求正文过大".to_string(),
@@ -1267,7 +1373,10 @@ async fn decrypt_secure_request(request: Request) -> Result<Request, ApiError> {
         })?,
     );
 
-    Ok(Request::from_parts(parts, Body::from(plaintext)))
+    Ok(Request::from_parts(
+        parts,
+        Body::from(Bytes::from_owner(plaintext)),
+    ))
 }
 
 async fn add_security_headers(request: Request, next: Next) -> Response {
@@ -1329,6 +1438,67 @@ fn validate_program_binary(program: &[u8]) -> Result<(), ApiError> {
     Ok(())
 }
 
+fn decode_program_binary_base64(encoded: &str) -> Result<Vec<u8>, ApiError> {
+    let encoded = encoded.trim();
+    if encoded.len() > MAX_PROGRAM_SO_BASE64_BYTES {
+        return Err(ApiError {
+            message: format!(
+                "Program .so base64 过大，编码后不能超过 {} bytes",
+                MAX_PROGRAM_SO_BASE64_BYTES
+            ),
+        });
+    }
+    let program = BASE64.decode(encoded.as_bytes()).map_err(|_| ApiError {
+        message: "无效的 Program .so base64".to_string(),
+    })?;
+    validate_program_binary(&program)?;
+    Ok(program)
+}
+
+async fn verify_program_binary_offline(program: Vec<u8>) -> Result<Vec<u8>, ApiError> {
+    let permit = SBF_VERIFY_LIMIT
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError {
+            message: SBF_VERIFY_BUSY_MESSAGE.to_string(),
+        })?;
+    tokio::task::spawn_blocking(move || {
+        let result = program_deploy::verify_sbf_elf(&program);
+        drop(permit);
+        result.map(|()| program)
+    })
+    .await
+    .map_err(|error| ApiError {
+        message: format!("SBF 验证任务异常终止: {error}"),
+    })?
+    .map_err(|message| ApiError { message })
+}
+
+async fn run_keystore_task<T, F>(task: F) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, ApiError> + Send + 'static,
+{
+    let permit = KEYSTORE_TASK_LIMIT
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| ApiError {
+            message: "Keystore 密钥派生并发控制已关闭".to_string(),
+        })?;
+    tokio::task::spawn_blocking(move || {
+        let result = task();
+        drop(permit);
+        result
+    })
+    .await
+    .map_err(|error| ApiError {
+        message: format!("Keystore 密钥派生任务异常终止: {error}"),
+    })?
+}
+
 fn sign_and_send(
     client: &RpcClient,
     instructions: Vec<solana_sdk::instruction::Instruction>,
@@ -1345,6 +1515,215 @@ fn sign_and_send(
         .map_err(|e| ApiError {
             message: format!("提交交易失败: {}", e),
         })
+}
+
+async fn wait_for_signature_commitment(
+    client: &RpcClient,
+    signature: &Signature,
+    timeout: Duration,
+    action: &str,
+    commitment: CommitmentConfig,
+    commitment_label: &str,
+) -> Result<u64, ApiError> {
+    let deadline = Instant::now() + timeout;
+    let mut last_rpc_error = None;
+
+    loop {
+        match client.get_signature_statuses_with_history(&[*signature]) {
+            Ok(response) => {
+                if let Some(status) = response.value.into_iter().next().flatten() {
+                    if status.satisfies_commitment(commitment) {
+                        if let Some(error) = status.err.as_ref() {
+                            return Err(ApiError {
+                                message: format!(
+                                    "{}交易 {} 已在目标确认级别执行失败，不能盲目重试: {}",
+                                    action, signature, error
+                                ),
+                            });
+                        }
+                        return Ok(status.slot);
+                    }
+                }
+            }
+            Err(error) => last_rpc_error = Some(error.to_string()),
+        }
+
+        if Instant::now() >= deadline {
+            let detail = last_rpc_error
+                .map(|error| format!("；最后一次 RPC 错误: {error}"))
+                .unwrap_or_default();
+            return Err(ApiError {
+                message: format!(
+                    "{}交易 {} 已提交，但未能在超时前确认 {}{}。请先按该签名核对链上状态，不能盲目重试",
+                    action, signature, commitment_label, detail
+                ),
+            });
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+async fn submit_signed_transaction_once(
+    client: &RpcClient,
+    transaction: &Transaction,
+    action: &str,
+    context: &str,
+    commitment: CommitmentConfig,
+    commitment_label: &str,
+    timeout: Duration,
+) -> Result<(Signature, u64), ApiError> {
+    let local_signature = *transaction.signatures.first().ok_or_else(|| ApiError {
+        message: format!("{action}交易缺少本地签名；{context}"),
+    })?;
+    if local_signature == Signature::default() {
+        return Err(ApiError {
+            message: format!("{action}交易尚未签名；{context}"),
+        });
+    }
+
+    let send_error = match client.send_transaction(transaction) {
+        Ok(rpc_signature) => {
+            if rpc_signature != local_signature {
+                return Err(ApiError {
+                    message: format!(
+                        "{action} RPC 返回签名 {rpc_signature}，但本地确定签名为 {local_signature}；{context}"
+                    ),
+                });
+            }
+            None
+        }
+        Err(error) => Some(error.to_string()),
+    };
+
+    let wait_timeout = if send_error.is_some() {
+        timeout.min(Duration::from_secs(10))
+    } else {
+        timeout
+    };
+    match wait_for_signature_commitment(
+        client,
+        &local_signature,
+        wait_timeout,
+        action,
+        commitment,
+        commitment_label,
+    )
+    .await
+    {
+        Ok(slot) => Ok((local_signature, slot)),
+        Err(wait_error) => {
+            let send_detail = send_error
+                .map(|error| format!("；首次提交 RPC 错误: {error}"))
+                .unwrap_or_default();
+            Err(ApiError {
+                message: format!(
+                    "{}{}；{}；本地确定签名: {}。不得自动重签或盲目重试",
+                    wait_error.message, send_detail, context, local_signature
+                ),
+            })
+        }
+    }
+}
+
+fn estimate_instruction_fee(
+    client: &RpcClient,
+    instructions: &[solana_sdk::instruction::Instruction],
+    payer: &Pubkey,
+    recent_blockhash: &solana_sdk::hash::Hash,
+    stage: &str,
+) -> Result<u64, ApiError> {
+    let message = Message::new_with_blockhash(instructions, Some(payer), recent_blockhash);
+    client
+        .get_fee_for_message(&message)
+        .map_err(|error| ApiError {
+            message: format!("估算 {stage} 交易费失败: {error}"),
+        })
+}
+
+fn simulate_program_deployment_transaction(
+    client: &RpcClient,
+    transaction: &Transaction,
+    stage: &str,
+) -> Result<(), ApiError> {
+    transaction.sanitize().map_err(|error| ApiError {
+        message: format!("{stage} 交易结构校验失败: {error:?}"),
+    })?;
+    let response = client
+        .simulate_transaction_with_config(
+            transaction,
+            RpcSimulateTransactionConfig {
+                sig_verify: true,
+                replace_recent_blockhash: false,
+                commitment: Some(CommitmentConfig::confirmed()),
+                encoding: Some(UiTransactionEncoding::Base64),
+                accounts: None,
+                min_context_slot: None,
+                inner_instructions: false,
+            },
+        )
+        .map_err(|error| ApiError {
+            message: format!("{stage} 交易模拟 RPC 失败: {error}"),
+        })?;
+    if let Some(error) = response.value.err {
+        return Err(ApiError {
+            message: format!("{stage} 交易模拟失败: {error}"),
+        });
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn wait_for_finalized_deployment_readback(
+    client: &RpcClient,
+    program_id: &Pubkey,
+    programdata_address: &Pubkey,
+    expected_upgrade_authority: &Pubkey,
+    expected_program: &[u8],
+    max_data_len: usize,
+    minimum_slot: u64,
+) -> Result<program_deploy::DeploymentReadback, ApiError> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+
+    loop {
+        let pending_reason = match client.get_multiple_accounts_with_commitment(
+            &[*program_id, *programdata_address],
+            CommitmentConfig::finalized(),
+        ) {
+            Ok(response) if response.context.slot >= minimum_slot => {
+                let mut accounts = response.value.into_iter();
+                match (accounts.next().flatten(), accounts.next().flatten()) {
+                    (Some(program), Some(programdata)) => {
+                        return program_deploy::verify_deployment_readback(
+                            program_id,
+                            expected_upgrade_authority,
+                            expected_program,
+                            max_data_len,
+                            &program.owner,
+                            program.executable,
+                            &program.data,
+                            &programdata.owner,
+                            &programdata.data,
+                        )
+                        .map_err(|message| ApiError { message });
+                    }
+                    _ => "finalized Program 或 ProgramData 尚不可见".to_string(),
+                }
+            }
+            Ok(response) => format!(
+                "finalized 账户读取 slot {} 早于部署 slot {}",
+                response.context.slot, minimum_slot
+            ),
+            Err(error) => format!("finalized 回读 RPC 失败: {error}"),
+        };
+
+        if Instant::now() >= deadline {
+            return Err(ApiError {
+                message: format!("部署已 finalized，但链上回读校验超时: {pending_reason}"),
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
 }
 
 fn network_name(network: Option<&str>) -> String {
@@ -1668,13 +2047,10 @@ fn normalize_metadata_uri(value: &str) -> Option<String> {
     let value = value.trim();
     if value.starts_with("http://") || value.starts_with("https://") {
         Some(value.to_string())
-    } else if let Some(path) = value.strip_prefix("ipfs://") {
-        Some(format!(
-            "https://ipfs.io/ipfs/{}",
-            path.trim_start_matches("ipfs/")
-        ))
     } else {
-        None
+        value
+            .strip_prefix("ipfs://")
+            .map(|path| format!("https://ipfs.io/ipfs/{}", path.trim_start_matches("ipfs/")))
     }
 }
 
@@ -1949,7 +2325,7 @@ fn merge_cached_token_metadata(
         let cached_metadata = token_metadata_from_cache_record(&cached);
         metadata_by_mint
             .entry(mint.clone())
-            .or_insert_with(TokenMetadata::default)
+            .or_default()
             .merge_missing(cached_metadata.clone());
         let stale = now.saturating_sub(cached.updated_at) > TOKEN_METADATA_CACHE_TTL_SECS;
         if stale || !token_metadata_is_complete(&cached_metadata) {
@@ -1978,7 +2354,7 @@ async fn load_missing_token_metadata(
     for (mint, metadata) in fresh_metadata_by_mint.iter() {
         metadata_by_mint
             .entry(mint.clone())
-            .or_insert_with(TokenMetadata::default)
+            .or_default()
             .merge_missing(normalize_token_metadata(mint, metadata.clone()));
     }
 
@@ -1990,8 +2366,26 @@ fn load_squads_multisig(client: &RpcClient, multisig: &Pubkey) -> Result<SquadsM
     let account = client.get_account(multisig).map_err(|e| ApiError {
         message: format!("读取 Squads 多签账户失败: {}", e),
     })?;
-    squads_v4::decode_account::<SquadsMultisig>(&account.data, "Multisig")
-        .map_err(|message| ApiError { message })
+    if account.owner != squads_v4::SQUADS_PROGRAM_ID || account.executable {
+        return Err(ApiError {
+            message: format!(
+                "{} 不是由 Squads v4 Program 持有的非 executable 多签账户",
+                multisig
+            ),
+        });
+    }
+    let state = squads_v4::decode_account::<SquadsMultisig>(&account.data, "Multisig")
+        .map_err(|message| ApiError { message })?;
+    let (expected_multisig, expected_bump) = squads_v4::multisig_pda_with_bump(&state.create_key);
+    if expected_multisig != *multisig || expected_bump != state.bump {
+        return Err(ApiError {
+            message: format!(
+                "Squads 多签地址或 bump 与 create key 派生结果不一致；请求 {}，派生 {}",
+                multisig, expected_multisig
+            ),
+        });
+    }
+    Ok(state)
 }
 
 fn load_squads_proposal(client: &RpcClient, proposal: &Pubkey) -> Result<SquadsProposal, ApiError> {
@@ -2037,6 +2431,145 @@ fn sign_and_send_single(
     signer: &Keypair,
 ) -> Result<String, ApiError> {
     sign_and_send(client, vec![instruction], &[signer], &signer.pubkey())
+}
+
+fn require_squads_member(multisig: &SquadsMultisig, signer: &Pubkey) -> Result<(), ApiError> {
+    if multisig.members.iter().any(|member| member.key == *signer) {
+        Ok(())
+    } else {
+        Err(ApiError {
+            message: format!("签名钱包 {} 不是该 Squads 多签成员", signer),
+        })
+    }
+}
+
+fn loader_upgrade_authority_from_programdata(data: &[u8]) -> Result<Pubkey, ApiError> {
+    if data.len() < UpgradeableLoaderState::size_of_programdata_metadata() {
+        return Err(ApiError {
+            message: "ProgramData 账户长度不足".to_string(),
+        });
+    }
+    let state: UpgradeableLoaderState =
+        bincode::deserialize(&data[..UpgradeableLoaderState::size_of_programdata_metadata()])
+            .map_err(|_| ApiError {
+                message: "ProgramData loader state 解析失败".to_string(),
+            })?;
+    match state {
+        UpgradeableLoaderState::ProgramData {
+            upgrade_authority_address: Some(authority),
+            ..
+        } => Ok(authority),
+        UpgradeableLoaderState::ProgramData {
+            upgrade_authority_address: None,
+            ..
+        } => Err(ApiError {
+            message: "ProgramData 没有 upgrade authority，无法升级".to_string(),
+        }),
+        _ => Err(ApiError {
+            message: "账户不是 upgradeable-loader ProgramData".to_string(),
+        }),
+    }
+}
+
+fn require_program_upgrade_authority(
+    client: &RpcClient,
+    program_id: &Pubkey,
+    expected_authority: &Pubkey,
+) -> Result<Pubkey, ApiError> {
+    let programdata_address = get_program_data_address(program_id);
+    let response = client
+        .get_multiple_accounts_with_commitment(
+            &[*program_id, programdata_address],
+            CommitmentConfig::confirmed(),
+        )
+        .map_err(|error| ApiError {
+            message: format!("读取 Program upgrade authority 失败: {error}"),
+        })?;
+    let mut accounts = response.value.into_iter();
+    let program_account = accounts.next().flatten().ok_or_else(|| ApiError {
+        message: format!("Program {} 不存在", program_id),
+    })?;
+    let programdata_account = accounts.next().flatten().ok_or_else(|| ApiError {
+        message: format!("ProgramData {} 不存在", programdata_address),
+    })?;
+    if program_account.owner != UPGRADEABLE_LOADER_ID
+        || programdata_account.owner != UPGRADEABLE_LOADER_ID
+        || !program_account.executable
+    {
+        return Err(ApiError {
+            message: "目标 Program 不是 upgradeable loader 可升级程序".to_string(),
+        });
+    }
+    let state: UpgradeableLoaderState =
+        bincode::deserialize(&program_account.data).map_err(|_| ApiError {
+            message: "Program loader state 解析失败".to_string(),
+        })?;
+    match state {
+        UpgradeableLoaderState::Program {
+            programdata_address: actual,
+        } if actual == programdata_address => {}
+        _ => {
+            return Err(ApiError {
+                message: "Program 指向的 ProgramData 与派生地址不一致".to_string(),
+            })
+        }
+    }
+    let authority = loader_upgrade_authority_from_programdata(&programdata_account.data)?;
+    if authority != *expected_authority {
+        return Err(ApiError {
+            message: format!(
+                "Program upgrade authority 为 {}，预期为 {}",
+                authority, expected_authority
+            ),
+        });
+    }
+    Ok(programdata_address)
+}
+
+fn require_upgrade_buffer_authority(
+    client: &RpcClient,
+    buffer: &Pubkey,
+    expected_authority: &Pubkey,
+) -> Result<(), ApiError> {
+    let account = client.get_account(buffer).map_err(|error| ApiError {
+        message: format!("读取升级 Buffer {} 失败: {error}", buffer),
+    })?;
+    if account.owner != UPGRADEABLE_LOADER_ID || account.executable {
+        return Err(ApiError {
+            message: format!("{} 不是 upgradeable loader Buffer", buffer),
+        });
+    }
+    let metadata_len = UpgradeableLoaderState::size_of_buffer_metadata();
+    if account.data.len() < metadata_len {
+        return Err(ApiError {
+            message: "升级 Buffer 账户长度不足".to_string(),
+        });
+    }
+    let state: UpgradeableLoaderState = bincode::deserialize(&account.data[..metadata_len])
+        .map_err(|_| ApiError {
+            message: "升级 Buffer loader state 解析失败".to_string(),
+        })?;
+    match state {
+        UpgradeableLoaderState::Buffer {
+            authority_address: Some(authority),
+        } if authority == *expected_authority => Ok(()),
+        UpgradeableLoaderState::Buffer {
+            authority_address: Some(authority),
+        } => Err(ApiError {
+            message: format!(
+                "升级 Buffer authority 为 {}，预期为 Squads vault {}",
+                authority, expected_authority
+            ),
+        }),
+        UpgradeableLoaderState::Buffer {
+            authority_address: None,
+        } => Err(ApiError {
+            message: "升级 Buffer 没有 authority".to_string(),
+        }),
+        _ => Err(ApiError {
+            message: "账户不是 upgradeable-loader Buffer".to_string(),
+        }),
+    }
 }
 
 struct PumpSellRoute {
@@ -2409,7 +2942,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
-    let _ = secure_body_private_key();
+    let _ = secure_body_keypair();
 
     let app = Router::new()
         // Health
@@ -2447,6 +2980,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets/{wallet_id}/delete/", post(delete_wallet_post))
         .route("/api/wallets/{wallet_id}/export", post(export_wallet))
         .route("/api/wallets/{wallet_id}/export/", post(export_wallet))
+        .route(
+            "/api/wallets/{wallet_id}/migrate-keystore",
+            post(migrate_wallet_keystore),
+        )
+        .route(
+            "/api/wallets/{wallet_id}/migrate-keystore/",
+            post(migrate_wallet_keystore),
+        )
         .route(
             "/api/wallets/{wallet_id}/export-private-key",
             post(export_wallet_private_key),
@@ -2509,8 +3050,26 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/nonce/list", post(list_nonce_accounts))
         .route("/api/nonce/list/", post(list_nonce_accounts))
         // Program Deployment
-        .route("/api/program/deploy", post(deploy_program))
-        .route("/api/program/deploy/", post(deploy_program))
+        .route("/api/program/deploy", post(deploy_generic_program))
+        .route("/api/program/deploy/", post(deploy_generic_program))
+        .route("/api/program/deploy-source", post(program_deploy_source))
+        .route("/api/program/deploy-source/", post(program_deploy_source))
+        .route(
+            "/api/program/deploy-source/build/{job_id}",
+            get(program_deploy_source_build_status),
+        )
+        .route(
+            "/api/program/deploy-source/build/{job_id}/",
+            get(program_deploy_source_build_status),
+        )
+        .route(
+            "/api/program/deployment-journal",
+            post(program_deployment_journal),
+        )
+        .route(
+            "/api/program/deployment-journal/",
+            post(program_deployment_journal),
+        )
         .route("/api/program/info", post(program_info))
         .route("/api/program/info/", post(program_info))
         // Squads v4 multisig
@@ -2592,7 +3151,13 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_PORT);
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+    let host: IpAddr = host.parse()?;
+    if !host.is_loopback() {
+        anyhow::bail!(
+            "Sol SafeKey API contains local-only wallet operations and must bind to a loopback address"
+        );
+    }
+    let addr = SocketAddr::new(host, port);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("Server listening on http://{}", addr);
     axum::serve(listener, app).await?;
@@ -2604,24 +3169,17 @@ async fn health() -> Json<serde_json::Value> {
         "status": "ok",
         "service": "sol-safekey-ui",
         "version": env!("CARGO_PKG_VERSION"),
-        "features": ["keys", "wallet", "transfer", "wsol", "token", "nonce", "program", "squads-v4"]
+        "features": ["keys", "wallet", "faucet", "transfer", "wsol", "token", "nonce", "program", "squads-v4"]
     }))
 }
 
 async fn secure_session() -> Result<Json<SecureSessionResponse>, ApiError> {
     // This key prevents sensitive JSON from appearing as plaintext in DevTools/request logs.
     // It is not an authentication boundary for JavaScript already running in this origin.
-    let public_key = RsaPublicKey::from(secure_body_private_key());
-    let public_key_pem = public_key
-        .to_public_key_pem(LineEnding::LF)
-        .map_err(|e| ApiError {
-            message: format!("生成请求加密公钥失败: {}", e),
-        })?;
-
     Ok(Json(SecureSessionResponse {
         version: SECURE_BODY_VERSION,
         algorithm: "RSA-OAEP-256+A256GCM",
-        public_key_pem,
+        public_key_pem: secure_body_keypair().public_key_pem.clone(),
     }))
 }
 
@@ -2632,11 +3190,14 @@ struct RpcSelector {
     url: String,
 }
 
-fn normalize_network_name(network: &str) -> &'static str {
+fn normalize_network_name(network: &str) -> Result<&'static str, ApiError> {
     match network {
-        "devnet" => "devnet",
-        "testnet" => "testnet",
-        _ => "mainnet",
+        "mainnet" => Ok("mainnet"),
+        "devnet" => Ok("devnet"),
+        "testnet" => Ok("testnet"),
+        _ => Err(ApiError {
+            message: format!("不支持的 Solana 网络标签: {network}"),
+        }),
     }
 }
 
@@ -2657,7 +3218,7 @@ fn parse_rpc_selector(value: &str) -> Result<RpcSelector, ApiError> {
         let (network, encoded_url) = rest.split_once(':').ok_or_else(|| ApiError {
             message: "无效的 RPC 配置".to_string(),
         })?;
-        let network = normalize_network_name(network).to_string();
+        let network = normalize_network_name(network)?.to_string();
         let decoded_url = urlencoding::decode(encoded_url)
             .map_err(|_| ApiError {
                 message: "无效的 RPC URL".to_string(),
@@ -2676,7 +3237,7 @@ fn parse_rpc_selector(value: &str) -> Result<RpcSelector, ApiError> {
         });
     }
 
-    let network = normalize_network_name(value).to_string();
+    let network = normalize_network_name(value)?.to_string();
     Ok(RpcSelector {
         url: default_rpc_url_for(&network).to_string(),
         network,
@@ -2798,6 +3359,12 @@ struct CreateKeystoreRequest {
     #[serde(default)]
     name: Option<String>,
 }
+
+impl Drop for CreateKeystoreRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
 #[derive(Serialize)]
 struct CreateKeystoreResponse {
     keystore_json: String,
@@ -2805,18 +3372,22 @@ struct CreateKeystoreResponse {
 }
 
 async fn create_keystore(
-    Json(req): Json<CreateKeystoreRequest>,
+    Json(mut req): Json<CreateKeystoreRequest>,
 ) -> Result<Json<CreateKeystoreResponse>, ApiError> {
     require_nonempty(req.password.as_str(), "密码")?;
-    let name = validate_optional_label(req.name, "钱包名称")?;
-    let keypair = KeyManager::generate_keypair();
-    let keystore_json = KeyManager::keypair_to_encrypted_json(&keypair, &req.password)
-        .map_err(|e| ApiError { message: e })?;
-    let keystore_json = with_keystore_metadata(&keystore_json, name.as_deref())?;
-    Ok(Json(CreateKeystoreResponse {
-        keystore_json,
-        public_key: keypair.pubkey().to_string(),
-    }))
+    let name = validate_optional_label(req.name.take(), "钱包名称")?;
+    let response = run_keystore_task(move || {
+        let keypair = KeyManager::generate_keypair();
+        let keystore_json = KeyManager::keypair_to_encrypted_json(&keypair, &req.password)
+            .map_err(|message| ApiError { message })?;
+        let keystore_json = with_keystore_metadata(&keystore_json, name.as_deref())?;
+        Ok(CreateKeystoreResponse {
+            keystore_json,
+            public_key: keypair.pubkey().to_string(),
+        })
+    })
+    .await?;
+    Ok(Json(response))
 }
 
 // Import Keystore
@@ -2824,6 +3395,13 @@ async fn create_keystore(
 struct ImportKeystoreRequest {
     keystore_json: String,
     password: String,
+}
+
+impl Drop for ImportKeystoreRequest {
+    fn drop(&mut self) {
+        self.keystore_json.zeroize();
+        self.password.zeroize();
+    }
 }
 #[derive(Serialize)]
 struct ImportKeystoreResponse {
@@ -2836,12 +3414,16 @@ async fn import_keystore(
 ) -> Result<Json<ImportKeystoreResponse>, ApiError> {
     validate_keystore_size(&req.keystore_json)?;
     require_nonempty(req.password.as_str(), "密码")?;
-    let keypair = KeyManager::keypair_from_encrypted_json(&req.keystore_json, &req.password)
-        .map_err(|e| ApiError { message: e })?;
-    Ok(Json(ImportKeystoreResponse {
-        public_key: keypair.pubkey().to_string(),
-        unlocked: true,
-    }))
+    let response = run_keystore_task(move || {
+        let keypair = KeyManager::keypair_from_encrypted_json(&req.keystore_json, &req.password)
+            .map_err(|message| ApiError { message })?;
+        Ok(ImportKeystoreResponse {
+            public_key: keypair.pubkey().to_string(),
+            unlocked: true,
+        })
+    })
+    .await?;
+    Ok(Json(response))
 }
 
 // Saved Wallets
@@ -2851,6 +3433,13 @@ struct SaveKeystoreWalletRequest {
     password: String,
     #[serde(default)]
     name: Option<String>,
+}
+
+impl Drop for SaveKeystoreWalletRequest {
+    fn drop(&mut self) {
+        self.keystore_json.zeroize();
+        self.password.zeroize();
+    }
 }
 #[derive(Serialize)]
 struct SaveKeystoreWalletResponse {
@@ -2868,6 +3457,19 @@ struct RenameWalletRequest {
 struct ExportWalletRequest {
     password: String,
 }
+
+#[derive(Deserialize)]
+struct MigrateWalletKeystoreRequest {
+    current_password: String,
+    new_password: String,
+}
+
+impl Drop for MigrateWalletKeystoreRequest {
+    fn drop(&mut self) {
+        self.current_password.zeroize();
+        self.new_password.zeroize();
+    }
+}
 #[derive(Serialize)]
 struct ExportWalletResponse {
     keystore_json: String,
@@ -2883,26 +3485,30 @@ async fn list_wallets() -> Result<Json<ListWalletsResponse>, ApiError> {
 }
 
 async fn save_keystore_wallet(
-    Json(req): Json<SaveKeystoreWalletRequest>,
+    Json(mut req): Json<SaveKeystoreWalletRequest>,
 ) -> Result<Json<SaveKeystoreWalletResponse>, ApiError> {
     validate_keystore_size(&req.keystore_json)?;
     require_nonempty(req.password.as_str(), "密码")?;
-    let request_name = validate_optional_label(req.name, "钱包名称")?;
+    let request_name = validate_optional_label(req.name.take(), "钱包名称")?;
     let name = if request_name.is_some() {
         request_name
     } else {
         validate_optional_label(keystore_metadata_name(&req.keystore_json), "钱包名称")?
     };
-    let keypair = KeyManager::keypair_from_encrypted_json(&req.keystore_json, &req.password)
-        .map_err(|e| ApiError {
-            message: format!("keystore 校验失败: {}", e),
-        })?;
-    let keystore_json = with_keystore_metadata(&req.keystore_json, name.as_deref())?;
-    let wallet = wallet_store::upsert(keystore_json, keypair.pubkey().to_string(), name)
-        .map_err(|message| ApiError { message })?;
-    Ok(Json(SaveKeystoreWalletResponse {
-        wallet: wallet.into(),
-    }))
+    let response = run_keystore_task(move || {
+        let keypair = KeyManager::keypair_from_encrypted_json(&req.keystore_json, &req.password)
+            .map_err(|error| ApiError {
+                message: format!("keystore 校验失败: {error}"),
+            })?;
+        let keystore_json = with_keystore_metadata(&req.keystore_json, name.as_deref())?;
+        let wallet = wallet_store::upsert(keystore_json, keypair.pubkey().to_string(), name)
+            .map_err(|message| ApiError { message })?;
+        Ok(SaveKeystoreWalletResponse {
+            wallet: wallet.into(),
+        })
+    })
+    .await?;
+    Ok(Json(response))
 }
 
 async fn rename_wallet(
@@ -2968,6 +3574,47 @@ async fn export_wallet(
     })?;
     let keystore_json = with_keystore_metadata(&wallet.keystore_json, Some(&wallet.name))?;
     Ok(Json(ExportWalletResponse { keystore_json }))
+}
+
+async fn migrate_wallet_keystore(
+    Path(wallet_id): Path<String>,
+    Json(req): Json<MigrateWalletKeystoreRequest>,
+) -> Result<Json<SaveKeystoreWalletResponse>, ApiError> {
+    validate_wallet_id(&wallet_id)?;
+    require_nonempty(&req.current_password, "当前钱包密码")?;
+    require_nonempty(&req.new_password, "新钱包密码")?;
+    let wallet = wallet_store::find(&wallet_id).map_err(|message| ApiError { message })?;
+    let updated = run_keystore_task(move || {
+        let (migrated, verified_public_key) =
+            KeyManager::migrate_encrypted_json_to_v2_with_public_key(
+                &wallet.keystore_json,
+                &req.current_password,
+                &req.new_password,
+            )
+            .map_err(|error| ApiError {
+                message: format!("Legacy keystore 迁移失败: {error}"),
+            })?;
+        if verified_public_key != wallet.public_key {
+            return Err(ApiError {
+                message: "Legacy keystore 实际解出的钱包地址与已保存记录不一致".to_string(),
+            });
+        }
+        let migrated = with_keystore_metadata(&migrated, Some(&wallet.name))?;
+        let updated =
+            wallet_store::upsert(migrated, verified_public_key, Some(wallet.name.clone()))
+                .map_err(|message| ApiError { message })?;
+        if updated.id != wallet.id || updated.public_key != wallet.public_key {
+            return Err(ApiError {
+                message: "Keystore 迁移后的钱包身份不一致".to_string(),
+            });
+        }
+        wallet_store::checkpoint_sensitive_rewrite().map_err(|message| ApiError { message })?;
+        Ok(updated)
+    })
+    .await?;
+    Ok(Json(SaveKeystoreWalletResponse {
+        wallet: updated.into(),
+    }))
 }
 
 async fn export_wallet_private_key(
@@ -3570,7 +4217,7 @@ async fn enrich_transaction_change_assets(
     let mut seen_mints = HashMap::new();
     for transaction in transactions.iter() {
         for change in transaction.changes.iter() {
-            let Some(mint) = change.mint.as_ref().map(String::as_str) else {
+            let Some(mint) = change.mint.as_deref() else {
                 continue;
             };
             if mint == WRAPPED_SOL_MINT || !seen_mints.contains_key(mint) {
@@ -3740,7 +4387,7 @@ async fn get_wallet_transactions(
         match client.get_signatures_for_address_with_config(
             &pubkey,
             GetConfirmedSignaturesForAddress2Config {
-                before: before_signature.clone(),
+                before: before_signature,
                 until: None,
                 limit: Some(limit),
                 commitment: Some(CommitmentConfig::confirmed()),
@@ -4254,17 +4901,2347 @@ async fn list_nonce_accounts(
 
 // ============= Program Deployment =============
 
+const DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED: &str = "create_buffer_signed";
+const DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE: &str = "create_buffer_requires_reconciliation";
+const DEPLOYMENT_STATUS_BUFFER_READY: &str = "buffer_ready";
+const DEPLOYMENT_STATUS_WRITE_SIGNED: &str = "write_signed";
+const DEPLOYMENT_STATUS_WRITE_CONFIRMED: &str = "write_confirmed";
+const DEPLOYMENT_STATUS_WRITE_RECONCILE: &str = "write_requires_reconciliation";
+const DEPLOYMENT_STATUS_BUFFER_FINALIZED: &str = "buffer_finalized";
+const DEPLOYMENT_STATUS_DEPLOY_SIGNED: &str = "deploy_signed";
+const DEPLOYMENT_STATUS_DEPLOY_RECONCILE: &str = "deploy_requires_reconciliation";
+const DEPLOYMENT_STATUS_DEPLOY_FINALIZED: &str = "deploy_finalized_pending_readback";
+const DEPLOYMENT_STATUS_FINALIZED: &str = "finalized";
+
+#[derive(Debug, PartialEq, Eq)]
+enum DeploymentAttemptExpiryDecision {
+    NotExpired,
+    ExpiredAbsent {
+        min_context_slot: u64,
+    },
+    HistoryContextTooOld {
+        expiry_observation_slot: u64,
+        history_context_slot: u64,
+    },
+    SeenButNotFinalized,
+    FinalizedSucceeded,
+    FinalizedFailed(String),
+}
+
+fn classify_deployment_attempt_expiry(
+    finalized_block_height: u64,
+    last_valid_block_height: u64,
+    historical_status: Option<&TransactionStatus>,
+    history_context_slot: u64,
+    expiry_observation_slot: u64,
+) -> DeploymentAttemptExpiryDecision {
+    if finalized_block_height <= last_valid_block_height {
+        return DeploymentAttemptExpiryDecision::NotExpired;
+    }
+    if history_context_slot < expiry_observation_slot {
+        return DeploymentAttemptExpiryDecision::HistoryContextTooOld {
+            expiry_observation_slot,
+            history_context_slot,
+        };
+    }
+    let Some(status) = historical_status else {
+        return DeploymentAttemptExpiryDecision::ExpiredAbsent {
+            min_context_slot: history_context_slot,
+        };
+    };
+    if !status.satisfies_commitment(CommitmentConfig::finalized()) {
+        return DeploymentAttemptExpiryDecision::SeenButNotFinalized;
+    }
+    match status.err.as_ref() {
+        Some(error) => DeploymentAttemptExpiryDecision::FinalizedFailed(format!("{error:?}")),
+        None => DeploymentAttemptExpiryDecision::FinalizedSucceeded,
+    }
+}
+
+fn inspect_deployment_attempt_expiry(
+    client: &RpcClient,
+    attempt: &wallet_store::ProgramDeploymentAttemptRecord,
+) -> Result<DeploymentAttemptExpiryDecision, ApiError> {
+    let finalized_epoch_info = client
+        .get_epoch_info_with_commitment(CommitmentConfig::finalized())
+        .map_err(|error| {
+            deployment_journal_error(format!(
+                "读取 finalized epoch info 失败，无法判定签名 {} 是否过期: {error}",
+                attempt.signature
+            ))
+        })?;
+    let signature = Signature::from_str(attempt.signature.trim()).map_err(|_| {
+        deployment_journal_error(format!(
+            "attempt {} 包含无效签名，拒绝自动恢复",
+            attempt.signature
+        ))
+    })?;
+    if finalized_epoch_info.block_height <= attempt.last_valid_block_height {
+        return Ok(DeploymentAttemptExpiryDecision::NotExpired);
+    }
+    let response = client
+        .get_signature_statuses_with_history(&[signature])
+        .map_err(|error| {
+            deployment_journal_error(format!(
+                "查询签名 {} 的完整历史失败，拒绝自动重试: {error}",
+                attempt.signature
+            ))
+        })?;
+    if response.value.len() != 1 {
+        return Err(deployment_journal_error(format!(
+            "签名 {} 的历史响应数量异常，拒绝自动重试",
+            attempt.signature
+        )));
+    }
+    Ok(classify_deployment_attempt_expiry(
+        finalized_epoch_info.block_height,
+        attempt.last_valid_block_height,
+        response.value.first().and_then(Option::as_ref),
+        response.context.slot,
+        finalized_epoch_info.absolute_slot,
+    ))
+}
+
+fn gate_expired_absent_with<F>(
+    decision: DeploymentAttemptExpiryDecision,
+    confirm_absent: F,
+) -> Result<DeploymentAttemptExpiryDecision, ApiError>
+where
+    F: FnOnce(u64) -> Result<(), ApiError>,
+{
+    match decision {
+        DeploymentAttemptExpiryDecision::ExpiredAbsent { min_context_slot } => {
+            confirm_absent(min_context_slot)?;
+            Ok(DeploymentAttemptExpiryDecision::ExpiredAbsent { min_context_slot })
+        }
+        other => Ok(other),
+    }
+}
+
+fn finalized_recovery_account_config(min_context_slot: u64) -> RpcAccountInfoConfig {
+    RpcAccountInfoConfig {
+        encoding: Some(UiAccountEncoding::Base64Zstd),
+        commitment: Some(CommitmentConfig::finalized()),
+        data_slice: None,
+        min_context_slot: Some(min_context_slot),
+    }
+}
+
+fn decode_recovery_ui_account(address: &Pubkey, account: UiAccount) -> Result<Account, ApiError> {
+    account.decode().ok_or_else(|| {
+        deployment_journal_error(format!(
+            "finalized 账户 {} 的 Base64Zstd 数据无法解码；拒绝将其视为不存在",
+            address
+        ))
+    })
+}
+
+fn get_finalized_recovery_account(
+    client: &RpcClient,
+    address: &Pubkey,
+    min_context_slot: u64,
+) -> Result<Option<Account>, ApiError> {
+    let response = client
+        .get_ui_account_with_config(address, finalized_recovery_account_config(min_context_slot))
+        .map_err(|error| {
+            deployment_journal_error(format!(
+                "在最小上下文 slot {} 二次读取 finalized 账户 {} 失败: {error}",
+                min_context_slot, address
+            ))
+        })?;
+    if response.context.slot < min_context_slot {
+        return Err(deployment_journal_error(format!(
+            "finalized 账户 {} 二次回读 slot {} 早于签名历史 slot {}",
+            address, response.context.slot, min_context_slot
+        )));
+    }
+    response
+        .value
+        .map(|account| decode_recovery_ui_account(address, account))
+        .transpose()
+}
+
+fn get_finalized_recovery_accounts(
+    client: &RpcClient,
+    addresses: &[Pubkey],
+    min_context_slot: u64,
+) -> Result<Vec<Option<Account>>, ApiError> {
+    let response = client
+        .get_multiple_ui_accounts_with_config(
+            addresses,
+            finalized_recovery_account_config(min_context_slot),
+        )
+        .map_err(|error| {
+            deployment_journal_error(format!(
+                "在最小上下文 slot {} 二次读取 finalized 账户组失败: {error}",
+                min_context_slot
+            ))
+        })?;
+    if response.context.slot < min_context_slot {
+        return Err(deployment_journal_error(format!(
+            "finalized 账户组二次回读 slot {} 早于签名历史 slot {}",
+            response.context.slot, min_context_slot
+        )));
+    }
+    if response.value.len() != addresses.len() {
+        return Err(deployment_journal_error(format!(
+            "finalized 账户组二次回读返回 {} 项，预期 {} 项",
+            response.value.len(),
+            addresses.len()
+        )));
+    }
+    response
+        .value
+        .into_iter()
+        .zip(addresses)
+        .map(|(account, address)| {
+            account
+                .map(|account| decode_recovery_ui_account(address, account))
+                .transpose()
+        })
+        .collect()
+}
+
+fn confirm_create_buffer_attempt_still_absent(
+    client: &RpcClient,
+    buffer_address: &Pubkey,
+    min_context_slot: u64,
+) -> Result<(), ApiError> {
+    if get_finalized_recovery_account(client, buffer_address, min_context_slot)?.is_some() {
+        return Err(deployment_journal_error(format!(
+            "Buffer {} 已在签名历史 slot {} 之后出现；保持 attempt 活动状态并中止本次恢复",
+            buffer_address, min_context_slot
+        )));
+    }
+    Ok(())
+}
+
+fn validate_write_attempt_recovery_snapshot(
+    previous_plan: &program_deploy::BufferWritePlan,
+    current_plan: &program_deploy::BufferWritePlan,
+    chunk_index: usize,
+) -> Result<(), ApiError> {
+    if previous_plan != current_plan {
+        return Err(deployment_journal_error(format!(
+            "Buffer finalized 写入计划在 chunk {} 过期判定后已变化；保持 attempt 活动状态并中止本次恢复",
+            chunk_index
+        )));
+    }
+    if !current_plan.pending_chunk_indexes.contains(&chunk_index) {
+        return Err(deployment_journal_error(format!(
+            "Buffer chunk {} 已不再缺失；保持 attempt 活动状态并中止本次恢复",
+            chunk_index
+        )));
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn confirm_write_attempt_still_absent(
+    client: &RpcClient,
+    buffer_address: &Pubkey,
+    expected_authority: &Pubkey,
+    expected_program: &[u8],
+    previous_plan: &program_deploy::BufferWritePlan,
+    chunk_index: usize,
+    min_context_slot: u64,
+) -> Result<(), ApiError> {
+    let account = get_finalized_recovery_account(client, buffer_address, min_context_slot)?
+        .ok_or_else(|| {
+            deployment_journal_error(format!(
+                "Buffer {} 在 write attempt 二次回读时不存在；拒绝自动重签 chunk {}",
+                buffer_address, chunk_index
+            ))
+        })?;
+    let current_plan = program_deploy::verify_resume_buffer(
+        expected_authority,
+        expected_program,
+        PROGRAM_WRITE_CHUNK_BYTES,
+        &account.owner,
+        account.executable,
+        &account.data,
+    )
+    .map_err(|error| {
+        deployment_journal_error(format!(
+            "Buffer {} 在 write attempt 二次回读时校验失败: {error}",
+            buffer_address
+        ))
+    })?;
+    validate_write_attempt_recovery_snapshot(previous_plan, &current_plan, chunk_index)
+}
+
+fn confirm_deploy_attempt_still_absent(
+    client: &RpcClient,
+    program_id: &Pubkey,
+    programdata_address: &Pubkey,
+    min_context_slot: u64,
+) -> Result<(), ApiError> {
+    let accounts = get_finalized_recovery_accounts(
+        client,
+        &[*program_id, *programdata_address],
+        min_context_slot,
+    )?;
+    if accounts.iter().any(Option::is_some) {
+        return Err(deployment_journal_error(format!(
+            "Program {} 或 ProgramData {} 已在签名历史 slot {} 之后出现；保持 attempt 活动状态并中止本次恢复",
+            program_id, programdata_address, min_context_slot
+        )));
+    }
+    Ok(())
+}
+
+fn deployment_attempt_is_active(status: &str) -> bool {
+    matches!(
+        status,
+        wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED
+            | wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_CONFIRMED
+            | wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_REQUIRES_RECONCILIATION
+    )
+}
+
+fn deployment_attempt_is_blocking_terminal(status: &str) -> bool {
+    matches!(
+        status,
+        wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED
+            | wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED_FAILED
+    )
+}
+
+fn new_program_deployment_attempt(
+    record: &wallet_store::ProgramDeploymentRecord,
+    stage: &str,
+    chunk_index: Option<usize>,
+    signature: &Signature,
+    last_valid_block_height: u64,
+) -> wallet_store::ProgramDeploymentAttemptRecord {
+    wallet_store::ProgramDeploymentAttemptRecord {
+        genesis_hash: record.genesis_hash.clone(),
+        program_id: record.program_id.clone(),
+        stage: stage.to_string(),
+        buffer_address: record.buffer_address.clone(),
+        chunk_index,
+        signature: signature.to_string(),
+        last_valid_block_height,
+        status: wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED.to_string(),
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+fn validate_program_deployment_attempt_record(
+    record: &wallet_store::ProgramDeploymentRecord,
+    attempt: &wallet_store::ProgramDeploymentAttemptRecord,
+) -> Result<(), ApiError> {
+    let shape_is_valid = match attempt.stage.as_str() {
+        wallet_store::PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER
+        | wallet_store::PROGRAM_DEPLOYMENT_STAGE_DEPLOY => attempt.chunk_index.is_none(),
+        wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE => attempt.chunk_index.is_some(),
+        _ => false,
+    };
+    let status_is_valid = deployment_attempt_is_active(&attempt.status)
+        || deployment_attempt_is_blocking_terminal(&attempt.status)
+        || attempt.status == wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EXPIRED_ABSENT;
+    let signature_is_valid = Signature::from_str(&attempt.signature).is_ok_and(|signature| {
+        signature != Signature::default() && signature.to_string() == attempt.signature
+    });
+    let buffer_is_valid = Pubkey::from_str(&attempt.buffer_address).is_ok_and(|buffer| {
+        buffer != Pubkey::default() && buffer.to_string() == attempt.buffer_address
+    });
+    if attempt.genesis_hash != record.genesis_hash
+        || attempt.program_id != record.program_id
+        || !shape_is_valid
+        || !status_is_valid
+        || (attempt.buffer_address != record.buffer_address
+            && !(attempt.status == wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EXPIRED_ABSENT
+                && attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER))
+        || !signature_is_valid
+        || !buffer_is_valid
+        || attempt.last_valid_block_height == 0
+        || attempt.created_at == 0
+        || attempt.updated_at < attempt.created_at
+    {
+        return Err(deployment_journal_error(format!(
+            "Program {} 包含无效或不一致的 attempt 证据 {}，拒绝继续",
+            record.program_id, attempt.signature
+        )));
+    }
+    Ok(())
+}
+
+fn begin_deployment_attempt(
+    journal: &mut Option<wallet_store::ProgramDeploymentRecord>,
+    attempt: wallet_store::ProgramDeploymentAttemptRecord,
+    journal_status: &str,
+    completed_writes: usize,
+) -> Result<(), ApiError> {
+    let current = journal.as_ref().ok_or_else(|| ApiError {
+        message: "部署 journal 不存在，拒绝记录签名 attempt".to_string(),
+    })?;
+    let updated = wallet_store::begin_program_deployment_attempt(
+        current,
+        attempt,
+        journal_status,
+        completed_writes,
+    )
+    .map_err(|message| ApiError { message })?;
+    *journal = Some(updated);
+    Ok(())
+}
+
+fn transition_deployment_attempt(
+    journal: &mut Option<wallet_store::ProgramDeploymentRecord>,
+    signature: &str,
+    expected_attempt_status: &str,
+    next_attempt_status: &str,
+    journal_status: &str,
+    completed_writes: usize,
+) -> Result<(), ApiError> {
+    let current = journal.as_ref().ok_or_else(|| ApiError {
+        message: "部署 journal 不存在，拒绝迁移签名 attempt".to_string(),
+    })?;
+    let updated = wallet_store::transition_program_deployment_attempt(
+        current,
+        signature,
+        expected_attempt_status,
+        next_attempt_status,
+        journal_status,
+        completed_writes,
+    )
+    .map_err(|message| ApiError { message })?;
+    *journal = Some(updated);
+    Ok(())
+}
+
+fn reconcile_absent_deployment_attempt<F>(
+    client: &RpcClient,
+    journal: &mut Option<wallet_store::ProgramDeploymentRecord>,
+    attempt: &wallet_store::ProgramDeploymentAttemptRecord,
+    journal_status: &str,
+    completed_writes: usize,
+    confirm_absent: F,
+) -> Result<bool, ApiError>
+where
+    F: FnOnce(&RpcClient, u64) -> Result<(), ApiError>,
+{
+    let stage_context = attempt
+        .chunk_index
+        .map(|index| format!("{} chunk {}", attempt.stage, index))
+        .unwrap_or_else(|| attempt.stage.clone());
+    let decision = gate_expired_absent_with(
+        inspect_deployment_attempt_expiry(client, attempt)?,
+        |min_context_slot| confirm_absent(client, min_context_slot),
+    )?;
+    match decision {
+        DeploymentAttemptExpiryDecision::ExpiredAbsent { .. } => {
+            transition_deployment_attempt(
+                journal,
+                &attempt.signature,
+                &attempt.status,
+                wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EXPIRED_ABSENT,
+                journal_status,
+                completed_writes,
+            )?;
+            Ok(true)
+        }
+        DeploymentAttemptExpiryDecision::FinalizedSucceeded => {
+            transition_deployment_attempt(
+                journal,
+                &attempt.signature,
+                &attempt.status,
+                wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+                journal_status,
+                completed_writes,
+            )?;
+            Err(deployment_journal_error(format!(
+                "{} 签名 {} 已 finalized 成功，但对应业务状态缺失；已持久化冲突并禁止自动重签",
+                stage_context, attempt.signature
+            )))
+        }
+        DeploymentAttemptExpiryDecision::FinalizedFailed(error) => {
+            transition_deployment_attempt(
+                journal,
+                &attempt.signature,
+                &attempt.status,
+                wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED_FAILED,
+                journal_status,
+                completed_writes,
+            )?;
+            Err(deployment_journal_error(format!(
+                "{} 签名 {} 已 finalized 失败（{}）；已持久化终态，禁止自动重签",
+                stage_context, attempt.signature, error
+            )))
+        }
+        DeploymentAttemptExpiryDecision::NotExpired => Err(deployment_journal_error(format!(
+            "{} 签名 {} 尚未越过 last valid block height {}，不得自动重签",
+            stage_context, attempt.signature, attempt.last_valid_block_height
+        ))),
+        DeploymentAttemptExpiryDecision::HistoryContextTooOld {
+            expiry_observation_slot,
+            history_context_slot,
+        } => Err(deployment_journal_error(format!(
+            "{} 签名 {} 的历史上下文 slot {} 早于过期观测 slot {}；RPC 后端视图不一致，拒绝自动重签",
+            stage_context, attempt.signature, history_context_slot, expiry_observation_slot
+        ))),
+        DeploymentAttemptExpiryDecision::SeenButNotFinalized => {
+            Err(deployment_journal_error(format!(
+                "{} 签名 {} 仍可在历史中观察到但尚未 finalized，不得自动重签",
+                stage_context, attempt.signature
+            )))
+        }
+    }
+}
+
+fn deployment_journal_error(message: impl Into<String>) -> ApiError {
+    ApiError {
+        message: format!("部署 journal 冲突: {}", message.into()),
+    }
+}
+
+type DeploymentReceiptEvidence = (
+    Option<u64>,
+    Option<u32>,
+    Vec<wallet_store::ProgramDeploymentAttemptRecord>,
+);
+
+fn load_deployment_receipt_evidence(
+    journal: Option<&wallet_store::ProgramDeploymentRecord>,
+) -> Result<DeploymentReceiptEvidence, ApiError> {
+    let Some(record) = journal else {
+        return Ok((None, None, Vec::new()));
+    };
+    let attempts =
+        wallet_store::load_program_deployment_attempts(&record.genesis_hash, &record.program_id)
+            .map_err(|message| ApiError { message })?;
+    for attempt in &attempts {
+        validate_program_deployment_attempt_record(record, attempt)?;
+    }
+    Ok((
+        Some(record.revision),
+        Some(record.attempt_evidence_version),
+        attempts,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_deployment_journal_binding(
+    record: &wallet_store::ProgramDeploymentRecord,
+    genesis_hash: &str,
+    program_id: &Pubkey,
+    program_sha256: &str,
+    program_len: usize,
+    max_data_len: usize,
+    upgrade_authority: &Pubkey,
+    requested_buffer: Option<&Pubkey>,
+) -> Result<Pubkey, ApiError> {
+    let expected_program_id = program_id.to_string();
+    let expected_upgrade_authority = upgrade_authority.to_string();
+    if record.genesis_hash != genesis_hash
+        || record.program_id != expected_program_id
+        || record.program_sha256 != program_sha256
+        || record.program_len != program_len
+        || record.max_data_len != max_data_len
+        || record.upgrade_authority != expected_upgrade_authority
+    {
+        return Err(deployment_journal_error(format!(
+            "Program {} 已有不同的部署意图，拒绝复用或覆盖；已记录 artifact={} len={} max_len={} upgrade_authority={}",
+            program_id,
+            record.program_sha256,
+            record.program_len,
+            record.max_data_len,
+            record.upgrade_authority,
+        )));
+    }
+
+    let stored_buffer = Pubkey::from_str(record.buffer_address.trim()).map_err(|_| {
+        deployment_journal_error(format!(
+            "Program {} 已记录无效 Buffer 地址 {}",
+            program_id, record.buffer_address
+        ))
+    })?;
+    if stored_buffer == Pubkey::default() || record.buffer_address != stored_buffer.to_string() {
+        return Err(deployment_journal_error(format!(
+            "Program {} 已记录非 canonical Buffer 地址 {}",
+            program_id, record.buffer_address
+        )));
+    }
+    if record.created_at == 0 || record.updated_at < record.created_at {
+        return Err(deployment_journal_error(format!(
+            "Program {} 的部署 journal 时间戳无效",
+            program_id
+        )));
+    }
+    if requested_buffer.is_some_and(|requested| requested != &stored_buffer) {
+        return Err(deployment_journal_error(format!(
+            "请求恢复的 Buffer 与已记录 Buffer {} 不一致",
+            stored_buffer
+        )));
+    }
+    Ok(stored_buffer)
+}
+
+fn deployment_status_is_known(status: &str) -> bool {
+    matches!(
+        status,
+        DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED
+            | DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE
+            | DEPLOYMENT_STATUS_BUFFER_READY
+            | DEPLOYMENT_STATUS_WRITE_SIGNED
+            | DEPLOYMENT_STATUS_WRITE_CONFIRMED
+            | DEPLOYMENT_STATUS_WRITE_RECONCILE
+            | DEPLOYMENT_STATUS_BUFFER_FINALIZED
+            | DEPLOYMENT_STATUS_DEPLOY_SIGNED
+            | DEPLOYMENT_STATUS_DEPLOY_RECONCILE
+            | DEPLOYMENT_STATUS_DEPLOY_FINALIZED
+            | DEPLOYMENT_STATUS_FINALIZED
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_deployment_journal(
+    record: &wallet_store::ProgramDeploymentRecord,
+    status: &str,
+    create_signature: Option<&str>,
+    create_last_valid_block_height: Option<u64>,
+    last_write_signature: Option<&str>,
+    last_write_chunk_index: Option<usize>,
+    last_write_last_valid_block_height: Option<u64>,
+    completed_writes: usize,
+    deploy_signature: Option<&str>,
+    deploy_last_valid_block_height: Option<u64>,
+) -> Result<wallet_store::ProgramDeploymentRecord, ApiError> {
+    wallet_store::update_program_deployment_progress(
+        record,
+        status,
+        create_signature,
+        create_last_valid_block_height,
+        last_write_signature,
+        last_write_chunk_index,
+        last_write_last_valid_block_height,
+        completed_writes,
+        deploy_signature,
+        deploy_last_valid_block_height,
+    )
+    .map_err(|message| ApiError { message })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transition_deployment_journal(
+    journal: &mut Option<wallet_store::ProgramDeploymentRecord>,
+    status: &str,
+    create_signature: Option<&str>,
+    create_last_valid_block_height: Option<u64>,
+    last_write_signature: Option<&str>,
+    last_write_chunk_index: Option<usize>,
+    last_write_last_valid_block_height: Option<u64>,
+    completed_writes: usize,
+    deploy_signature: Option<&str>,
+    deploy_last_valid_block_height: Option<u64>,
+) -> Result<(), ApiError> {
+    let current = journal.as_ref().ok_or_else(|| ApiError {
+        message: "部署 journal 不存在，拒绝更新部署状态".to_string(),
+    })?;
+    let updated = update_deployment_journal(
+        current,
+        status,
+        create_signature,
+        create_last_valid_block_height,
+        last_write_signature,
+        last_write_chunk_index,
+        last_write_last_valid_block_height,
+        completed_writes,
+        deploy_signature,
+        deploy_last_valid_block_height,
+    )?;
+    *journal = Some(updated);
+    Ok(())
+}
+
+#[cfg(test)]
+mod deployment_journal_tests {
+    use super::*;
+
+    #[test]
+    fn program_upgrade_requires_squads_member() {
+        let signer = Pubkey::new_unique();
+        let multisig = SquadsMultisig {
+            create_key: Pubkey::new_unique(),
+            config_authority: Pubkey::default(),
+            threshold: 1,
+            time_lock: 0,
+            transaction_index: 0,
+            stale_transaction_index: 0,
+            rent_collector: None,
+            bump: 0,
+            members: vec![SquadsMember {
+                key: signer,
+                permissions: squads_v4::Permissions::all(),
+            }],
+        };
+        assert!(require_squads_member(&multisig, &signer).is_ok());
+        assert!(require_squads_member(&multisig, &Pubkey::new_unique()).is_err());
+    }
+
+    #[test]
+    fn parses_programdata_upgrade_authority() {
+        let authority = Pubkey::new_unique();
+        let mut data = bincode::serialize(&UpgradeableLoaderState::ProgramData {
+            slot: 42,
+            upgrade_authority_address: Some(authority),
+        })
+        .unwrap();
+        data.resize(UpgradeableLoaderState::size_of_programdata_metadata(), 0);
+        assert_eq!(
+            loader_upgrade_authority_from_programdata(&data).unwrap(),
+            authority
+        );
+
+        let mut immutable = bincode::serialize(&UpgradeableLoaderState::ProgramData {
+            slot: 42,
+            upgrade_authority_address: None,
+        })
+        .unwrap();
+        immutable.resize(UpgradeableLoaderState::size_of_programdata_metadata(), 0);
+        assert!(loader_upgrade_authority_from_programdata(&immutable).is_err());
+    }
+
+    fn record(
+        program_id: &Pubkey,
+        authority: &Pubkey,
+        buffer: &Pubkey,
+    ) -> wallet_store::ProgramDeploymentRecord {
+        wallet_store::ProgramDeploymentRecord {
+            genesis_hash: "devnet-genesis".to_string(),
+            program_id: program_id.to_string(),
+            program_sha256: "11".repeat(32),
+            program_len: 1024,
+            max_data_len: 2048,
+            upgrade_authority: authority.to_string(),
+            buffer_address: buffer.to_string(),
+            status: DEPLOYMENT_STATUS_BUFFER_READY.to_string(),
+            create_signature: Some(Signature::new_unique().to_string()),
+            create_last_valid_block_height: Some(42),
+            last_write_signature: None,
+            last_write_chunk_index: None,
+            last_write_last_valid_block_height: None,
+            completed_writes: 0,
+            deploy_signature: None,
+            deploy_last_valid_block_height: None,
+            attempt_evidence_version: wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION,
+            revision: 0,
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    #[test]
+    fn journal_binding_accepts_only_the_recorded_deployment_intent() {
+        let program_id = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let record = record(&program_id, &authority, &buffer);
+
+        let stored_buffer = validate_deployment_journal_binding(
+            &record,
+            "devnet-genesis",
+            &program_id,
+            &"11".repeat(32),
+            1024,
+            2048,
+            &authority,
+            Some(&buffer),
+        )
+        .unwrap();
+        assert_eq!(stored_buffer, buffer);
+
+        assert!(validate_deployment_journal_binding(
+            &record,
+            "devnet-genesis",
+            &program_id,
+            &"22".repeat(32),
+            1024,
+            2048,
+            &authority,
+            Some(&buffer),
+        )
+        .is_err());
+        assert!(validate_deployment_journal_binding(
+            &record,
+            "devnet-genesis",
+            &program_id,
+            &"11".repeat(32),
+            1024,
+            2048,
+            &authority,
+            Some(&Pubkey::new_unique()),
+        )
+        .is_err());
+        let mut noncanonical_buffer = record.clone();
+        noncanonical_buffer.buffer_address.push(' ');
+        assert!(validate_deployment_journal_binding(
+            &noncanonical_buffer,
+            "devnet-genesis",
+            &program_id,
+            &"11".repeat(32),
+            1024,
+            2048,
+            &authority,
+            None,
+        )
+        .is_err());
+        let mut zero_buffer = record.clone();
+        zero_buffer.buffer_address = Pubkey::default().to_string();
+        assert!(validate_deployment_journal_binding(
+            &zero_buffer,
+            "devnet-genesis",
+            &program_id,
+            &"11".repeat(32),
+            1024,
+            2048,
+            &authority,
+            None,
+        )
+        .is_err());
+        let mut invalid_timestamps = record.clone();
+        invalid_timestamps.updated_at = 0;
+        assert!(validate_deployment_journal_binding(
+            &invalid_timestamps,
+            "devnet-genesis",
+            &program_id,
+            &"11".repeat(32),
+            1024,
+            2048,
+            &authority,
+            None,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn journal_status_allowlist_rejects_unknown_states() {
+        assert!(deployment_status_is_known(
+            DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED
+        ));
+        assert!(deployment_status_is_known(
+            DEPLOYMENT_STATUS_WRITE_CONFIRMED
+        ));
+        assert!(deployment_status_is_known(DEPLOYMENT_STATUS_FINALIZED));
+        assert!(!deployment_status_is_known("retry_everything"));
+    }
+
+    #[test]
+    fn expiry_classifier_requires_strict_finalized_height_and_absent_history() {
+        assert_eq!(
+            classify_deployment_attempt_expiry(41, 42, None, 100, 101),
+            DeploymentAttemptExpiryDecision::NotExpired
+        );
+        assert_eq!(
+            classify_deployment_attempt_expiry(42, 42, None, 101, 102),
+            DeploymentAttemptExpiryDecision::NotExpired
+        );
+        assert_eq!(
+            classify_deployment_attempt_expiry(43, 42, None, 102, 102),
+            DeploymentAttemptExpiryDecision::ExpiredAbsent {
+                min_context_slot: 102
+            }
+        );
+    }
+
+    #[test]
+    fn expiry_classifier_rejects_history_older_than_expiry_observation() {
+        let decision = classify_deployment_attempt_expiry(43, 42, None, 499, 500);
+        assert_eq!(
+            decision,
+            DeploymentAttemptExpiryDecision::HistoryContextTooOld {
+                expiry_observation_slot: 500,
+                history_context_slot: 499,
+            }
+        );
+        let gated = gate_expired_absent_with(decision, |_| {
+            panic!("stale history must not reach business-state readback")
+        })
+        .unwrap();
+        assert!(matches!(
+            gated,
+            DeploymentAttemptExpiryDecision::HistoryContextTooOld { .. }
+        ));
+    }
+
+    #[test]
+    fn expired_absent_gate_passes_exact_history_slot_once() {
+        let observed_slot = std::cell::Cell::new(None);
+        let decision = gate_expired_absent_with(
+            DeploymentAttemptExpiryDecision::ExpiredAbsent {
+                min_context_slot: 987,
+            },
+            |slot| {
+                assert!(observed_slot.replace(Some(slot)).is_none());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(observed_slot.get(), Some(987));
+        assert_eq!(
+            decision,
+            DeploymentAttemptExpiryDecision::ExpiredAbsent {
+                min_context_slot: 987
+            }
+        );
+    }
+
+    #[test]
+    fn expired_absent_gate_fails_before_authorizing_transition() {
+        let transition_authorized = std::cell::Cell::new(false);
+        let result = gate_expired_absent_with(
+            DeploymentAttemptExpiryDecision::ExpiredAbsent {
+                min_context_slot: 654,
+            },
+            |slot| {
+                assert_eq!(slot, 654);
+                Err(deployment_journal_error("二次业务回读已前进"))
+            },
+        );
+        if result.is_ok() {
+            transition_authorized.set(true);
+        }
+        assert!(result.is_err());
+        assert!(!transition_authorized.get());
+
+        let non_expired =
+            gate_expired_absent_with(DeploymentAttemptExpiryDecision::NotExpired, |_| {
+                panic!("non-expired decision must not run the absence callback")
+            })
+            .unwrap();
+        assert_eq!(non_expired, DeploymentAttemptExpiryDecision::NotExpired);
+    }
+
+    #[test]
+    fn recovery_account_config_is_finalized_and_history_slot_bound() {
+        let config = finalized_recovery_account_config(321);
+        assert_eq!(config.encoding, Some(UiAccountEncoding::Base64Zstd));
+        assert_eq!(config.commitment, Some(CommitmentConfig::finalized()));
+        assert_eq!(config.min_context_slot, Some(321));
+        assert!(config.data_slice.is_none());
+    }
+
+    #[test]
+    fn recovery_account_decode_failure_is_not_treated_as_absence() {
+        let address = Pubkey::new_unique();
+        let malformed = UiAccount {
+            lamports: 1,
+            data: UiAccountData::Binary(
+                "not-valid-base64-zstd".to_string(),
+                UiAccountEncoding::Base64Zstd,
+            ),
+            owner: Pubkey::new_unique().to_string(),
+            executable: false,
+            rent_epoch: 0,
+            space: None,
+        };
+        let error = decode_recovery_ui_account(&address, malformed).unwrap_err();
+        assert!(error.message.contains("拒绝将其视为不存在"));
+    }
+
+    #[test]
+    fn write_recovery_requires_the_exact_chunk_and_unchanged_snapshot() {
+        let initial = program_deploy::BufferWritePlan {
+            completed_chunks: 1,
+            pending_chunk_indexes: vec![1, 2],
+        };
+        let unchanged = program_deploy::BufferWritePlan {
+            completed_chunks: 1,
+            pending_chunk_indexes: vec![1, 2],
+        };
+        assert!(validate_write_attempt_recovery_snapshot(&initial, &unchanged, 2).is_ok());
+        assert!(validate_write_attempt_recovery_snapshot(&initial, &unchanged, 0).is_err());
+
+        let advanced_other_chunk = program_deploy::BufferWritePlan {
+            completed_chunks: 2,
+            pending_chunk_indexes: vec![2],
+        };
+        assert!(
+            validate_write_attempt_recovery_snapshot(&initial, &advanced_other_chunk, 2).is_err()
+        );
+
+        let target_completed = program_deploy::BufferWritePlan {
+            completed_chunks: 2,
+            pending_chunk_indexes: vec![1],
+        };
+        assert!(validate_write_attempt_recovery_snapshot(&initial, &target_completed, 2).is_err());
+    }
+
+    #[test]
+    fn expiry_classifier_blocks_every_observed_history_state() {
+        let non_finalized = TransactionStatus {
+            slot: 1,
+            confirmations: Some(1),
+            status: Ok(()),
+            err: None,
+            confirmation_status: None,
+        };
+        assert_eq!(
+            classify_deployment_attempt_expiry(43, 42, Some(&non_finalized), 200, 199),
+            DeploymentAttemptExpiryDecision::SeenButNotFinalized
+        );
+
+        let finalized_success = TransactionStatus {
+            slot: 2,
+            confirmations: None,
+            status: Ok(()),
+            err: None,
+            confirmation_status: None,
+        };
+        assert_eq!(
+            classify_deployment_attempt_expiry(43, 42, Some(&finalized_success), 201, 200),
+            DeploymentAttemptExpiryDecision::FinalizedSucceeded
+        );
+
+        let transaction_error = solana_sdk::transaction::TransactionError::AccountNotFound;
+        let finalized_failure = TransactionStatus {
+            slot: 3,
+            confirmations: None,
+            status: Err(transaction_error.clone()),
+            err: Some(transaction_error),
+            confirmation_status: None,
+        };
+        assert_eq!(
+            classify_deployment_attempt_expiry(43, 42, Some(&finalized_failure), 202, 201),
+            DeploymentAttemptExpiryDecision::FinalizedFailed("AccountNotFound".to_string())
+        );
+    }
+
+    #[test]
+    fn malformed_attempt_evidence_is_rejected_before_recovery() {
+        let program_id = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let record = record(&program_id, &authority, &buffer);
+        let attempt = wallet_store::ProgramDeploymentAttemptRecord {
+            genesis_hash: record.genesis_hash.clone(),
+            program_id: record.program_id.clone(),
+            stage: wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE.to_string(),
+            buffer_address: record.buffer_address.clone(),
+            chunk_index: Some(0),
+            signature: Signature::new_unique().to_string(),
+            last_valid_block_height: 42,
+            status: wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED.to_string(),
+            created_at: 1,
+            updated_at: 1,
+        };
+        assert!(validate_program_deployment_attempt_record(&record, &attempt).is_ok());
+
+        let mut invalid_signature = attempt.clone();
+        invalid_signature.signature = "not-a-signature".to_string();
+        let mut default_signature = attempt.clone();
+        default_signature.signature = Signature::default().to_string();
+        let mut noncanonical_signature = attempt.clone();
+        noncanonical_signature.signature.push(' ');
+        let mut zero_buffer = attempt.clone();
+        zero_buffer.buffer_address = Pubkey::default().to_string();
+        let mut noncanonical_buffer = attempt.clone();
+        noncanonical_buffer.buffer_address.push(' ');
+        let mut zero_height = attempt.clone();
+        zero_height.last_valid_block_height = 0;
+        let mut zero_created_at = attempt.clone();
+        zero_created_at.created_at = 0;
+        let mut reversed_timestamps = attempt.clone();
+        reversed_timestamps.updated_at = 0;
+        for invalid in [
+            invalid_signature,
+            default_signature,
+            noncanonical_signature,
+            zero_buffer,
+            noncanonical_buffer,
+            zero_height,
+            zero_created_at,
+            reversed_timestamps,
+        ] {
+            assert!(validate_program_deployment_attempt_record(&record, &invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn generic_deploy_request_rejects_unknown_policy_fields() {
+        let request = serde_json::from_value::<DeployProgramRequest>(serde_json::json!({
+            "program_keypair_json": "[]",
+            "expected_program_id": Pubkey::new_unique().to_string(),
+            "expected_upgrade_authority": Pubkey::new_unique().to_string(),
+            "expected_genesis_hash": solana_sdk::hash::Hash::new_unique().to_string(),
+            "expected_program_sha256": "11".repeat(32),
+            "program_so_base64": "f0VMRg==",
+            "network": "devnet",
+            "require_authenticated_keystore": true
+        }));
+
+        assert!(request.is_err());
+    }
+
+    #[test]
+    fn canonical_program_id_uses_generic_journal_rules() {
+        let program_id = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let record = record(&program_id, &authority, &buffer);
+
+        assert_eq!(
+            validate_deployment_journal_binding(
+                &record,
+                "devnet-genesis",
+                &program_id,
+                &"11".repeat(32),
+                1024,
+                2048,
+                &authority,
+                Some(&buffer),
+            )
+            .unwrap(),
+            buffer
+        );
+    }
+
+    #[test]
+    fn deployment_capacity_errors_have_retryable_http_statuses() {
+        assert_eq!(
+            ApiError {
+                message: PROGRAM_DEPLOY_BUSY_MESSAGE.to_string(),
+            }
+            .status_code(),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            ApiError {
+                message: SBF_VERIFY_BUSY_MESSAGE.to_string(),
+            }
+            .status_code(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+}
+
 #[derive(Deserialize)]
-struct DeployProgramRequest {
-    #[serde(flatten)]
-    wallet: WalletAuthRequest,
-    program_so_base64: String,
+struct ProgramDeploySourceRequest {
+    source_dir: String,
+    #[serde(default)]
+    build: bool,
     #[serde(default)]
     network: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ProgramDeploySourceResponse {
+    source_dir: String,
+    built: bool,
+    build_status: Option<String>,
+    build_job_id: Option<String>,
+    build_error: Option<String>,
+    build_command: Option<String>,
+    build_template: Option<String>,
+    build_stdout: Option<String>,
+    build_stderr: Option<String>,
+    program_so_path: Option<String>,
+    program_so_name: Option<String>,
+    program_so_base64: Option<String>,
+    program_so_sha256: Option<String>,
+    approved_program_sha256: Option<String>,
+    program_so_size: Option<usize>,
+    program_keypair_path: Option<String>,
+    expected_program_id: Option<String>,
+    manifest_program_id: Option<String>,
+    manifest_network: Option<String>,
+    manifest_genesis_hash: Option<String>,
+    manifest_upgrade_authority: Option<String>,
+    manifest_owner_admin: Option<String>,
+    manifest_operational_admin: Option<String>,
+    build_available: bool,
+    build_blocked_reason: Option<String>,
+    warnings: Vec<String>,
+}
+
+struct ProgramSourceArtifacts {
+    program_so_path: Option<PathBuf>,
+    program_so_name: Option<String>,
+    program_so_base64: Option<String>,
+    program_so_sha256: Option<String>,
+    approved_program_sha256: Option<String>,
+    program_so_size: Option<usize>,
+    program_keypair_path: Option<PathBuf>,
+    expected_program_id: Option<String>,
+    manifest_program_id: Option<String>,
+    manifest_network: Option<String>,
+    manifest_genesis_hash: Option<String>,
+    manifest_upgrade_authority: Option<String>,
+    manifest_owner_admin: Option<String>,
+    manifest_operational_admin: Option<String>,
+    warnings: Vec<String>,
+}
+
+#[derive(Clone)]
+struct ProgramSourceBuildJob {
+    source_dir: PathBuf,
+    status: String,
+    build_command: Option<String>,
+    build_template: Option<String>,
+    build_stdout: Option<String>,
+    build_stderr: Option<String>,
+    build_error: Option<String>,
+    warnings: Vec<String>,
+}
+
+struct ProgramSourceBuildOutcome {
+    command: String,
+    template: String,
+    stdout: String,
+    stderr: String,
+    warnings: Vec<String>,
+}
+
+fn program_source_build_jobs(
+) -> &'static Arc<tokio::sync::Mutex<HashMap<String, ProgramSourceBuildJob>>> {
+    PROGRAM_SOURCE_BUILD_JOBS.get_or_init(|| Arc::new(tokio::sync::Mutex::new(HashMap::new())))
+}
+
+fn program_source_error(message: impl Into<String>) -> ApiError {
+    ApiError {
+        message: message.into(),
+    }
+}
+
+fn canonical_child_path(root: &FsPath, path: &FsPath, label: &str) -> Result<PathBuf, ApiError> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|error| program_source_error(format!("读取 {label} 路径失败: {error}")))?;
+    if !canonical.starts_with(root) {
+        return Err(program_source_error(format!("{label} 必须位于源码目录内")));
+    }
+    Ok(canonical)
+}
+
+fn read_text_file_limited(
+    path: &FsPath,
+    max_bytes: usize,
+    label: &str,
+) -> Result<String, ApiError> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| program_source_error(format!("读取 {label} 元数据失败: {error}")))?;
+    if !metadata.is_file() {
+        return Err(program_source_error(format!("{label} 不是普通文件")));
+    }
+    if metadata.len() > max_bytes as u64 {
+        return Err(program_source_error(format!("{label} 文件过大")));
+    }
+    fs::read_to_string(path)
+        .map_err(|error| program_source_error(format!("读取 {label} 失败: {error}")))
+}
+
+fn read_bytes_file_limited(
+    path: &FsPath,
+    max_bytes: usize,
+    label: &str,
+) -> Result<Vec<u8>, ApiError> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| program_source_error(format!("读取 {label} 元数据失败: {error}")))?;
+    if !metadata.is_file() {
+        return Err(program_source_error(format!("{label} 不是普通文件")));
+    }
+    if metadata.len() == 0 || metadata.len() > max_bytes as u64 {
+        return Err(program_source_error(format!("{label} 大小无效")));
+    }
+    fs::read(path).map_err(|error| program_source_error(format!("读取 {label} 失败: {error}")))
+}
+
+fn first_existing_path_owned(root: &FsPath, candidates: &[String]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .map(|relative| root.join(relative))
+        .filter_map(|path| canonical_child_path(root, &path, "候选产物").ok())
+        .find(|path| path.is_file())
+}
+
+fn first_json_file(root: &FsPath, directory: &FsPath) -> Option<PathBuf> {
+    fs::read_dir(directory)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter_map(|path| canonical_child_path(root, &path, "JSON 产物").ok())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        })
+        .min()
+}
+
+fn first_so_file(root: &FsPath, directory: &FsPath) -> Option<PathBuf> {
+    fs::read_dir(directory)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter_map(|path| canonical_child_path(root, &path, ".so 产物").ok())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("so"))
+        })
+        .min()
+}
+
+fn safe_artifact_stem(value: &str) -> Option<String> {
+    let stem = value.trim().replace('-', "_");
+    if stem.is_empty()
+        || stem.len() > 128
+        || !stem
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return None;
+    }
+    Some(stem)
+}
+
+fn parse_quoted_toml_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if let Some(rest) = trimmed.strip_prefix('"') {
+        return rest
+            .split_once('"')
+            .map(|(value, _)| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+    trimmed
+        .split('#')
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_anchor_program_name(root: &FsPath) -> Option<String> {
+    let anchor = fs::read_to_string(root.join("Anchor.toml")).ok()?;
+    let mut in_programs_section = false;
+    for line in anchor.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_programs_section = trimmed.starts_with("[programs.");
+            continue;
+        }
+        if !in_programs_section || trimmed.starts_with('#') || !trimmed.contains('=') {
+            continue;
+        }
+        let Some((name, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let Some(program_id) = parse_quoted_toml_value(value) else {
+            continue;
+        };
+        if Pubkey::from_str(&program_id).is_ok() {
+            if let Some(stem) = safe_artifact_stem(name) {
+                return Some(stem);
+            }
+        }
+    }
+    None
+}
+
+fn parse_cargo_package_name(root: &FsPath) -> Option<String> {
+    let cargo = fs::read_to_string(root.join("Cargo.toml")).ok()?;
+    let mut in_package_section = false;
+    for line in cargo.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_package_section = trimmed == "[package]";
+            continue;
+        }
+        if !in_package_section || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        if name.trim() != "name" {
+            continue;
+        }
+        let package_name = parse_quoted_toml_value(value)?;
+        return safe_artifact_stem(&package_name);
+    }
+    None
+}
+
+fn detect_program_artifact_stem(root: &FsPath) -> Option<String> {
+    parse_anchor_program_name(root).or_else(|| parse_cargo_package_name(root))
+}
+
+fn find_program_so_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
+        candidates.push(format!("target/verifiable/{stem}.so"));
+        candidates.push(format!("target/deploy/{stem}.so"));
+    }
+    first_existing_path_owned(root, &candidates)
+        .or_else(|| first_so_file(root, &root.join("target/verifiable")))
+        .or_else(|| first_so_file(root, &root.join("target/deploy")))
+}
+
+fn find_program_keypair_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
+        candidates.push(format!(".keys/{stem}-program-keypair.json"));
+        candidates.push(format!(".keys/{stem}-keypair.json"));
+        candidates.push(format!("target/deploy/{stem}-keypair.json"));
+    }
+    first_existing_path_owned(root, &candidates)
+        .or_else(|| first_json_file(root, &root.join(".keys")))
+        .or_else(|| first_json_file(root, &root.join("target/deploy")))
+}
+
+fn find_release_manifest_path(root: &FsPath) -> Option<PathBuf> {
+    fs::read_dir(root.join("docs"))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter_map(|path| canonical_child_path(root, &path, "release manifest").ok())
+        .filter(|path| {
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                return false;
+            };
+            path.is_file()
+                && name.contains("RELEASE_MANIFEST")
+                && name.ends_with(".json")
+                && !name.contains(".example.")
+        })
+        .min()
+}
+
+fn parse_anchor_program_id(root: &FsPath) -> Option<String> {
+    let anchor = fs::read_to_string(root.join("Anchor.toml")).ok()?;
+    for line in anchor.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || !trimmed.contains('=') {
+            continue;
+        }
+        let Some((_, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let value = value.trim().trim_matches('"');
+        if Pubkey::from_str(value).is_ok() {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn path_string(path: &FsPath) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn json_pointer_string(value: &Value, pointer: &str) -> Option<String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.starts_with("REPLACE_WITH_"))
+        .map(ToOwned::to_owned)
+}
+
+fn release_metadata_sha_and_len(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+) -> Result<(Option<String>, Option<usize>), ApiError> {
+    let mut candidates = Vec::new();
+    if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
+        candidates.push(format!("target/verifiable/{stem}-build.json"));
+    }
+    let Some(metadata_path) = first_existing_path_owned(root, &candidates)
+        .or_else(|| first_json_file(root, &root.join("target/verifiable")))
+    else {
+        return Ok((None, None));
+    };
+    let text = read_text_file_limited(&metadata_path, 128 * 1024, "build metadata")?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|_| program_source_error("build metadata 不是有效 JSON"))?;
+    let sha = json_pointer_string(&value, "/artifacts/program/sha256")
+        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .map(|value| value.to_ascii_lowercase());
+    let len = value
+        .pointer("/artifacts/program/length")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok());
+    Ok((sha, len))
+}
+
+type ReleaseManifestValues = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+fn release_manifest_values(root: &FsPath) -> Result<ReleaseManifestValues, ApiError> {
+    let Some(manifest_path) = find_release_manifest_path(root) else {
+        return Ok((None, None, None, None, None));
+    };
+    let text = read_text_file_limited(&manifest_path, 512 * 1024, "release manifest")?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|_| program_source_error("release manifest 不是有效 JSON"))?;
+    Ok((
+        json_pointer_string(&value, "/target/network"),
+        json_pointer_string(&value, "/target/genesis_hash"),
+        json_pointer_string(&value, "/target/upgrade_authority"),
+        json_pointer_string(&value, "/target/owner_admin"),
+        json_pointer_string(&value, "/target/admin"),
+    ))
+}
+
+fn load_program_source_artifacts(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    fallback_network: Option<&str>,
+    warn_missing_artifacts: bool,
+) -> Result<ProgramSourceArtifacts, ApiError> {
+    let program_so_path = find_program_so_path(root, artifact_stem);
+    let program_keypair_path = find_program_keypair_path(root, artifact_stem);
+    let (metadata_sha, metadata_len) = release_metadata_sha_and_len(root, artifact_stem)?;
+    let (
+        mut manifest_network,
+        manifest_genesis_hash,
+        manifest_upgrade_authority,
+        manifest_owner_admin,
+        manifest_operational_admin,
+    ) = release_manifest_values(root)?;
+    if manifest_network.is_none() {
+        manifest_network = fallback_network
+            .map(str::trim)
+            .filter(|value| matches!(*value, "mainnet" | "devnet" | "testnet"))
+            .map(ToOwned::to_owned);
+    }
+    let manifest_program_id = parse_anchor_program_id(root);
+
+    let mut warnings = Vec::new();
+    let mut program_so_base64 = None;
+    let mut program_so_sha256 = None;
+    let mut program_so_size = None;
+    let mut program_so_name = None;
+    if let Some(path) = program_so_path.as_ref() {
+        let bytes = read_bytes_file_limited(path, MAX_PROGRAM_SO_BYTES, ".so 文件")?;
+        let actual_sha = program_deploy::sha256_hex(&bytes);
+        let actual_len = bytes.len();
+        if let Some(expected_sha) = metadata_sha.as_ref() {
+            if expected_sha != &actual_sha {
+                warnings.push(format!(
+                    "build metadata SHA-256 为 {expected_sha}，但 .so 实际为 {actual_sha}"
+                ));
+            }
+        }
+        if let Some(expected_len) = metadata_len {
+            if expected_len != actual_len {
+                warnings.push(format!(
+                    "build metadata 长度为 {expected_len}，但 .so 实际为 {actual_len}"
+                ));
+            }
+        }
+        program_so_base64 = Some(BASE64.encode(&bytes));
+        program_so_sha256 = Some(actual_sha);
+        program_so_size = Some(actual_len);
+        program_so_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(ToOwned::to_owned);
+    } else if warn_missing_artifacts {
+        warnings.push("未找到 target/verifiable/*.so 或 target/deploy/*.so".to_string());
+    }
+
+    let mut expected_program_id = None;
+    if let Some(path) = program_keypair_path.as_ref() {
+        let mut json = read_text_file_limited(
+            path,
+            program_deploy::MAX_PROGRAM_KEYPAIR_JSON_BYTES,
+            "Program keypair",
+        )?;
+        let keypair =
+            program_deploy::parse_program_keypair_json(&json).map_err(program_source_error)?;
+        json.zeroize();
+        expected_program_id = Some(keypair.pubkey().to_string());
+        if let (Some(manifest_id), Some(keypair_id)) =
+            (manifest_program_id.as_ref(), expected_program_id.as_ref())
+        {
+            if manifest_id != keypair_id {
+                warnings.push(format!(
+                    "Anchor.toml Program ID 为 {manifest_id}，但 Program keypair 派生为 {keypair_id}"
+                ));
+            }
+        }
+    } else if warn_missing_artifacts {
+        warnings.push("未找到 .keys/*.json 或 target/deploy/*-keypair.json".to_string());
+    }
+
+    Ok(ProgramSourceArtifacts {
+        program_so_path,
+        program_so_name,
+        program_so_base64,
+        program_so_sha256: program_so_sha256.clone(),
+        approved_program_sha256: metadata_sha.or(program_so_sha256),
+        program_so_size,
+        program_keypair_path,
+        expected_program_id,
+        manifest_program_id,
+        manifest_network,
+        manifest_genesis_hash,
+        manifest_upgrade_authority,
+        manifest_owner_admin,
+        manifest_operational_admin,
+        warnings,
+    })
+}
+
+fn truncate_build_log(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    if text.len() <= PROGRAM_SOURCE_BUILD_LOG_BYTES {
+        return text.to_string();
+    }
+    let start = text.len().saturating_sub(PROGRAM_SOURCE_BUILD_LOG_BYTES);
+    format!("...[truncated]{}", &text[start..])
+}
+
+#[derive(Clone)]
+struct ProgramSourceBuildPlan {
+    command: Vec<String>,
+    display_command: String,
+    template: String,
+}
+
+impl ProgramSourceBuildPlan {
+    fn new(template: &str, command: &[&str]) -> Self {
+        Self {
+            command: command.iter().map(|part| (*part).to_string()).collect(),
+            display_command: command.join(" "),
+            template: template.to_string(),
+        }
+    }
+}
+
+fn program_source_build_plans(root: &FsPath) -> (Vec<ProgramSourceBuildPlan>, Option<String>) {
+    let contains_source_keys = root.join(".keys").exists();
+    let mut plans = Vec::new();
+    if !contains_source_keys && root.join("scripts/build-verifiable.sh").is_file() {
+        plans.push(ProgramSourceBuildPlan::new(
+            "项目脚本",
+            &["bash", "scripts/build-verifiable.sh"],
+        ));
+    }
+    if !contains_source_keys && root.join("Makefile").is_file() {
+        plans.push(ProgramSourceBuildPlan::new(
+            "项目 Makefile",
+            &["make", "build"],
+        ));
+    }
+    if root.join("Anchor.toml").is_file() {
+        plans.push(ProgramSourceBuildPlan::new(
+            "sol-safekey 内置 Anchor 模板",
+            &["anchor", "build"],
+        ));
+    }
+    if root.join("Cargo.toml").is_file() {
+        plans.push(ProgramSourceBuildPlan::new(
+            "sol-safekey 内置 Cargo SBF 模板",
+            &["cargo", "build-sbf"],
+        ));
+    }
+    if plans.is_empty() {
+        (
+            plans,
+            Some(if contains_source_keys {
+                "源码目录包含 .keys；已跳过项目脚本和 Makefile，且未识别 Anchor.toml 或 Cargo.toml，无法使用内置模板编译".to_string()
+            } else {
+                "未识别 Anchor.toml、Cargo.toml 或构建脚本".to_string()
+            }),
+        )
+    } else {
+        (plans, None)
+    }
+}
+
+fn program_source_keys_build_warning(root: &FsPath) -> Option<String> {
+    root.join(".keys").exists().then(|| {
+        "源码目录包含 .keys；为避免项目脚本读取签名材料，已跳过 scripts/build-verifiable.sh 和 Makefile，仅使用 sol-safekey 内置 Anchor/Cargo 构建模板".to_string()
+    })
+}
+
+async fn run_program_source_build(
+    root: &FsPath,
+    plan: &ProgramSourceBuildPlan,
+) -> Result<(String, String), ApiError> {
+    let executable = plan
+        .command
+        .first()
+        .ok_or_else(|| program_source_error("构建命令为空"))?;
+    let mut process = Command::new(executable);
+    process.args(plan.command.iter().skip(1)).current_dir(root);
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        let candidate_bins = [
+            home.join(".nvm/versions/node/v20.19.5/bin"),
+            home.join(".avm/bin"),
+            home.join(".cargo/bin"),
+            home.join(".local/share/solana/install/active_release/bin"),
+        ];
+        let current_path = std::env::var_os("PATH").unwrap_or_default();
+        let mut paths = std::env::split_paths(&current_path).collect::<Vec<_>>();
+        for bin in candidate_bins.into_iter().rev() {
+            if bin.is_dir() {
+                paths.insert(0, bin);
+            }
+        }
+        if let Ok(path) = std::env::join_paths(paths) {
+            process.env("PATH", path);
+        }
+    }
+    let output = timeout(
+        Duration::from_secs(PROGRAM_SOURCE_BUILD_TIMEOUT_SECS),
+        process.output(),
+    )
+    .await
+    .map_err(|_| program_source_error("构建超时"))?
+    .map_err(|error| program_source_error(format!("启动构建失败: {error}")))?;
+    let stdout = truncate_build_log(&output.stdout);
+    let stderr = truncate_build_log(&output.stderr);
+    if !output.status.success() {
+        return Err(program_source_error(format!(
+            "{} 构建失败: {}\n{}",
+            plan.template, output.status, stderr
+        )));
+    }
+    Ok((stdout, stderr))
+}
+
+async fn execute_program_source_build(
+    source_dir: &FsPath,
+    build_plans: &[ProgramSourceBuildPlan],
+    build_blocked_reason: Option<String>,
+    artifact_stem: Option<&str>,
+) -> Result<ProgramSourceBuildOutcome, ApiError> {
+    if build_plans.is_empty() {
+        return Err(program_source_error(
+            build_blocked_reason.unwrap_or_else(|| "当前源码目录不可自动编译".to_string()),
+        ));
+    }
+
+    let mut warnings = Vec::new();
+    let mut last_error = None;
+    for plan in build_plans.iter() {
+        match run_program_source_build(source_dir, plan).await {
+            Ok((stdout, stderr)) => {
+                if find_program_so_path(source_dir, artifact_stem).is_none() {
+                    let message = format!(
+                        "{}: 构建命令已结束，但未生成 target/verifiable/*.so 或 target/deploy/*.so",
+                        plan.display_command
+                    );
+                    warnings.push(message.clone());
+                    last_error = Some(message);
+                    continue;
+                }
+                if !warnings.is_empty() {
+                    warnings.push(format!("已改用 {} 完成编译", plan.template));
+                }
+                return Ok(ProgramSourceBuildOutcome {
+                    command: plan.display_command.clone(),
+                    template: plan.template.clone(),
+                    stdout,
+                    stderr,
+                    warnings,
+                });
+            }
+            Err(error) => {
+                let message = format!("{}: {}", plan.display_command, error.message);
+                warnings.push(message.clone());
+                last_error = Some(message);
+            }
+        }
+    }
+
+    Err(program_source_error(last_error.unwrap_or_else(|| {
+        build_blocked_reason.unwrap_or_else(|| "构建完成后未找到可部署 .so".to_string())
+    })))
+}
+
+fn next_program_source_build_job_id() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or_default();
+    format!("build-{millis}")
+}
+
+async fn start_program_source_build_job(
+    source_dir: PathBuf,
+    build_plans: Vec<ProgramSourceBuildPlan>,
+    build_blocked_reason: Option<String>,
+    artifact_stem: Option<String>,
+    initial_warnings: Vec<String>,
+) -> (String, Option<String>, Option<String>) {
+    let job_id = next_program_source_build_job_id();
+    let build_command = build_plans.first().map(|plan| plan.display_command.clone());
+    let build_template = build_plans.first().map(|plan| plan.template.clone());
+    let job = ProgramSourceBuildJob {
+        source_dir: source_dir.clone(),
+        status: "running".to_string(),
+        build_command: build_command.clone(),
+        build_template: build_template.clone(),
+        build_stdout: None,
+        build_stderr: None,
+        build_error: None,
+        warnings: initial_warnings,
+    };
+    program_source_build_jobs()
+        .lock()
+        .await
+        .insert(job_id.clone(), job);
+
+    let jobs = Arc::clone(program_source_build_jobs());
+    let task_job_id = job_id.clone();
+    tokio::spawn(async move {
+        let result = execute_program_source_build(
+            &source_dir,
+            &build_plans,
+            build_blocked_reason,
+            artifact_stem.as_deref(),
+        )
+        .await;
+        let mut jobs = jobs.lock().await;
+        if let Some(job) = jobs.get_mut(&task_job_id) {
+            match result {
+                Ok(outcome) => {
+                    job.status = "completed".to_string();
+                    job.build_command = Some(outcome.command);
+                    job.build_template = Some(outcome.template);
+                    job.build_stdout = Some(outcome.stdout);
+                    job.build_stderr = Some(outcome.stderr);
+                    job.warnings.extend(outcome.warnings);
+                }
+                Err(error) => {
+                    job.status = "failed".to_string();
+                    job.build_error = Some(error.message);
+                }
+            }
+        }
+    });
+
+    (job_id, build_command, build_template)
+}
+
+async fn program_deploy_source(
+    Json(req): Json<ProgramDeploySourceRequest>,
+) -> Result<Json<ProgramDeploySourceResponse>, ApiError> {
+    let source_dir_raw = req.source_dir.trim();
+    if source_dir_raw.is_empty() || source_dir_raw.len() > 4096 {
+        return Err(program_source_error("源码目录路径无效"));
+    }
+    let source_dir = PathBuf::from(source_dir_raw)
+        .canonicalize()
+        .map_err(|error| program_source_error(format!("源码目录不存在或不可访问: {error}")))?;
+    if !source_dir.is_dir() {
+        return Err(program_source_error("源码目录不是目录"));
+    }
+
+    let (build_plans, build_blocked_reason) = program_source_build_plans(&source_dir);
+    let build_available = !build_plans.is_empty();
+    let mut build_command = build_plans.first().map(|plan| plan.display_command.clone());
+    let mut build_template = build_plans.first().map(|plan| plan.template.clone());
+    let artifact_stem = detect_program_artifact_stem(&source_dir);
+    let built = false;
+    let mut build_status = None;
+    let mut build_job_id = None;
+    let build_error = None;
+    let build_stdout = None;
+    let build_stderr = None;
+    let mut build_warnings = Vec::new();
+    if let Some(warning) = program_source_keys_build_warning(&source_dir) {
+        build_warnings.push(warning);
+    }
+    if req.build {
+        if build_plans.is_empty() {
+            return Err(program_source_error(
+                build_blocked_reason
+                    .clone()
+                    .unwrap_or_else(|| "当前源码目录不可自动编译".to_string()),
+            ));
+        }
+        let (job_id, job_command, job_template) = start_program_source_build_job(
+            source_dir.clone(),
+            build_plans.clone(),
+            build_blocked_reason.clone(),
+            artifact_stem.clone(),
+            build_warnings.clone(),
+        )
+        .await;
+        build_command = job_command;
+        build_template = job_template;
+        build_status = Some("running".to_string());
+        build_job_id = Some(job_id);
+        build_warnings.push("编译已在后台开始，完成后会自动重新读取部署信息".to_string());
+    }
+
+    let mut artifacts = load_program_source_artifacts(
+        &source_dir,
+        artifact_stem.as_deref(),
+        req.network.as_deref(),
+        true,
+    )?;
+    build_warnings.append(&mut artifacts.warnings);
+
+    Ok(Json(ProgramDeploySourceResponse {
+        source_dir: path_string(&source_dir),
+        built,
+        build_status,
+        build_job_id,
+        build_error,
+        build_command,
+        build_template,
+        build_stdout,
+        build_stderr,
+        program_so_path: artifacts
+            .program_so_path
+            .as_ref()
+            .map(|path| path_string(path)),
+        program_so_name: artifacts.program_so_name,
+        program_so_base64: artifacts.program_so_base64,
+        program_so_sha256: artifacts.program_so_sha256,
+        approved_program_sha256: artifacts.approved_program_sha256,
+        program_so_size: artifacts.program_so_size,
+        program_keypair_path: artifacts
+            .program_keypair_path
+            .as_ref()
+            .map(|path| path_string(path)),
+        expected_program_id: artifacts.expected_program_id,
+        manifest_program_id: artifacts.manifest_program_id,
+        manifest_network: artifacts.manifest_network,
+        manifest_genesis_hash: artifacts.manifest_genesis_hash,
+        manifest_upgrade_authority: artifacts.manifest_upgrade_authority,
+        manifest_owner_admin: artifacts.manifest_owner_admin,
+        manifest_operational_admin: artifacts.manifest_operational_admin,
+        build_available,
+        build_blocked_reason,
+        warnings: build_warnings,
+    }))
+}
+
+async fn program_deploy_source_build_status(
+    Path(job_id): Path<String>,
+) -> Result<Json<ProgramDeploySourceResponse>, ApiError> {
+    let job = {
+        let jobs = program_source_build_jobs().lock().await;
+        jobs.get(&job_id)
+            .cloned()
+            .ok_or_else(|| program_source_error("构建任务不存在或已过期"))?
+    };
+    let (build_plans, build_blocked_reason) = program_source_build_plans(&job.source_dir);
+    let build_available = !build_plans.is_empty();
+    let artifact_stem = detect_program_artifact_stem(&job.source_dir);
+    let mut warnings = job.warnings.clone();
+    if let Some(error) = job.build_error.as_ref() {
+        warnings.push(error.clone());
+    }
+    let mut artifacts = load_program_source_artifacts(
+        &job.source_dir,
+        artifact_stem.as_deref(),
+        None,
+        job.status != "running",
+    )?;
+    warnings.append(&mut artifacts.warnings);
+
+    Ok(Json(ProgramDeploySourceResponse {
+        source_dir: path_string(&job.source_dir),
+        built: job.status == "completed",
+        build_status: Some(job.status),
+        build_job_id: Some(job_id),
+        build_error: job.build_error,
+        build_command: job.build_command,
+        build_template: job.build_template,
+        build_stdout: job.build_stdout,
+        build_stderr: job.build_stderr,
+        program_so_path: artifacts
+            .program_so_path
+            .as_ref()
+            .map(|path| path_string(path)),
+        program_so_name: artifacts.program_so_name,
+        program_so_base64: artifacts.program_so_base64,
+        program_so_sha256: artifacts.program_so_sha256,
+        approved_program_sha256: artifacts.approved_program_sha256,
+        program_so_size: artifacts.program_so_size,
+        program_keypair_path: artifacts
+            .program_keypair_path
+            .as_ref()
+            .map(|path| path_string(path)),
+        expected_program_id: artifacts.expected_program_id,
+        manifest_program_id: artifacts.manifest_program_id,
+        manifest_network: artifacts.manifest_network,
+        manifest_genesis_hash: artifacts.manifest_genesis_hash,
+        manifest_upgrade_authority: artifacts.manifest_upgrade_authority,
+        manifest_owner_admin: artifacts.manifest_owner_admin,
+        manifest_operational_admin: artifacts.manifest_operational_admin,
+        build_available,
+        build_blocked_reason,
+        warnings,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProgramDeploymentJournalRequest {
+    network: String,
+    expected_genesis_hash: String,
+    expected_program_id: String,
+    expected_program_sha256: String,
+    program_len: usize,
+    max_data_len: usize,
+    expected_upgrade_authority: String,
+}
+
+#[derive(Serialize)]
+struct ProgramDeploymentJournalResponse {
+    network: String,
+    genesis_hash: String,
+    write_chunk_bytes: usize,
+    write_chunk_count: usize,
+    journal: Option<ProgramDeploymentJournalView>,
+    deployment_attempts: Vec<wallet_store::ProgramDeploymentAttemptRecord>,
+}
+
+#[derive(Serialize)]
+struct ProgramDeploymentJournalView {
+    genesis_hash: String,
+    program_id: String,
+    program_sha256: String,
+    program_len: usize,
+    max_data_len: usize,
+    upgrade_authority: String,
+    buffer_address: String,
+    status: String,
+    create_signature: Option<String>,
+    create_last_valid_block_height: Option<u64>,
+    last_write_signature: Option<String>,
+    last_write_chunk_index: Option<usize>,
+    last_write_last_valid_block_height: Option<u64>,
+    completed_writes: usize,
+    deploy_signature: Option<String>,
+    deploy_last_valid_block_height: Option<u64>,
+    attempt_evidence_version: u32,
+    revision: u64,
+    created_at: u64,
+    updated_at: u64,
+}
+
+impl From<&wallet_store::ProgramDeploymentRecord> for ProgramDeploymentJournalView {
+    fn from(record: &wallet_store::ProgramDeploymentRecord) -> Self {
+        Self {
+            genesis_hash: record.genesis_hash.clone(),
+            program_id: record.program_id.clone(),
+            program_sha256: record.program_sha256.clone(),
+            program_len: record.program_len,
+            max_data_len: record.max_data_len,
+            upgrade_authority: record.upgrade_authority.clone(),
+            buffer_address: record.buffer_address.clone(),
+            status: record.status.clone(),
+            create_signature: record.create_signature.clone(),
+            create_last_valid_block_height: record.create_last_valid_block_height,
+            last_write_signature: record.last_write_signature.clone(),
+            last_write_chunk_index: record.last_write_chunk_index,
+            last_write_last_valid_block_height: record.last_write_last_valid_block_height,
+            completed_writes: record.completed_writes,
+            deploy_signature: record.deploy_signature.clone(),
+            deploy_last_valid_block_height: record.deploy_last_valid_block_height,
+            attempt_evidence_version: record.attempt_evidence_version,
+            revision: record.revision,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        }
+    }
+}
+
+struct ProgramDeploymentJournalIntent {
+    expected_genesis_hash: solana_sdk::hash::Hash,
+    program_id: Pubkey,
+    program_sha256: String,
+    program_len: usize,
+    max_data_len: usize,
+    upgrade_authority: Pubkey,
+}
+
+fn parse_canonical_deployment_pubkey(value: &str, label: &str) -> Result<Pubkey, ApiError> {
+    let trimmed = value.trim();
+    let pubkey = Pubkey::from_str(trimmed).map_err(|_| ApiError {
+        message: format!("无效的{label}"),
+    })?;
+    if pubkey == Pubkey::default() || pubkey.to_string() != trimmed {
+        return Err(ApiError {
+            message: format!("{label}必须是 canonical 非零公钥"),
+        });
+    }
+    Ok(pubkey)
+}
+
+fn validate_program_deployment_journal_request(
+    req: &ProgramDeploymentJournalRequest,
+) -> Result<ProgramDeploymentJournalIntent, ApiError> {
+    if req.program_len == 0
+        || req.program_len > MAX_PROGRAM_SO_BYTES
+        || req.max_data_len < req.program_len
+        || req.max_data_len > MAX_PROGRAM_SO_BYTES
+    {
+        return Err(ApiError {
+            message: format!(
+                "Program 长度必须满足 1 <= program_len <= max_data_len <= {}",
+                MAX_PROGRAM_SO_BYTES
+            ),
+        });
+    }
+    let program_sha256 = req.expected_program_sha256.trim().to_ascii_lowercase();
+    if program_sha256.len() != 64 || !program_sha256.as_bytes().iter().all(u8::is_ascii_hexdigit) {
+        return Err(ApiError {
+            message: "预期 Program SHA-256 必须是 64 位十六进制".to_string(),
+        });
+    }
+    let expected_genesis_text = req.expected_genesis_hash.trim();
+    let expected_genesis_hash =
+        solana_sdk::hash::Hash::from_str(expected_genesis_text).map_err(|_| ApiError {
+            message: "无效的预期 genesis hash".to_string(),
+        })?;
+    if expected_genesis_hash == solana_sdk::hash::Hash::default()
+        || expected_genesis_hash.to_string() != expected_genesis_text
+    {
+        return Err(ApiError {
+            message: "预期 genesis hash 必须是 canonical 非零值".to_string(),
+        });
+    }
+    Ok(ProgramDeploymentJournalIntent {
+        expected_genesis_hash,
+        program_id: parse_canonical_deployment_pubkey(&req.expected_program_id, "预期 Program ID")?,
+        program_sha256,
+        program_len: req.program_len,
+        max_data_len: req.max_data_len,
+        upgrade_authority: parse_canonical_deployment_pubkey(
+            &req.expected_upgrade_authority,
+            "预期 Upgrade Authority",
+        )?,
+    })
+}
+
+async fn program_deployment_journal(
+    Json(req): Json<ProgramDeploymentJournalRequest>,
+) -> Result<Json<ProgramDeploymentJournalResponse>, ApiError> {
+    if req.network.trim().is_empty() {
+        return Err(ApiError {
+            message: "部署网络不能为空".to_string(),
+        });
+    }
+    let intent = validate_program_deployment_journal_request(&req)?;
+    let selector = rpc_selector(Some(req.network.trim()))?;
+    let network = selector.network;
+    let client = RpcClient::new_with_timeout_and_commitment(
+        selector.url.to_string(),
+        Duration::from_secs(RPC_QUERY_TIMEOUT_SECS),
+        CommitmentConfig::finalized(),
+    );
+    let actual_genesis_hash = client.get_genesis_hash().map_err(|error| ApiError {
+        message: format!("读取 RPC genesis hash 失败: {error}"),
+    })?;
+    if actual_genesis_hash != intent.expected_genesis_hash {
+        return Err(ApiError {
+            message: format!(
+                "RPC genesis hash 为 {}，预期为 {}；拒绝读取其他集群的部署记录",
+                actual_genesis_hash, intent.expected_genesis_hash
+            ),
+        });
+    }
+    let genesis_hash = actual_genesis_hash.to_string();
+    let program_id = intent.program_id.to_string();
+    let (journal, deployment_attempts) =
+        wallet_store::load_program_deployment_snapshot(&genesis_hash, &program_id)
+            .map_err(|message| ApiError { message })?;
+    if let Some(record) = journal.as_ref() {
+        if !deployment_status_is_known(&record.status)
+            || record.attempt_evidence_version
+                != wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION
+        {
+            return Err(deployment_journal_error(format!(
+                "Program {} 的部署记录状态或证据版本无效",
+                intent.program_id
+            )));
+        }
+        validate_deployment_journal_binding(
+            record,
+            &genesis_hash,
+            &intent.program_id,
+            &intent.program_sha256,
+            intent.program_len,
+            intent.max_data_len,
+            &intent.upgrade_authority,
+            None,
+        )?;
+        for attempt in &deployment_attempts {
+            validate_program_deployment_attempt_record(record, attempt)?;
+        }
+    } else if !deployment_attempts.is_empty() {
+        return Err(deployment_journal_error(
+            "部署 attempt 缺少对应 journal，拒绝返回撕裂快照",
+        ));
+    }
+    Ok(Json(ProgramDeploymentJournalResponse {
+        network,
+        genesis_hash,
+        write_chunk_bytes: PROGRAM_WRITE_CHUNK_BYTES,
+        write_chunk_count: intent.program_len.div_ceil(PROGRAM_WRITE_CHUNK_BYTES),
+        journal: journal.as_ref().map(ProgramDeploymentJournalView::from),
+        deployment_attempts,
+    }))
+}
+
+#[cfg(test)]
+mod generic_program_deployment_policy_tests {
+    use super::*;
+
+    fn unique_temp_path(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or_default();
+        std::env::temp_dir().join(format!(
+            "sol-safekey-{label}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    fn valid_journal_request() -> ProgramDeploymentJournalRequest {
+        ProgramDeploymentJournalRequest {
+            network: "devnet".to_string(),
+            expected_genesis_hash: solana_sdk::hash::Hash::new_unique().to_string(),
+            expected_program_id: Pubkey::new_unique().to_string(),
+            expected_program_sha256: "AB".repeat(32),
+            program_len: 1_024,
+            max_data_len: 2_048,
+            expected_upgrade_authority: Pubkey::new_unique().to_string(),
+        }
+    }
+
+    #[test]
+    fn generic_journal_intent_normalizes_hash_without_hidden_policy() {
+        let request = valid_journal_request();
+        let intent = validate_program_deployment_journal_request(&request).unwrap();
+        assert_eq!(intent.program_sha256, "ab".repeat(32));
+        assert_eq!(intent.program_id.to_string(), request.expected_program_id);
+        assert_eq!(
+            intent.upgrade_authority.to_string(),
+            request.expected_upgrade_authority
+        );
+    }
+
+    #[test]
+    fn generic_journal_intent_rejects_unsafe_boundaries() {
+        let mut request = valid_journal_request();
+        request.program_len = 0;
+        assert!(validate_program_deployment_journal_request(&request).is_err());
+
+        let mut request = valid_journal_request();
+        request.max_data_len = request.program_len - 1;
+        assert!(validate_program_deployment_journal_request(&request).is_err());
+
+        let mut request = valid_journal_request();
+        request.expected_program_sha256 = "xyz".to_string();
+        assert!(validate_program_deployment_journal_request(&request).is_err());
+
+        let mut request = valid_journal_request();
+        request.expected_program_id = Pubkey::default().to_string();
+        assert!(validate_program_deployment_journal_request(&request).is_err());
+
+        let mut request = valid_journal_request();
+        request.expected_genesis_hash = solana_sdk::hash::Hash::default().to_string();
+        assert!(validate_program_deployment_journal_request(&request).is_err());
+    }
+
+    #[test]
+    fn unknown_network_labels_never_fall_back_to_mainnet() {
+        assert!(parse_rpc_selector("devnett").is_err());
+        assert!(parse_rpc_selector("rpc:devnett:https%3A%2F%2Fexample.invalid").is_err());
+        assert_eq!(parse_rpc_selector("mainnet").unwrap().network, "mainnet");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn program_source_artifact_discovery_rejects_symlinks_outside_source_dir() {
+        use std::os::unix::fs::symlink;
+
+        let base = unique_temp_path("source-artifact-symlink");
+        let source = base.join("source");
+        let outside = base.join("outside");
+        fs::create_dir_all(source.join("target/deploy")).unwrap();
+        fs::create_dir_all(source.join(".keys")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+
+        let outside_so = outside.join("escaped.so");
+        let outside_keypair = outside.join("escaped-keypair.json");
+        fs::write(&outside_so, b"not-a-program").unwrap();
+        fs::write(&outside_keypair, b"[]").unwrap();
+        symlink(&outside_so, source.join("target/deploy/escaped.so")).unwrap();
+        symlink(&outside_keypair, source.join(".keys/escaped-keypair.json")).unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        assert!(find_program_so_path(&canonical_source, None).is_none());
+        assert!(find_program_keypair_path(&canonical_source, None).is_none());
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeployProgramRequest {
+    #[serde(default)]
+    wallet_id: Option<String>,
+    #[serde(default)]
+    private_key: Option<String>,
+    #[serde(default)]
+    secret_key: Option<String>,
+    #[serde(default)]
+    keystore_json: Option<String>,
+    #[serde(default)]
+    encrypted_key: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    program_keypair_json: Option<String>,
+    #[serde(default)]
+    program_keypair_path: Option<String>,
+    expected_program_id: String,
+    expected_upgrade_authority: String,
+    expected_genesis_hash: String,
+    expected_program_sha256: String,
+    program_so_base64: String,
+    network: String,
     #[serde(default)]
     max_data_len: Option<usize>,
     #[serde(default)]
-    squads_multisig: Option<String>,
+    resume_buffer_address: Option<String>,
+}
+
+impl DeployProgramRequest {
+    fn take_wallet_auth(&mut self) -> WalletAuthRequest {
+        WalletAuthRequest {
+            wallet_id: self.wallet_id.take(),
+            private_key: self.private_key.take(),
+            secret_key: self.secret_key.take(),
+            keystore_json: self.keystore_json.take(),
+            encrypted_key: self.encrypted_key.take(),
+            password: self.password.take(),
+        }
+    }
+}
+
+impl Drop for DeployProgramRequest {
+    fn drop(&mut self) {
+        if let Some(value) = self.program_keypair_json.as_mut() {
+            value.zeroize();
+        }
+        self.take_wallet_auth().clear_secrets();
+    }
 }
 
 #[derive(Serialize)]
@@ -4273,30 +7250,111 @@ struct DeployProgramResponse {
     programdata_address: String,
     buffer_address: String,
     authority: String,
-    vault: Option<String>,
-    authority_signature: Option<String>,
     network: String,
+    genesis_hash: String,
     program_bytes: usize,
+    max_data_len: usize,
+    program_sha256: String,
+    temporary_buffer_rent_lamports: u64,
+    program_rent_lamports: u64,
+    programdata_rent_lamports: u64,
     rent_lamports: u64,
+    estimated_transaction_fees_lamports: u64,
+    fee_rate_reserve_lamports: u64,
+    recovery_write_reserve_lamports: u64,
+    total_fee_budget_lamports: u64,
+    estimated_required_balance_lamports: u64,
+    create_buffer_signature: Option<String>,
+    skipped_write_chunks: usize,
     write_signatures: Vec<String>,
     deploy_signature: String,
+    finalized_slot: u64,
+    deployed_slot: u64,
+    readback_verified: bool,
+    journal_revision: Option<u64>,
+    attempt_evidence_version: Option<u32>,
+    deployment_attempts: Vec<wallet_store::ProgramDeploymentAttemptRecord>,
     status: String,
 }
 
-async fn deploy_program(
+async fn deploy_generic_program(
     Json(req): Json<DeployProgramRequest>,
 ) -> Result<Json<DeployProgramResponse>, ApiError> {
-    let program_bytes = BASE64
-        .decode(req.program_so_base64.trim().as_bytes())
-        .map_err(|_| ApiError {
-            message: "无效的 Program .so base64".to_string(),
-        })?;
-    validate_program_binary(&program_bytes)?;
+    deploy_program(Json(req)).await
+}
 
-    let payer = req.wallet.keypair()?;
-    let payer_pubkey = payer.pubkey();
-    let program_keypair = Keypair::new();
-    let buffer_keypair = Keypair::new();
+async fn deploy_program(
+    Json(mut req): Json<DeployProgramRequest>,
+) -> Result<Json<DeployProgramResponse>, ApiError> {
+    let _deploy_guard = PROGRAM_DEPLOY_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .try_lock()
+        .map_err(|_| ApiError {
+            message: PROGRAM_DEPLOY_BUSY_MESSAGE.to_string(),
+        })?;
+    let expected_upgrade_authority = Pubkey::from_str(req.expected_upgrade_authority.trim())
+        .map_err(|_| ApiError {
+            message: "无效的预期 Upgrade Authority".to_string(),
+        })?;
+
+    let program_bytes = decode_program_binary_base64(&req.program_so_base64)?;
+
+    let program_keypair_json = match (
+        req.program_keypair_json.take(),
+        req.program_keypair_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    ) {
+        (Some(json), None) => json,
+        (None, Some(path)) => {
+            let path = PathBuf::from(path)
+                .canonicalize()
+                .map_err(|error| ApiError {
+                    message: format!("Program keypair 路径不可访问: {error}"),
+                })?;
+            read_text_file_limited(
+                &path,
+                program_deploy::MAX_PROGRAM_KEYPAIR_JSON_BYTES,
+                "Program keypair",
+            )?
+        }
+        (Some(mut json), Some(_)) => {
+            json.zeroize();
+            return Err(ApiError {
+                message: "Program keypair JSON 与路径只能提供一个".to_string(),
+            });
+        }
+        (None, None) => {
+            return Err(ApiError {
+                message: "必须提供 Program keypair JSON 或 Program keypair 路径".to_string(),
+            });
+        }
+    };
+    let mut program_keypair_json = Zeroizing::new(program_keypair_json);
+    let program_keypair_result = program_deploy::parse_program_keypair_json(&program_keypair_json);
+    program_keypair_json.zeroize();
+    let program_keypair = program_keypair_result.map_err(|message| ApiError { message })?;
+    let program_id =
+        program_deploy::require_program_id(&program_keypair, req.expected_program_id.trim())
+            .map_err(|message| ApiError { message })?;
+
+    let program_sha256 =
+        program_deploy::require_sha256(&program_bytes, &req.expected_program_sha256)
+            .map_err(|message| ApiError { message })?;
+    let program_bytes = verify_program_binary_offline(program_bytes).await?;
+
+    let requested_resume_buffer_address = req
+        .resume_buffer_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            Pubkey::from_str(value).map_err(|_| ApiError {
+                message: "无效的恢复 Buffer 地址".to_string(),
+            })
+        })
+        .transpose()?;
     let max_data_len = req.max_data_len.unwrap_or(program_bytes.len());
     if max_data_len < program_bytes.len() {
         return Err(ApiError {
@@ -4312,9 +7370,124 @@ async fn deploy_program(
         });
     }
 
-    let rpc_url = get_rpc_url(req.network.as_deref())?;
-    let network = network_name(req.network.as_deref());
-    let client = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
+    if req.network.trim().is_empty() {
+        return Err(ApiError {
+            message: "部署网络不能为空".to_string(),
+        });
+    }
+    let selector = rpc_selector(Some(req.network.trim()))?;
+    let rpc_url = selector.url;
+    let network = selector.network;
+    let client = RpcClient::new_with_timeout_and_commitment(
+        rpc_url.to_string(),
+        Duration::from_secs(PROGRAM_DEPLOY_RPC_TIMEOUT_SECS),
+        CommitmentConfig::confirmed(),
+    );
+
+    let expected_genesis_hash = solana_sdk::hash::Hash::from_str(req.expected_genesis_hash.trim())
+        .map_err(|_| ApiError {
+            message: "无效的预期 genesis hash".to_string(),
+        })?;
+    let actual_genesis_hash = client.get_genesis_hash().map_err(|error| ApiError {
+        message: format!("读取 RPC genesis hash 失败: {error}"),
+    })?;
+    if actual_genesis_hash != expected_genesis_hash {
+        return Err(ApiError {
+            message: format!(
+                "RPC genesis hash 为 {}，预期为 {}；已在花费前中止部署",
+                actual_genesis_hash, expected_genesis_hash
+            ),
+        });
+    }
+
+    let genesis_hash = actual_genesis_hash.to_string();
+    let mut deployment_journal =
+        wallet_store::find_program_deployment(&genesis_hash, &program_id.to_string())
+            .map_err(|message| ApiError { message })?;
+    let journal_buffer_address = deployment_journal
+        .as_ref()
+        .map(|record| {
+            if !deployment_status_is_known(&record.status) {
+                return Err(deployment_journal_error(format!(
+                    "Program {} 的记录状态 {} 无法识别，拒绝继续",
+                    program_id, record.status
+                )));
+            }
+            validate_deployment_journal_binding(
+                record,
+                &genesis_hash,
+                &program_id,
+                &program_sha256,
+                program_bytes.len(),
+                max_data_len,
+                &expected_upgrade_authority,
+                requested_resume_buffer_address.as_ref(),
+            )
+        })
+        .transpose()?;
+    let deployment_attempts = if let Some(record) = deployment_journal.as_ref() {
+        let attempts = wallet_store::load_program_deployment_attempts(
+            &record.genesis_hash,
+            &record.program_id,
+        )
+        .map_err(|message| ApiError { message })?;
+        for attempt in &attempts {
+            validate_program_deployment_attempt_record(record, attempt)?;
+        }
+        attempts
+    } else {
+        Vec::new()
+    };
+
+    let programdata_address = get_program_data_address(&program_id);
+    let deployment_state_addresses = vec![program_id, programdata_address];
+    let existing_accounts = client
+        .get_multiple_accounts_with_commitment(
+            &deployment_state_addresses,
+            CommitmentConfig::finalized(),
+        )
+        .map_err(|error| ApiError {
+            message: format!("部署前查询 Program 与 ProgramData 失败: {error}"),
+        })?;
+    let existing_finalized_slot = existing_accounts.context.slot;
+    if existing_accounts.value.len() != deployment_state_addresses.len() {
+        return Err(ApiError {
+            message: "部署前 finalized 账户查询结果不完整，拒绝部署".to_string(),
+        });
+    }
+    let mut existing_values = existing_accounts.value.into_iter();
+    let existing_program = existing_values.next().flatten();
+    let existing_programdata = existing_values.next().flatten();
+
+    let existing_verified_readback = match (existing_program, existing_programdata) {
+        (None, None) => None,
+        (Some(program), Some(programdata)) => Some(
+            program_deploy::verify_deployment_readback(
+                &program_id,
+                &expected_upgrade_authority,
+                &program_bytes,
+                max_data_len,
+                &program.owner,
+                program.executable,
+                &program.data,
+                &programdata.owner,
+                &programdata.data,
+            )
+            .map_err(|error| ApiError {
+                message: format!(
+                    "目标 Program 已存在，但 finalized 状态与本次发布制品不一致，拒绝覆盖或升级: {error}"
+                ),
+            })?,
+        ),
+        _ => {
+            return Err(ApiError {
+                message: format!(
+                    "目标 Program 与 ProgramData 只有一个存在（Program ID: {}），拒绝继续部署",
+                    program_id
+                ),
+            })
+        }
+    };
 
     let buffer_lamports = client
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(
@@ -4328,62 +7501,518 @@ async fn deploy_program(
         .map_err(|e| ApiError {
             message: format!("计算 program 租金失败: {}", e),
         })?;
-    let target_vault = if let Some(multisig_value) = req
-        .squads_multisig
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        let multisig = squads_v4::parse_pubkey(multisig_value, "多签地址")
-            .map_err(|message| ApiError { message })?;
-        Some(squads_v4::vault_pda(&multisig, 0))
+    let programdata_lamports = client
+        .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_programdata(
+            max_data_len,
+        ))
+        .map_err(|e| ApiError {
+            message: format!("计算 ProgramData 租金失败: {}", e),
+        })?;
+    let final_rent_lamports = program_lamports
+        .checked_add(programdata_lamports)
+        .ok_or_else(|| ApiError {
+            message: "Program 与 ProgramData 最终租金总额溢出".to_string(),
+        })?;
+
+    let wallet_auth = req.take_wallet_auth();
+    let payer = run_keystore_task(move || wallet_auth.keypair()).await?;
+    let payer_pubkey = payer.pubkey();
+    if expected_upgrade_authority != payer_pubkey {
+        return Err(ApiError {
+            message: format!(
+                "预期 Upgrade Authority 为 {}，但付款钱包为 {}；首次部署必须由该 authority 付款并持有升级权限",
+                expected_upgrade_authority, payer_pubkey
+            ),
+        });
+    }
+    if let Some(readback) = existing_verified_readback {
+        if readback.program_sha256 != program_sha256 {
+            return Err(ApiError {
+                message: "finalized Program SHA-256 与本地已验证哈希不一致".to_string(),
+            });
+        }
+        for attempt in deployment_attempts.iter().filter(|attempt| {
+            attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_DEPLOY
+                && deployment_attempt_is_active(&attempt.status)
+        }) {
+            let completed_writes = deployment_journal
+                .as_ref()
+                .map(|record| record.completed_writes)
+                .unwrap_or_default();
+            transition_deployment_attempt(
+                &mut deployment_journal,
+                &attempt.signature,
+                &attempt.status,
+                wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+                DEPLOYMENT_STATUS_FINALIZED,
+                completed_writes,
+            )?;
+        }
+        if deployment_journal
+            .as_ref()
+            .is_some_and(|record| record.status != DEPLOYMENT_STATUS_FINALIZED)
+        {
+            let completed_writes = deployment_journal
+                .as_ref()
+                .map(|record| record.completed_writes)
+                .unwrap_or_default();
+            transition_deployment_journal(
+                &mut deployment_journal,
+                DEPLOYMENT_STATUS_FINALIZED,
+                None,
+                None,
+                None,
+                None,
+                None,
+                completed_writes,
+                None,
+                None,
+            )?;
+        }
+        let (journal_revision, attempt_evidence_version, deployment_attempts) =
+            load_deployment_receipt_evidence(deployment_journal.as_ref())?;
+        let buffer_address = deployment_journal
+            .as_ref()
+            .map(|record| record.buffer_address.clone())
+            .unwrap_or_default();
+        let create_buffer_signature = deployment_journal
+            .as_ref()
+            .and_then(|record| record.create_signature.clone());
+        let deploy_signature = deployment_journal
+            .as_ref()
+            .and_then(|record| record.deploy_signature.clone())
+            .unwrap_or_default();
+        let write_signatures = deployment_attempts
+            .iter()
+            .filter(|attempt| attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE)
+            .map(|attempt| attempt.signature.clone())
+            .collect();
+        return Ok(Json(DeployProgramResponse {
+            program_id: program_id.to_string(),
+            programdata_address: programdata_address.to_string(),
+            buffer_address,
+            authority: readback.upgrade_authority.to_string(),
+            network,
+            genesis_hash,
+            program_bytes: program_bytes.len(),
+            max_data_len,
+            program_sha256,
+            temporary_buffer_rent_lamports: buffer_lamports,
+            program_rent_lamports: program_lamports,
+            programdata_rent_lamports: programdata_lamports,
+            rent_lamports: final_rent_lamports,
+            estimated_transaction_fees_lamports: 0,
+            fee_rate_reserve_lamports: 0,
+            recovery_write_reserve_lamports: 0,
+            total_fee_budget_lamports: 0,
+            estimated_required_balance_lamports: 0,
+            create_buffer_signature,
+            skipped_write_chunks: program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).count(),
+            write_signatures,
+            deploy_signature,
+            finalized_slot: existing_finalized_slot,
+            deployed_slot: readback.deployed_slot,
+            readback_verified: true,
+            journal_revision,
+            attempt_evidence_version,
+            deployment_attempts,
+            status: "already_deployed_verified".to_string(),
+        }));
+    }
+
+    let deploy_attempts = deployment_attempts
+        .iter()
+        .filter(|attempt| attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_DEPLOY)
+        .collect::<Vec<_>>();
+    for attempt in &deploy_attempts {
+        if deployment_attempt_is_blocking_terminal(&attempt.status) {
+            return Err(deployment_journal_error(format!(
+                "deploy attempt {} 已处于终态 {}，但 finalized Program 不存在；禁止自动重签",
+                attempt.signature, attempt.status
+            )));
+        }
+        if deployment_attempt_is_active(&attempt.status) {
+            let completed_writes = deployment_journal
+                .as_ref()
+                .map(|record| record.completed_writes)
+                .unwrap_or_default();
+            reconcile_absent_deployment_attempt(
+                &client,
+                &mut deployment_journal,
+                attempt,
+                DEPLOYMENT_STATUS_BUFFER_FINALIZED,
+                completed_writes,
+                |client, min_context_slot| {
+                    confirm_deploy_attempt_still_absent(
+                        client,
+                        &program_id,
+                        &programdata_address,
+                        min_context_slot,
+                    )
+                },
+            )?;
+        }
+    }
+    if deployment_journal.as_ref().is_some_and(|record| {
+        matches!(
+            record.status.as_str(),
+            DEPLOYMENT_STATUS_DEPLOY_SIGNED
+                | DEPLOYMENT_STATUS_DEPLOY_RECONCILE
+                | DEPLOYMENT_STATUS_DEPLOY_FINALIZED
+                | DEPLOYMENT_STATUS_FINALIZED
+        ) && deploy_attempts.is_empty()
+    }) {
+        return Err(deployment_journal_error(
+            "journal 处于 deploy 状态但缺少完整 signature/last-valid-block-height attempt 证据",
+        ));
+    }
+
+    let mut buffer_keypair = (journal_buffer_address.is_none()
+        && requested_resume_buffer_address.is_none())
+    .then(Keypair::new);
+    let mut buffer_address = journal_buffer_address
+        .or(requested_resume_buffer_address)
+        .or_else(|| buffer_keypair.as_ref().map(|keypair| keypair.pubkey()))
+        .ok_or_else(|| ApiError {
+            message: "无法确定部署 Buffer 地址".to_string(),
+        })?;
+    let mut rotating_create_buffer = false;
+
+    let (mut write_plan, resume_buffer_lamports) = if buffer_keypair.is_none() {
+        let response = client
+            .get_account_with_commitment(&buffer_address, CommitmentConfig::finalized())
+            .map_err(|error| ApiError {
+                message: format!("读取恢复 Buffer {} 失败: {error}", buffer_address),
+            })?;
+        if let Some(account) = response.value {
+            if account.lamports < buffer_lamports {
+                return Err(ApiError {
+                    message: format!(
+                        "恢复 Buffer {} 余额为 {} lamports，低于当前所需免租金额 {}",
+                        buffer_address, account.lamports, buffer_lamports
+                    ),
+                });
+            }
+            let plan = program_deploy::verify_resume_buffer(
+                &payer_pubkey,
+                &program_bytes,
+                PROGRAM_WRITE_CHUNK_BYTES,
+                &account.owner,
+                account.executable,
+                &account.data,
+            )
+            .map_err(|error| ApiError {
+                message: format!("恢复 Buffer {} 校验失败: {error}", buffer_address),
+            })?;
+            for attempt in deployment_attempts.iter().filter(|attempt| {
+                attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER
+                    && attempt.buffer_address == buffer_address.to_string()
+                    && deployment_attempt_is_active(&attempt.status)
+            }) {
+                transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &attempt.signature,
+                    &attempt.status,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+                    DEPLOYMENT_STATUS_BUFFER_READY,
+                    plan.completed_chunks,
+                )?;
+            }
+            (plan, account.lamports)
+        } else {
+            let record = deployment_journal.as_ref().ok_or_else(|| ApiError {
+                message: format!(
+                    "恢复 Buffer {} 在 finalized 状态下不存在，且没有可审计的 create attempt；拒绝自动创建新 Buffer",
+                    buffer_address
+                ),
+            })?;
+            if record.completed_writes != 0
+                || deployment_attempts.iter().any(|attempt| {
+                    matches!(
+                        attempt.stage.as_str(),
+                        wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE
+                            | wallet_store::PROGRAM_DEPLOYMENT_STAGE_DEPLOY
+                    )
+                })
+            {
+                return Err(deployment_journal_error(format!(
+                    "Buffer {} 不存在，但 journal 已包含 write/deploy 证据；拒绝轮换地址",
+                    buffer_address
+                )));
+            }
+            let create_attempts = deployment_attempts
+                .iter()
+                .filter(|attempt| {
+                    attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER
+                        && attempt.buffer_address == buffer_address.to_string()
+                })
+                .collect::<Vec<_>>();
+            if let Some(attempt) = create_attempts
+                .iter()
+                .find(|attempt| deployment_attempt_is_blocking_terminal(&attempt.status))
+            {
+                return Err(deployment_journal_error(format!(
+                    "create-buffer attempt {} 已处于终态 {}，但 finalized Buffer 不存在；禁止自动轮换",
+                    attempt.signature, attempt.status
+                )));
+            }
+            let active_create_attempts = create_attempts
+                .iter()
+                .filter(|attempt| deployment_attempt_is_active(&attempt.status))
+                .copied()
+                .collect::<Vec<_>>();
+            if active_create_attempts.len() > 1 {
+                return Err(deployment_journal_error(
+                    "同一 Buffer 存在多个活动 create attempt，拒绝自动恢复",
+                ));
+            }
+            if let Some(attempt) = active_create_attempts.first() {
+                reconcile_absent_deployment_attempt(
+                    &client,
+                    &mut deployment_journal,
+                    attempt,
+                    DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE,
+                    0,
+                    |client, min_context_slot| {
+                        confirm_create_buffer_attempt_still_absent(
+                            client,
+                            &buffer_address,
+                            min_context_slot,
+                        )
+                    },
+                )?;
+            } else if !create_attempts.iter().any(|attempt| {
+                attempt.status == wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EXPIRED_ABSENT
+            }) {
+                return Err(deployment_journal_error(format!(
+                    "Buffer {} 不存在且缺少完整 create signature/last-valid-block-height 证据",
+                    buffer_address
+                )));
+            }
+            let replacement = Keypair::new();
+            buffer_address = replacement.pubkey();
+            buffer_keypair = Some(replacement);
+            rotating_create_buffer = true;
+            (
+                program_deploy::BufferWritePlan {
+                    completed_chunks: 0,
+                    pending_chunk_indexes: (0..program_bytes
+                        .chunks(PROGRAM_WRITE_CHUNK_BYTES)
+                        .count())
+                        .collect(),
+                },
+                0,
+            )
+        }
+    } else {
+        (
+            program_deploy::BufferWritePlan {
+                completed_chunks: 0,
+                pending_chunk_indexes: (0..program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).count())
+                    .collect(),
+            },
+            0,
+        )
+    };
+
+    if buffer_keypair.is_none() {
+        let chain_completed = write_plan.completed_chunks;
+        let total_chunks = chain_completed
+            .checked_add(write_plan.pending_chunk_indexes.len())
+            .ok_or_else(|| deployment_journal_error("Buffer chunk 总数溢出"))?;
+        if let Some(record) = deployment_journal.as_ref() {
+            if record.attempt_evidence_version == 0 {
+                if record.completed_writes > chain_completed {
+                    return Err(deployment_journal_error(format!(
+                        "旧 journal 的完成计数 {} 大于 finalized Buffer 的 {}；该旧值可能来自 confirmed 状态，拒绝自动迁移",
+                        record.completed_writes, chain_completed
+                    )));
+                }
+                match record.status.as_str() {
+                    DEPLOYMENT_STATUS_WRITE_SIGNED
+                    | DEPLOYMENT_STATUS_WRITE_CONFIRMED
+                    | DEPLOYMENT_STATUS_WRITE_RECONCILE => {
+                        let last_index = record.last_write_chunk_index.ok_or_else(|| {
+                            deployment_journal_error(
+                                "旧 write journal 缺少 chunk index，无法证明此前尝试均已落地",
+                            )
+                        })?;
+                        if last_index >= total_chunks
+                            || write_plan
+                                .pending_chunk_indexes
+                                .iter()
+                                .any(|pending| *pending < last_index)
+                        {
+                            return Err(deployment_journal_error(
+                                "旧 write journal 存在无法还原的早期 pending chunk，拒绝自动重签",
+                            ));
+                        }
+                        if write_plan.pending_chunk_indexes.contains(&last_index)
+                            && !deployment_attempts.iter().any(|attempt| {
+                                attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE
+                                    && attempt.chunk_index == Some(last_index)
+                            })
+                        {
+                            return Err(deployment_journal_error(
+                                "旧 write journal 的最后一个 pending chunk 缺少完整签名证据",
+                            ));
+                        }
+                    }
+                    DEPLOYMENT_STATUS_BUFFER_READY => {
+                        if chain_completed < record.completed_writes {
+                            return Err(deployment_journal_error(format!(
+                                "finalized Buffer 仅完成 {} 块，少于旧 journal 的 {} 块",
+                                chain_completed, record.completed_writes
+                            )));
+                        }
+                    }
+                    DEPLOYMENT_STATUS_BUFFER_FINALIZED
+                    | DEPLOYMENT_STATUS_DEPLOY_SIGNED
+                    | DEPLOYMENT_STATUS_DEPLOY_RECONCILE
+                    | DEPLOYMENT_STATUS_DEPLOY_FINALIZED
+                    | DEPLOYMENT_STATUS_FINALIZED => {
+                        if !write_plan.pending_chunk_indexes.is_empty() {
+                            return Err(deployment_journal_error(
+                                "旧 journal 声称 Buffer 已 finalized，但回读仍存在 pending chunk",
+                            ));
+                        }
+                    }
+                    DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED
+                    | DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE => {
+                        if record.completed_writes != 0 {
+                            return Err(deployment_journal_error(
+                                "旧 create-buffer journal 含非零写入进度，拒绝迁移",
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            } else if chain_completed < record.completed_writes {
+                return Err(deployment_journal_error(format!(
+                    "finalized Buffer 仅完成 {} 块，少于 journal 的 {} 块",
+                    chain_completed, record.completed_writes
+                )));
+            }
+        }
+
+        for attempt in deployment_attempts
+            .iter()
+            .filter(|attempt| attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE)
+        {
+            let index = attempt
+                .chunk_index
+                .ok_or_else(|| deployment_journal_error("write attempt 缺少 chunk index"))?;
+            if index >= total_chunks {
+                return Err(deployment_journal_error(format!(
+                    "write attempt {} 的 chunk index {} 超出总块数 {}",
+                    attempt.signature, index, total_chunks
+                )));
+            }
+            let pending = write_plan.pending_chunk_indexes.contains(&index);
+            if pending && deployment_attempt_is_blocking_terminal(&attempt.status) {
+                return Err(deployment_journal_error(format!(
+                    "write chunk {} 的 attempt {} 已处于终态 {}，但 finalized Buffer 仍未包含该块",
+                    index, attempt.signature, attempt.status
+                )));
+            }
+            if !deployment_attempt_is_active(&attempt.status) {
+                continue;
+            }
+            let completed_for_transition = deployment_journal
+                .as_ref()
+                .map(|_| chain_completed)
+                .unwrap_or(chain_completed);
+            if pending {
+                reconcile_absent_deployment_attempt(
+                    &client,
+                    &mut deployment_journal,
+                    attempt,
+                    DEPLOYMENT_STATUS_BUFFER_READY,
+                    completed_for_transition,
+                    |client, min_context_slot| {
+                        confirm_write_attempt_still_absent(
+                            client,
+                            &buffer_address,
+                            &payer_pubkey,
+                            &program_bytes,
+                            &write_plan,
+                            index,
+                            min_context_slot,
+                        )
+                    },
+                )?;
+            } else {
+                transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &attempt.signature,
+                    &attempt.status,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+                    DEPLOYMENT_STATUS_BUFFER_READY,
+                    completed_for_transition,
+                )?;
+            }
+        }
+
+        if let Some(record) = deployment_journal.as_ref() {
+            if record.attempt_evidence_version == 0 {
+                let promoted = wallet_store::promote_program_deployment_attempt_evidence(
+                    record,
+                    DEPLOYMENT_STATUS_BUFFER_READY,
+                    chain_completed,
+                )
+                .map_err(|message| ApiError { message })?;
+                deployment_journal = Some(promoted);
+            } else if record.completed_writes != chain_completed
+                || matches!(
+                    record.status.as_str(),
+                    DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED
+                        | DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE
+                        | DEPLOYMENT_STATUS_WRITE_SIGNED
+                        | DEPLOYMENT_STATUS_WRITE_CONFIRMED
+                        | DEPLOYMENT_STATUS_WRITE_RECONCILE
+                        | DEPLOYMENT_STATUS_DEPLOY_SIGNED
+                        | DEPLOYMENT_STATUS_DEPLOY_RECONCILE
+                        | DEPLOYMENT_STATUS_DEPLOY_FINALIZED
+                )
+            {
+                transition_deployment_journal(
+                    &mut deployment_journal,
+                    DEPLOYMENT_STATUS_BUFFER_READY,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    chain_completed,
+                    None,
+                    None,
+                )?;
+            }
+        }
+    }
+
+    let create_buffer_ixs = if buffer_keypair.is_some() {
+        Some(
+            loader_v3_instruction::create_buffer(
+                &payer_pubkey,
+                &buffer_address,
+                &payer_pubkey,
+                buffer_lamports,
+                program_bytes.len(),
+            )
+            .map_err(|e| ApiError {
+                message: format!("创建 buffer 指令失败: {}", e),
+            })?,
+        )
     } else {
         None
     };
 
-    let create_buffer_ixs = loader_v3_instruction::create_buffer(
+    #[allow(deprecated)]
+    let deploy_ixs = loader_v3_instruction::deploy_with_max_program_len(
         &payer_pubkey,
-        &buffer_keypair.pubkey(),
-        &payer_pubkey,
-        buffer_lamports,
-        program_bytes.len(),
-    )
-    .map_err(|e| ApiError {
-        message: format!("创建 buffer 指令失败: {}", e),
-    })?;
-    sign_and_send(
-        &client,
-        create_buffer_ixs,
-        &[&payer, &buffer_keypair],
-        &payer_pubkey,
-    )?;
-
-    let mut write_signatures = Vec::new();
-    for (index, chunk) in program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).enumerate() {
-        let offset = index
-            .checked_mul(PROGRAM_WRITE_CHUNK_BYTES)
-            .and_then(|value| u32::try_from(value).ok())
-            .ok_or_else(|| ApiError {
-                message: "Program 写入偏移超出范围".to_string(),
-            })?;
-        let write_ix = loader_v3_instruction::write(
-            &buffer_keypair.pubkey(),
-            &payer_pubkey,
-            offset,
-            chunk.to_vec(),
-        );
-        write_signatures.push(sign_and_send(
-            &client,
-            vec![write_ix],
-            &[&payer],
-            &payer_pubkey,
-        )?);
-    }
-
-    let mut deploy_ixs = loader_v3_instruction::deploy_with_max_program_len(
-        &payer_pubkey,
-        &program_keypair.pubkey(),
-        &buffer_keypair.pubkey(),
+        &program_id,
+        &buffer_address,
         &payer_pubkey,
         program_lamports,
         max_data_len,
@@ -4391,43 +8020,668 @@ async fn deploy_program(
     .map_err(|e| ApiError {
         message: format!("创建 deploy 指令失败: {}", e),
     })?;
-    if let Some(vault) = &target_vault {
-        deploy_ixs.push(squads_v4::set_program_upgrade_authority_ix(
-            &program_keypair.pubkey(),
+
+    let fee_blockhash = client.get_latest_blockhash().map_err(|error| ApiError {
+        message: format!("获取交易费估算 blockhash 失败: {error}"),
+    })?;
+    let create_buffer_fee = create_buffer_ixs
+        .as_deref()
+        .map(|instructions| {
+            estimate_instruction_fee(
+                &client,
+                instructions,
+                &payer_pubkey,
+                &fee_blockhash,
+                "create-buffer",
+            )
+        })
+        .transpose()?
+        .unwrap_or(0);
+    let mut write_fee_by_chunk_len = HashMap::<usize, u64>::new();
+    let mut write_fees = 0u64;
+    let mut estimated_write_fee_lamports = 0u64;
+    for index in &write_plan.pending_chunk_indexes {
+        let start = index
+            .checked_mul(PROGRAM_WRITE_CHUNK_BYTES)
+            .ok_or_else(|| ApiError {
+                message: "Program 写入偏移超出范围".to_string(),
+            })?;
+        let chunk = program_bytes
+            .get(
+                start
+                    ..start
+                        .saturating_add(PROGRAM_WRITE_CHUNK_BYTES)
+                        .min(program_bytes.len()),
+            )
+            .ok_or_else(|| ApiError {
+                message: "Program 写入块超出制品范围".to_string(),
+            })?;
+        let fee = if let Some(fee) = write_fee_by_chunk_len.get(&chunk.len()) {
+            *fee
+        } else {
+            let offset = u32::try_from(start).map_err(|_| ApiError {
+                message: "Program 写入偏移超出范围".to_string(),
+            })?;
+            let instruction = loader_v3_instruction::write(
+                &buffer_address,
+                &payer_pubkey,
+                offset,
+                chunk.to_vec(),
+            );
+            let fee = estimate_instruction_fee(
+                &client,
+                &[instruction],
+                &payer_pubkey,
+                &fee_blockhash,
+                "write-buffer",
+            )?;
+            write_fee_by_chunk_len.insert(chunk.len(), fee);
+            fee
+        };
+        estimated_write_fee_lamports = estimated_write_fee_lamports.max(fee);
+        write_fees = write_fees.checked_add(fee).ok_or_else(|| ApiError {
+            message: "Program 写入交易费总额溢出".to_string(),
+        })?;
+    }
+    let deploy_fee = estimate_instruction_fee(
+        &client,
+        &deploy_ixs,
+        &payer_pubkey,
+        &fee_blockhash,
+        "deploy",
+    )?;
+    let estimated_transaction_fees_lamports = create_buffer_fee
+        .checked_add(write_fees)
+        .and_then(|value| value.checked_add(deploy_fee))
+        .ok_or_else(|| ApiError {
+            message: "部署交易费总额溢出".to_string(),
+        })?;
+    let fee_budget = program_deploy::deployment_fee_budget(
+        estimated_transaction_fees_lamports,
+        estimated_write_fee_lamports,
+        write_plan.pending_chunk_indexes.len(),
+    )
+    .map_err(|message| ApiError { message })?;
+    let rent_budget = program_deploy::deployment_rent_budget(
+        buffer_lamports,
+        program_lamports,
+        programdata_lamports,
+        buffer_keypair.is_none().then_some(resume_buffer_lamports),
+    )
+    .map_err(|message| ApiError { message })?;
+    let required_rent_balance = rent_budget.required_rent_balance_lamports;
+    let estimated_required_balance_lamports = required_rent_balance
+        .checked_add(fee_budget.total_fee_budget_lamports)
+        .ok_or_else(|| ApiError {
+            message: "部署所需余额总额溢出".to_string(),
+        })?;
+    let payer_balance = client
+        .get_balance(&payer_pubkey)
+        .map_err(|error| ApiError {
+            message: format!("查询部署钱包余额失败: {error}"),
+        })?;
+    if payer_balance < estimated_required_balance_lamports {
+        return Err(ApiError {
+            message: format!(
+                "部署钱包余额不足：当前 {} lamports，至少需要 {} lamports（租金需求 {} + 当前估算交易费 {} + 费率预留 {} + 恢复写入预留 {}）",
+                payer_balance,
+                estimated_required_balance_lamports,
+                required_rent_balance,
+                estimated_transaction_fees_lamports,
+                fee_budget.fee_rate_reserve_lamports,
+                fee_budget.recovery_write_reserve_lamports
+            ),
+        });
+    }
+
+    if deployment_journal.is_none() && buffer_keypair.is_none() {
+        let record = wallet_store::ProgramDeploymentRecord {
+            genesis_hash: genesis_hash.clone(),
+            program_id: program_id.to_string(),
+            program_sha256: program_sha256.clone(),
+            program_len: program_bytes.len(),
+            max_data_len,
+            upgrade_authority: expected_upgrade_authority.to_string(),
+            buffer_address: buffer_address.to_string(),
+            status: DEPLOYMENT_STATUS_BUFFER_READY.to_string(),
+            create_signature: None,
+            create_last_valid_block_height: None,
+            last_write_signature: None,
+            last_write_chunk_index: None,
+            last_write_last_valid_block_height: None,
+            completed_writes: write_plan.completed_chunks,
+            deploy_signature: None,
+            deploy_last_valid_block_height: None,
+            attempt_evidence_version: wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION,
+            revision: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let (stored, inserted) = wallet_store::reserve_program_deployment(record)
+            .map_err(|message| ApiError { message })?;
+        if !inserted {
+            validate_deployment_journal_binding(
+                &stored,
+                &genesis_hash,
+                &program_id,
+                &program_sha256,
+                program_bytes.len(),
+                max_data_len,
+                &expected_upgrade_authority,
+                Some(&buffer_address),
+            )?;
+            return Err(deployment_journal_error(format!(
+                "另一部署请求已抢先预留 Buffer {}；当前请求未发送交易，请重新进入恢复流程",
+                stored.buffer_address
+            )));
+        }
+        deployment_journal = Some(stored);
+    }
+
+    if let (Some(instructions), Some(buffer_signer)) =
+        (create_buffer_ixs.as_ref(), buffer_keypair.as_ref())
+    {
+        let (blockhash, last_valid_block_height) = client
+            .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+            .map_err(|error| ApiError {
+                message: format!("获取 create-buffer blockhash 失败: {error}"),
+            })?;
+        let transaction = Transaction::new_signed_with_payer(
+            instructions,
+            Some(&payer_pubkey),
+            &[&payer, buffer_signer],
+            blockhash,
+        );
+        let local_signature = transaction
+            .signatures
+            .first()
+            .copied()
+            .ok_or_else(|| ApiError {
+                message: "create-buffer 交易缺少本地签名".to_string(),
+            })?;
+        let record = wallet_store::ProgramDeploymentRecord {
+            genesis_hash: genesis_hash.clone(),
+            program_id: program_id.to_string(),
+            program_sha256: program_sha256.clone(),
+            program_len: program_bytes.len(),
+            max_data_len,
+            upgrade_authority: expected_upgrade_authority.to_string(),
+            buffer_address: buffer_address.to_string(),
+            status: DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED.to_string(),
+            create_signature: Some(local_signature.to_string()),
+            create_last_valid_block_height: Some(last_valid_block_height),
+            last_write_signature: None,
+            last_write_chunk_index: None,
+            last_write_last_valid_block_height: None,
+            completed_writes: 0,
+            deploy_signature: None,
+            deploy_last_valid_block_height: None,
+            attempt_evidence_version: wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION,
+            revision: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let create_attempt = new_program_deployment_attempt(
+            &record,
+            wallet_store::PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER,
+            None,
+            &local_signature,
+            last_valid_block_height,
+        );
+        if rotating_create_buffer {
+            let current = deployment_journal
+                .as_ref()
+                .ok_or_else(|| deployment_journal_error("Buffer 轮换时部署 journal 不存在"))?;
+            let stored = wallet_store::rotate_program_deployment_create_attempt(
+                current,
+                create_attempt,
+                DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED,
+            )
+            .map_err(|message| ApiError { message })?;
+            deployment_journal = Some(stored);
+        } else {
+            let (stored, inserted) =
+                wallet_store::reserve_program_deployment_with_attempt(record, create_attempt)
+                    .map_err(|message| ApiError { message })?;
+            if !inserted {
+                validate_deployment_journal_binding(
+                    &stored,
+                    &genesis_hash,
+                    &program_id,
+                    &program_sha256,
+                    program_bytes.len(),
+                    max_data_len,
+                    &expected_upgrade_authority,
+                    None,
+                )?;
+                return Err(deployment_journal_error(format!(
+                    "另一部署请求已抢先预留 Buffer {}；当前 Buffer {} 的本地签名交易尚未发送，请重新进入恢复流程",
+                    stored.buffer_address, buffer_address
+                )));
+            }
+            deployment_journal = Some(stored);
+        }
+        let context = format!("Program ID: {program_id}；Buffer: {buffer_address}");
+        let submission = submit_signed_transaction_once(
+            &client,
+            &transaction,
+            "创建 Buffer",
+            &context,
+            CommitmentConfig::finalized(),
+            "finalized",
+            Duration::from_secs(90),
+        )
+        .await;
+        match submission {
+            Ok((signature, _)) => {
+                if signature != local_signature {
+                    return Err(deployment_journal_error(
+                        "RPC 返回的 create-buffer 签名与本地已持久化签名不一致",
+                    ));
+                }
+                transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &local_signature.to_string(),
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_CONFIRMED,
+                    DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE,
+                    0,
+                )?;
+                let finalized_account = client
+                    .get_account_with_commitment(&buffer_address, CommitmentConfig::finalized())
+                    .map_err(|error| ApiError {
+                        message: format!(
+                            "create-buffer 签名已 finalized，但回读 Buffer {} 失败: {error}",
+                            buffer_address
+                        ),
+                    })?
+                    .value
+                    .ok_or_else(|| {
+                        deployment_journal_error(format!(
+                            "create-buffer 签名 {} 已 finalized，但 Buffer {} 不存在",
+                            local_signature, buffer_address
+                        ))
+                    })?;
+                write_plan = program_deploy::verify_resume_buffer(
+                    &payer_pubkey,
+                    &program_bytes,
+                    PROGRAM_WRITE_CHUNK_BYTES,
+                    &finalized_account.owner,
+                    finalized_account.executable,
+                    &finalized_account.data,
+                )
+                .map_err(|error| {
+                    deployment_journal_error(format!(
+                        "create-buffer 签名已 finalized，但 Buffer 回读校验失败: {error}"
+                    ))
+                })?;
+                transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &local_signature.to_string(),
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_CONFIRMED,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+                    DEPLOYMENT_STATUS_BUFFER_READY,
+                    write_plan.completed_chunks,
+                )?;
+            }
+            Err(error) => {
+                let journal_error = transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &local_signature.to_string(),
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_REQUIRES_RECONCILIATION,
+                    DEPLOYMENT_STATUS_CREATE_BUFFER_RECONCILE,
+                    0,
+                )
+                .err()
+                .map(|journal_error| format!("；journal 更新失败: {}", journal_error.message))
+                .unwrap_or_default();
+                return Err(ApiError {
+                    message: format!(
+                        "{}；Buffer {} 已记录，本地签名 {}，last valid block height {}{}",
+                        error.message,
+                        buffer_address,
+                        local_signature,
+                        last_valid_block_height,
+                        journal_error
+                    ),
+                });
+            }
+        }
+    }
+
+    let create_buffer_signature = deployment_journal
+        .as_ref()
+        .and_then(|record| record.create_signature.clone());
+
+    let mut write_signatures = Vec::with_capacity(write_plan.pending_chunk_indexes.len());
+    let completed_writes = write_plan.completed_chunks;
+    let total_pending_writes = write_plan.pending_chunk_indexes.len();
+    for (position, index) in write_plan.pending_chunk_indexes.iter().copied().enumerate() {
+        let start = index
+            .checked_mul(PROGRAM_WRITE_CHUNK_BYTES)
+            .ok_or_else(|| ApiError {
+                message: "Program 写入偏移超出范围".to_string(),
+            })?;
+        let end = start
+            .saturating_add(PROGRAM_WRITE_CHUNK_BYTES)
+            .min(program_bytes.len());
+        let chunk = program_bytes.get(start..end).ok_or_else(|| ApiError {
+            message: "Program 写入块超出制品范围".to_string(),
+        })?;
+        let offset = u32::try_from(start).map_err(|_| ApiError {
+            message: "Program 写入偏移超出范围".to_string(),
+        })?;
+        let write_ix =
+            loader_v3_instruction::write(&buffer_address, &payer_pubkey, offset, chunk.to_vec());
+        let (blockhash, write_last_valid_block_height) = client
+            .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+            .map_err(|error| ApiError {
+                message: format!("获取 write-buffer blockhash 失败: {error}"),
+            })?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[write_ix],
+            Some(&payer_pubkey),
+            &[&payer],
+            blockhash,
+        );
+        let local_signature = transaction
+            .signatures
+            .first()
+            .copied()
+            .ok_or_else(|| ApiError {
+                message: "write-buffer 交易缺少本地签名".to_string(),
+            })?;
+        let attempt = new_program_deployment_attempt(
+            deployment_journal.as_ref().ok_or_else(|| ApiError {
+                message: "部署 journal 不存在，拒绝写入 Buffer".to_string(),
+            })?,
+            wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE,
+            Some(index),
+            &local_signature,
+            write_last_valid_block_height,
+        );
+        begin_deployment_attempt(
+            &mut deployment_journal,
+            attempt,
+            DEPLOYMENT_STATUS_WRITE_SIGNED,
+            completed_writes,
+        )?;
+        let context = format!(
+            "Program ID: {program_id}；Buffer: {buffer_address}；写入进度: {}/{}；chunk index: {}",
+            position + 1,
+            total_pending_writes,
+            index
+        );
+        let submission = submit_signed_transaction_once(
+            &client,
+            &transaction,
+            "写入 Buffer",
+            &context,
+            CommitmentConfig::confirmed(),
+            "confirmed",
+            Duration::from_secs(60),
+        )
+        .await;
+        match submission {
+            Ok((signature, _)) => {
+                if signature != local_signature {
+                    return Err(deployment_journal_error(format!(
+                        "write chunk {} 的 RPC 签名与本地已持久化签名不一致",
+                        index
+                    )));
+                }
+                transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &local_signature.to_string(),
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_CONFIRMED,
+                    DEPLOYMENT_STATUS_WRITE_CONFIRMED,
+                    completed_writes,
+                )?;
+                write_signatures.push(signature.to_string());
+            }
+            Err(error) => {
+                let journal_error = transition_deployment_attempt(
+                    &mut deployment_journal,
+                    &local_signature.to_string(),
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+                    wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_REQUIRES_RECONCILIATION,
+                    DEPLOYMENT_STATUS_WRITE_RECONCILE,
+                    completed_writes,
+                )
+                .err()
+                .map(|journal_error| format!("；journal 更新失败: {}", journal_error.message))
+                .unwrap_or_default();
+                return Err(ApiError {
+                    message: format!(
+                        "{}；Buffer {} 的 chunk {} 已记录本地签名 {}{}",
+                        error.message, buffer_address, index, local_signature, journal_error
+                    ),
+                });
+            }
+        }
+    }
+
+    let buffer_finalized_deadline = Instant::now() + Duration::from_secs(120);
+    let finalized_completed_writes = loop {
+        let response = client
+            .get_account_with_commitment(&buffer_address, CommitmentConfig::finalized())
+            .map_err(|error| ApiError {
+                message: format!(
+                    "部署前 finalized 回读 Buffer {} 失败: {error}",
+                    buffer_address
+                ),
+            })?;
+        let account = response.value.ok_or_else(|| ApiError {
+            message: format!("部署前 Buffer {} 不存在", buffer_address),
+        })?;
+        let finalized_plan = program_deploy::verify_resume_buffer(
             &payer_pubkey,
-            vault,
+            &program_bytes,
+            PROGRAM_WRITE_CHUNK_BYTES,
+            &account.owner,
+            account.executable,
+            &account.data,
+        )
+        .map_err(|error| ApiError {
+            message: format!("部署前 Buffer {} 回读校验失败: {error}", buffer_address),
+        })?;
+        if finalized_plan.pending_chunk_indexes.is_empty() {
+            break finalized_plan.completed_chunks;
+        }
+        if Instant::now() >= buffer_finalized_deadline {
+            return Err(ApiError {
+                message: format!(
+                    "Buffer {} 仍有 {} 个块未 finalized；请保留该地址并使用恢复部署，不能盲目创建新 Buffer",
+                    buffer_address,
+                    finalized_plan.pending_chunk_indexes.len()
+                ),
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    };
+    let current_journal = deployment_journal.as_ref().ok_or_else(|| ApiError {
+        message: "部署 journal 不存在，拒绝完成 Buffer 回读".to_string(),
+    })?;
+    let active_attempts = wallet_store::load_active_program_deployment_attempts(
+        &current_journal.genesis_hash,
+        &current_journal.program_id,
+    )
+    .map_err(|message| ApiError { message })?;
+    for attempt in active_attempts
+        .iter()
+        .filter(|attempt| attempt.stage == wallet_store::PROGRAM_DEPLOYMENT_STAGE_WRITE)
+    {
+        transition_deployment_attempt(
+            &mut deployment_journal,
+            &attempt.signature,
+            &attempt.status,
+            wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+            DEPLOYMENT_STATUS_WRITE_CONFIRMED,
+            finalized_completed_writes,
+        )?;
+    }
+    transition_deployment_journal(
+        &mut deployment_journal,
+        DEPLOYMENT_STATUS_BUFFER_FINALIZED,
+        None,
+        None,
+        None,
+        None,
+        None,
+        finalized_completed_writes,
+        None,
+        None,
+    )?;
+
+    let (blockhash, deploy_last_valid_block_height) = client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .map_err(|error| ApiError {
+            message: format!("获取 deploy blockhash 失败: {error}"),
+        })?;
+    let deploy_transaction = Transaction::new_signed_with_payer(
+        &deploy_ixs,
+        Some(&payer_pubkey),
+        &[&payer, &program_keypair],
+        blockhash,
+    );
+    let local_deploy_signature =
+        deploy_transaction
+            .signatures
+            .first()
+            .copied()
+            .ok_or_else(|| ApiError {
+                message: "deploy 交易缺少本地签名".to_string(),
+            })?;
+    simulate_program_deployment_transaction(&client, &deploy_transaction, "deploy")?;
+    let deploy_attempt = new_program_deployment_attempt(
+        deployment_journal.as_ref().ok_or_else(|| ApiError {
+            message: "部署 journal 不存在，拒绝记录 deploy attempt".to_string(),
+        })?,
+        wallet_store::PROGRAM_DEPLOYMENT_STAGE_DEPLOY,
+        None,
+        &local_deploy_signature,
+        deploy_last_valid_block_height,
+    );
+    begin_deployment_attempt(
+        &mut deployment_journal,
+        deploy_attempt,
+        DEPLOYMENT_STATUS_DEPLOY_SIGNED,
+        finalized_completed_writes,
+    )?;
+    let deploy_context = format!("Program ID: {program_id}；Buffer: {buffer_address}");
+    let deploy_submission = submit_signed_transaction_once(
+        &client,
+        &deploy_transaction,
+        "部署",
+        &deploy_context,
+        CommitmentConfig::finalized(),
+        "finalized",
+        Duration::from_secs(90),
+    )
+    .await;
+    let (deploy_signature, finalized_slot) = match deploy_submission {
+        Ok(result) => result,
+        Err(error) => {
+            let journal_error = transition_deployment_attempt(
+                &mut deployment_journal,
+                &local_deploy_signature.to_string(),
+                wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+                wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_REQUIRES_RECONCILIATION,
+                DEPLOYMENT_STATUS_DEPLOY_RECONCILE,
+                finalized_completed_writes,
+            )
+            .err()
+            .map(|journal_error| format!("；journal 更新失败: {}", journal_error.message))
+            .unwrap_or_default();
+            return Err(ApiError {
+                message: format!(
+                    "{}；Program {} 已记录本地部署签名 {}，last valid block height {}{}",
+                    error.message,
+                    program_id,
+                    local_deploy_signature,
+                    deploy_last_valid_block_height,
+                    journal_error
+                ),
+            });
+        }
+    };
+    if deploy_signature != local_deploy_signature {
+        return Err(deployment_journal_error(
+            "RPC 返回的 deploy 签名与本地已持久化签名不一致",
         ));
     }
-    let deploy_signature = sign_and_send(
-        &client,
-        deploy_ixs,
-        &[&payer, &program_keypair],
-        &payer_pubkey,
+    transition_deployment_attempt(
+        &mut deployment_journal,
+        &local_deploy_signature.to_string(),
+        wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+        wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_CONFIRMED,
+        DEPLOYMENT_STATUS_DEPLOY_FINALIZED,
+        finalized_completed_writes,
     )?;
-    let programdata_address = get_program_data_address(&program_keypair.pubkey());
-    let (authority, vault, authority_signature) = if let Some(vault) = target_vault {
-        (
-            vault.to_string(),
-            Some(vault.to_string()),
-            Some(deploy_signature.clone()),
-        )
-    } else {
-        (payer_pubkey.to_string(), None, None)
-    };
+    let readback = wait_for_finalized_deployment_readback(
+        &client,
+        &program_id,
+        &programdata_address,
+        &expected_upgrade_authority,
+        &program_bytes,
+        max_data_len,
+        finalized_slot,
+    )
+    .await
+    .map_err(|error| ApiError {
+        message: format!(
+            "{}；Program ID: {}，部署签名: {}",
+            error.message, program_id, deploy_signature
+        ),
+    })?;
+    if readback.program_sha256 != program_sha256 {
+        return Err(ApiError {
+            message: "finalized 回读 SHA-256 与本地已验证哈希不一致".to_string(),
+        });
+    }
+    transition_deployment_attempt(
+        &mut deployment_journal,
+        &local_deploy_signature.to_string(),
+        wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_CONFIRMED,
+        wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED,
+        DEPLOYMENT_STATUS_FINALIZED,
+        finalized_completed_writes,
+    )?;
+    let (journal_revision, attempt_evidence_version, deployment_attempts) =
+        load_deployment_receipt_evidence(deployment_journal.as_ref())?;
 
     Ok(Json(DeployProgramResponse {
-        program_id: program_keypair.pubkey().to_string(),
+        program_id: program_id.to_string(),
         programdata_address: programdata_address.to_string(),
-        buffer_address: buffer_keypair.pubkey().to_string(),
-        authority,
-        vault,
-        authority_signature,
+        buffer_address: buffer_address.to_string(),
+        authority: readback.upgrade_authority.to_string(),
         network,
+        genesis_hash,
         program_bytes: program_bytes.len(),
-        rent_lamports: buffer_lamports.saturating_add(program_lamports),
+        max_data_len,
+        program_sha256,
+        temporary_buffer_rent_lamports: buffer_lamports,
+        program_rent_lamports: program_lamports,
+        programdata_rent_lamports: programdata_lamports,
+        rent_lamports: final_rent_lamports,
+        estimated_transaction_fees_lamports,
+        fee_rate_reserve_lamports: fee_budget.fee_rate_reserve_lamports,
+        recovery_write_reserve_lamports: fee_budget.recovery_write_reserve_lamports,
+        total_fee_budget_lamports: fee_budget.total_fee_budget_lamports,
+        estimated_required_balance_lamports,
+        create_buffer_signature,
+        skipped_write_chunks: write_plan.completed_chunks,
         write_signatures,
-        deploy_signature,
-        status: "success".to_string(),
+        deploy_signature: deploy_signature.to_string(),
+        finalized_slot,
+        deployed_slot: readback.deployed_slot,
+        readback_verified: true,
+        journal_revision,
+        attempt_evidence_version,
+        deployment_attempts,
+        status: "finalized".to_string(),
     }))
 }
 
@@ -4987,12 +9241,8 @@ struct SquadsPrepareUpgradeBufferResponse {
 async fn squads_prepare_upgrade_buffer(
     Json(req): Json<SquadsPrepareUpgradeBufferRequest>,
 ) -> Result<Json<SquadsPrepareUpgradeBufferResponse>, ApiError> {
-    let program_bytes = BASE64
-        .decode(req.program_so_base64.trim().as_bytes())
-        .map_err(|_| ApiError {
-            message: "无效的 Program .so base64".to_string(),
-        })?;
-    validate_program_binary(&program_bytes)?;
+    let program_bytes = decode_program_binary_base64(&req.program_so_base64)?;
+    let program_bytes = verify_program_binary_offline(program_bytes).await?;
 
     let payer = req.wallet.keypair()?;
     let payer_pubkey = payer.pubkey();
@@ -5001,6 +9251,8 @@ async fn squads_prepare_upgrade_buffer(
     let vault = squads_v4::vault_pda(&multisig, 0);
     let buffer_keypair = Keypair::new();
     let (client, network) = rpc_client_for(req.network.as_deref())?;
+    let multisig_state = load_squads_multisig(&client, &multisig)?;
+    require_squads_member(&multisig_state, &payer_pubkey)?;
     let buffer_lamports = client
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(
             program_bytes.len(),
@@ -5084,10 +9336,11 @@ struct SquadsProgramUpgradeProposalRequest {
 async fn squads_program_upgrade_proposal(
     Json(req): Json<SquadsProgramUpgradeProposalRequest>,
 ) -> Result<Json<SquadsProposalCreateResponse>, ApiError> {
+    let program_id = squads_v4::parse_pubkey(&req.program_id, "Program ID")
+        .map_err(|message| ApiError { message })?;
+
     let signer = req.wallet.keypair()?;
     let multisig_key = squads_v4::parse_pubkey(&req.multisig, "多签地址")
-        .map_err(|message| ApiError { message })?;
-    let program_id = squads_v4::parse_pubkey(&req.program_id, "Program ID")
         .map_err(|message| ApiError { message })?;
     let buffer = squads_v4::parse_pubkey(&req.buffer_address, "buffer 地址")
         .map_err(|message| ApiError { message })?;
@@ -5107,8 +9360,11 @@ async fn squads_program_upgrade_proposal(
 
     let (client, network) = rpc_client_for(req.network.as_deref())?;
     let multisig = load_squads_multisig(&client, &multisig_key)?;
+    require_squads_member(&multisig, &signer.pubkey())?;
     let transaction_index = next_squads_transaction_index(&multisig)?;
     let vault = squads_v4::vault_pda(&multisig_key, 0);
+    require_program_upgrade_authority(&client, &program_id, &vault)?;
+    require_upgrade_buffer_authority(&client, &buffer, &vault)?;
     let upgrade_ix = squads_v4::upgrade_program_ix(&program_id, &buffer, &vault, &spill);
     let (tx_create_ix, transaction, vault, _) = squads_v4::vault_transaction_create_ix(
         &multisig_key,
@@ -5280,12 +9536,16 @@ async fn squads_set_program_authority(
     let program_id = squads_v4::parse_pubkey(&req.program_id, "Program ID")
         .map_err(|message| ApiError { message })?;
     let vault = squads_v4::vault_pda(&multisig, 0);
-    let ix = squads_v4::set_program_upgrade_authority_ix(&program_id, &signer.pubkey(), &vault);
     let (client, network) = rpc_client_for(req.network.as_deref())?;
+    let multisig_state = load_squads_multisig(&client, &multisig)?;
+    require_squads_member(&multisig_state, &signer.pubkey())?;
+    let programdata_address =
+        require_program_upgrade_authority(&client, &program_id, &signer.pubkey())?;
+    let ix = squads_v4::set_program_upgrade_authority_ix(&program_id, &signer.pubkey(), &vault);
     let signature = sign_and_send_single(&client, ix, &signer)?;
     Ok(Json(SquadsSetProgramAuthorityResponse {
         program_id: program_id.to_string(),
-        programdata_address: squads_v4::programdata_address(&program_id).to_string(),
+        programdata_address: programdata_address.to_string(),
         new_authority: vault.to_string(),
         signature,
         network,
@@ -5812,9 +10072,16 @@ impl IntoResponse for ApiError {
 impl ApiError {
     fn status_code(&self) -> StatusCode {
         let message = self.message.as_str();
-        if message.contains("RPC 节点暂时无法读取") {
-            StatusCode::BAD_GATEWAY
-        } else if message.contains("卖出执行异常") || message.contains("卖出成功但未返回交易签名")
+        if message == SBF_VERIFY_BUSY_MESSAGE {
+            StatusCode::TOO_MANY_REQUESTS
+        } else if message == PROGRAM_DEPLOY_BUSY_MESSAGE
+            || message.contains("目标 Program 或 ProgramData 已存在")
+            || message.contains("部署 journal 冲突")
+        {
+            StatusCode::CONFLICT
+        } else if message.contains("RPC 节点暂时无法读取")
+            || message.contains("卖出执行异常")
+            || message.contains("卖出成功但未返回交易签名")
         {
             StatusCode::BAD_GATEWAY
         } else if message.contains("未找到") {

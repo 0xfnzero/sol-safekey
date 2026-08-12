@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust release gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            pkg-config
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run workspace tests
+        run: cargo test --locked --workspace
+
+      - name: Run strict Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.1
+
+      - name: Audit Rust dependencies
+        run: cargo audit
+
+  frontend:
+    name: Node 20 release gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20.19.5
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install locked dependencies
+        run: |
+          test "$(node -p 'process.versions.node')" = "20.19.5"
+          test "$(npm --version)" = "10.8.2"
+          npm ci
+
+      - name: Test dependency compatibility
+        run: npm run test:dependency-compat
+
+      - name: Test Devnet airdrop policy
+        run: npm run test:devnet-airdrop
+
+      - name: Test generic program deployment
+        run: npm run test:program-deploy
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm exec tsc -- --noEmit
+
+      - name: Build static UI
+        run: npm run build
+
+      - name: Audit all Node dependencies
+        run: npm audit --audit-level=high
+
+  container:
+    name: Linux container build
+    needs: [rust, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build deployment image
+        run: docker build --pull --tag sol-safekey-ui:ci .

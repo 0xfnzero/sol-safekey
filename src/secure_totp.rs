@@ -1,4 +1,4 @@
-use crate::totp::{TOTPManager, TOTPConfig};
+use crate::totp::{TOTPConfig, TOTPManager};
 use colored::*;
 use std::io::{self, Write};
 
@@ -46,7 +46,10 @@ impl SecureTOTPManager {
 
     /// 显示设置信息（不保存文件）
     pub fn display_setup_info(&self) -> Result<(), String> {
-        println!("{}", "🔐 2FA 安全设置（无文件存储模式）".bright_cyan().bold());
+        println!(
+            "{}",
+            "🔐 2FA 安全设置（无文件存储模式）".bright_cyan().bold()
+        );
         println!();
 
         println!("{}", "⚠️  重要安全提醒:".bright_yellow().bold());
@@ -83,7 +86,10 @@ impl SecureTOTPManager {
 
         // 验证设置
         loop {
-            print!("{} ", "请输入认证器显示的 6 位验证码确认设置:".bright_yellow());
+            print!(
+                "{} ",
+                "请输入认证器显示的 6 位验证码确认设置:".bright_yellow()
+            );
             io::stdout().flush().unwrap();
             let mut input = String::new();
             io::stdin().read_line(&mut input).unwrap();
@@ -110,18 +116,17 @@ impl SecureTOTPManager {
     }
 }
 
-
 /// 实用安全的 2FA 解锁函数
 pub fn secure_unlock_with_2fa(
     encrypted_file_path: &str,
     _account: &str,
     _issuer: &str,
 ) -> Result<(), String> {
-    use rpassword;
-    use std::fs;
     use crate::totp::parse_encrypted_file;
-    use solana_sdk::signer::Signer;
     use crate::{decrypt_key, generate_encryption_key_simple};
+    use rpassword;
+    use solana_sdk::signer::Signer;
+    use std::fs;
 
     println!("{}", "🔐 实用安全 2FA 解锁模式".bright_cyan().bold());
     println!();
@@ -129,18 +134,16 @@ pub fn secure_unlock_with_2fa(
     // 第一步：获取主密码
     print!("{} ", "请输入主密码:".bright_yellow());
     io::stdout().flush().unwrap();
-    let master_password = rpassword::read_password()
-        .map_err(|e| format!("读取密码失败: {}", e))?;
+    let master_password = rpassword::read_password().map_err(|e| format!("读取密码失败: {}", e))?;
 
     // 第二步：获取当前 2FA 验证码
     print!("{} ", "请输入当前 2FA 验证码:".bright_green());
     io::stdout().flush().unwrap();
-    let _totp_code = rpassword::read_password()
-        .map_err(|e| format!("读取验证码失败: {}", e))?;
+    let _totp_code = rpassword::read_password().map_err(|e| format!("读取验证码失败: {}", e))?;
 
     // 读取加密文件
-    let file_content = fs::read_to_string(encrypted_file_path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let file_content =
+        fs::read_to_string(encrypted_file_path).map_err(|e| format!("读取文件失败: {}", e))?;
     let encrypted_data = parse_encrypted_file(&file_content)?;
 
     println!("🔍 正在验证主密码和2FA验证码...");

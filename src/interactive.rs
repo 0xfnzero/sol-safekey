@@ -3,10 +3,10 @@
 //! Provides a simple interactive interface - no need to memorize commands
 //! 提供简单的交互式界面 - 无需记住命令
 
-use std::io::{self, Write};
 use colored::*;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use std::io::{self, Write};
 
 use crate::KeyManager;
 
@@ -14,7 +14,13 @@ use crate::KeyManager;
 /// Returns the first match as a relative path, or None if not found.
 /// Skips directories named "dev" and prefers "prod" paths.
 fn search_keystore_in_subdirs(filename: &str) -> Option<String> {
-    fn search(dir: &std::path::Path, filename: &str, depth: usize, max_depth: usize, results: &mut Vec<String>) {
+    fn search(
+        dir: &std::path::Path,
+        filename: &str,
+        depth: usize,
+        max_depth: usize,
+        results: &mut Vec<String>,
+    ) {
         if depth > max_depth {
             return;
         }
@@ -24,7 +30,11 @@ fn search_keystore_in_subdirs(filename: &str) -> Option<String> {
                 if path.is_dir() {
                     let name = path.file_name().unwrap_or_default().to_string_lossy();
                     // Skip hidden dirs, common large dirs, and "dev" dirs
-                    if name.starts_with('.') || name == "target" || name == "node_modules" || name == "dev" {
+                    if name.starts_with('.')
+                        || name == "target"
+                        || name == "node_modules"
+                        || name == "dev"
+                    {
                         continue;
                     }
                     search(&path, filename, depth + 1, max_depth, results);
@@ -37,12 +47,15 @@ fn search_keystore_in_subdirs(filename: &str) -> Option<String> {
     let mut results = Vec::new();
     search(std::path::Path::new("."), filename, 0, 3, &mut results);
     // Prefer prod path
-    results.into_iter().find(|p| p.contains("prod")).or_else(|| {
-        // Fallback: return first non-dev result (shouldn't happen since we skip dev dirs)
-        let mut results = Vec::new();
-        search(std::path::Path::new("."), filename, 0, 3, &mut results);
-        results.into_iter().next()
-    })
+    results
+        .into_iter()
+        .find(|p| p.contains("prod"))
+        .or_else(|| {
+            // Fallback: return first non-dev result (shouldn't happen since we skip dev dirs)
+            let mut results = Vec::new();
+            search(std::path::Path::new("."), filename, 0, 3, &mut results);
+            results.into_iter().next()
+        })
 }
 
 /// Language selection
@@ -291,7 +304,9 @@ fn select_language() -> Result<Language, String> {
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut choice = String::new();
-    io::stdin().read_line(&mut choice).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut choice)
+        .map_err(|e| e.to_string())?;
     let choice = choice.trim();
 
     match choice {
@@ -357,27 +372,55 @@ pub fn show_main_menu() -> Result<(), String> {
         println!("{}", texts.core_functions);
         println!();
         println!("  {}  {}", "1.".green().bold(), &texts.create_plain[6..]);
-        println!("  {}  {}", "2.".green().bold(), &texts.create_encrypted[6..]);
+        println!(
+            "  {}  {}",
+            "2.".green().bold(),
+            &texts.create_encrypted[6..]
+        );
         println!("  {}  {}", "3.".green().bold(), &texts.decrypt[6..]);
 
         // Show unlock/lock status
         println!();
         if session.is_unlocked() {
             if lang == Language::Chinese {
-                println!("  🔓 {} {}", "钱包已解锁:".green().bold(), session.get_keypair().unwrap().pubkey().to_string().bright_white());
+                println!(
+                    "  🔓 {} {}",
+                    "钱包已解锁:".green().bold(),
+                    session
+                        .get_keypair()
+                        .unwrap()
+                        .pubkey()
+                        .to_string()
+                        .bright_white()
+                );
                 println!("  {}  {}", "L.".yellow().bold(), "锁定钱包".yellow());
             } else {
-                println!("  🔓 {} {}", "Wallet Unlocked:".green().bold(), session.get_keypair().unwrap().pubkey().to_string().bright_white());
+                println!(
+                    "  🔓 {} {}",
+                    "Wallet Unlocked:".green().bold(),
+                    session
+                        .get_keypair()
+                        .unwrap()
+                        .pubkey()
+                        .to_string()
+                        .bright_white()
+                );
                 println!("  {}  {}", "L.".yellow().bold(), "Lock Wallet".yellow());
             }
+        } else if lang == Language::Chinese {
+            println!("  🔒 {} {}", "钱包状态:".red(), "未解锁".red());
+            println!(
+                "  {}  {}",
+                "U.".green().bold(),
+                "解锁钱包（用于Solana操作）".green()
+            );
         } else {
-            if lang == Language::Chinese {
-                println!("  🔒 {} {}", "钱包状态:".red(), "未解锁".red());
-                println!("  {}  {}", "U.".green().bold(), "解锁钱包（用于Solana操作）".green());
-            } else {
-                println!("  🔒 {} {}", "Wallet Status:".red(), "Locked".red());
-                println!("  {}  {}", "U.".green().bold(), "Unlock Wallet (for Solana Operations)".green());
-            }
+            println!("  🔒 {} {}", "Wallet Status:".red(), "Locked".red());
+            println!(
+                "  {}  {}",
+                "U.".green().bold(),
+                "Unlock Wallet (for Solana Operations)".green()
+            );
         }
 
         // Advanced security features
@@ -389,9 +432,33 @@ pub fn show_main_menu() -> Result<(), String> {
             } else {
                 println!("{}", "  Advanced Security:".bright_magenta().bold());
             }
-            println!("  {}  {}", "4.".bright_magenta().bold(), if lang == Language::Chinese { "设置 2FA 认证" } else { "Setup 2FA Authentication" });
-            println!("  {}  {}", "5.".bright_magenta().bold(), if lang == Language::Chinese { "生成三因子钱包" } else { "Generate Triple-Factor Wallet" });
-            println!("  {}  {}", "6.".bright_magenta().bold(), if lang == Language::Chinese { "解锁三因子钱包" } else { "Unlock Triple-Factor Wallet" });
+            println!(
+                "  {}  {}",
+                "4.".bright_magenta().bold(),
+                if lang == Language::Chinese {
+                    "设置 2FA 认证"
+                } else {
+                    "Setup 2FA Authentication"
+                }
+            );
+            println!(
+                "  {}  {}",
+                "5.".bright_magenta().bold(),
+                if lang == Language::Chinese {
+                    "生成三因子钱包"
+                } else {
+                    "Generate Triple-Factor Wallet"
+                }
+            );
+            println!(
+                "  {}  {}",
+                "6.".bright_magenta().bold(),
+                if lang == Language::Chinese {
+                    "解锁三因子钱包"
+                } else {
+                    "Unlock Triple-Factor Wallet"
+                }
+            );
         }
 
         // Solana operations (if feature is enabled)
@@ -405,43 +472,235 @@ pub fn show_main_menu() -> Result<(), String> {
             }
             #[cfg(feature = "2fa")]
             {
-                println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "查询 SOL 余额" } else { "Check SOL Balance" });
-                println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SOL" } else { "Transfer SOL" });
-                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "创建 WSOL ATA" } else { "Create WSOL ATA" });
-                println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
-                println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
-                println!("  {}  {}", "12.".bright_cyan().bold(), if lang == Language::Chinese { "关闭 WSOL ATA" } else { "Close WSOL ATA" });
-                println!("  {}  {}", "13.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
-                println!("  {}  {}", "14.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+                println!(
+                    "  {}  {}",
+                    "7.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "查询 SOL 余额"
+                    } else {
+                        "Check SOL Balance"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "8.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "转账 SOL"
+                    } else {
+                        "Transfer SOL"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "9.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "创建 WSOL ATA"
+                    } else {
+                        "Create WSOL ATA"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "10.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "包装 SOL → WSOL"
+                    } else {
+                        "Wrap SOL → WSOL"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "11.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "解包 WSOL → SOL"
+                    } else {
+                        "Unwrap WSOL → SOL"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "12.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "关闭 WSOL ATA"
+                    } else {
+                        "Close WSOL ATA"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "13.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "转账 SPL 代币"
+                    } else {
+                        "Transfer SPL Token"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "14.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "创建 Nonce 账户"
+                    } else {
+                        "Create Nonce Account"
+                    }
+                );
 
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 卖出代币" } else { "Pump.fun Sell Tokens" });
+                println!(
+                    "  {}  {}",
+                    "15.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "Pump.fun 卖出代币"
+                    } else {
+                        "Pump.fun Sell Tokens"
+                    }
+                );
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "16.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
+                println!(
+                    "  {}  {}",
+                    "16.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "PumpSwap 卖出代币"
+                    } else {
+                        "PumpSwap Sell Tokens"
+                    }
+                );
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "17.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 返现（查看与领取）" } else { "Pump.fun Cashback (View & Claim)" });
+                println!(
+                    "  {}  {}",
+                    "17.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "Pump.fun 返现（查看与领取）"
+                    } else {
+                        "Pump.fun Cashback (View & Claim)"
+                    }
+                );
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "18.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 返现（查看与领取）" } else { "PumpSwap Cashback (View & Claim)" });
+                println!(
+                    "  {}  {}",
+                    "18.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "PumpSwap 返现（查看与领取）"
+                    } else {
+                        "PumpSwap Cashback (View & Claim)"
+                    }
+                );
             }
             #[cfg(not(feature = "2fa"))]
             {
-                println!("  {}  {}", "4.".bright_cyan().bold(), if lang == Language::Chinese { "查询 SOL 余额" } else { "Check SOL Balance" });
-                println!("  {}  {}", "5.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SOL" } else { "Transfer SOL" });
-                println!("  {}  {}", "6.".bright_cyan().bold(), if lang == Language::Chinese { "创建 WSOL ATA" } else { "Create WSOL ATA" });
-                println!("  {}  {}", "7.".bright_cyan().bold(), if lang == Language::Chinese { "包装 SOL → WSOL" } else { "Wrap SOL → WSOL" });
-                println!("  {}  {}", "8.".bright_cyan().bold(), if lang == Language::Chinese { "解包 WSOL → SOL" } else { "Unwrap WSOL → SOL" });
-                println!("  {}  {}", "9.".bright_cyan().bold(), if lang == Language::Chinese { "关闭 WSOL ATA" } else { "Close WSOL ATA" });
-                println!("  {}  {}", "10.".bright_cyan().bold(), if lang == Language::Chinese { "转账 SPL 代币" } else { "Transfer SPL Token" });
-                println!("  {}  {}", "11.".bright_cyan().bold(), if lang == Language::Chinese { "创建 Nonce 账户" } else { "Create Nonce Account" });
+                println!(
+                    "  {}  {}",
+                    "4.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "查询 SOL 余额"
+                    } else {
+                        "Check SOL Balance"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "5.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "转账 SOL"
+                    } else {
+                        "Transfer SOL"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "6.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "创建 WSOL ATA"
+                    } else {
+                        "Create WSOL ATA"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "7.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "包装 SOL → WSOL"
+                    } else {
+                        "Wrap SOL → WSOL"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "8.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "解包 WSOL → SOL"
+                    } else {
+                        "Unwrap WSOL → SOL"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "9.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "关闭 WSOL ATA"
+                    } else {
+                        "Close WSOL ATA"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "10.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "转账 SPL 代币"
+                    } else {
+                        "Transfer SPL Token"
+                    }
+                );
+                println!(
+                    "  {}  {}",
+                    "11.".bright_cyan().bold(),
+                    if lang == Language::Chinese {
+                        "创建 Nonce 账户"
+                    } else {
+                        "Create Nonce Account"
+                    }
+                );
 
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "12.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 卖出代币" } else { "Pump.fun Sell Tokens" });
+                println!(
+                    "  {}  {}",
+                    "12.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "Pump.fun 卖出代币"
+                    } else {
+                        "Pump.fun Sell Tokens"
+                    }
+                );
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "13.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 卖出代币" } else { "PumpSwap Sell Tokens" });
+                println!(
+                    "  {}  {}",
+                    "13.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "PumpSwap 卖出代币"
+                    } else {
+                        "PumpSwap Sell Tokens"
+                    }
+                );
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "14.".bright_magenta().bold(), if lang == Language::Chinese { "Pump.fun 返现（查看与领取）" } else { "Pump.fun Cashback (View & Claim)" });
+                println!(
+                    "  {}  {}",
+                    "14.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "Pump.fun 返现（查看与领取）"
+                    } else {
+                        "Pump.fun Cashback (View & Claim)"
+                    }
+                );
                 #[cfg(feature = "sol-trade-sdk")]
-                println!("  {}  {}", "15.".bright_magenta().bold(), if lang == Language::Chinese { "PumpSwap 返现（查看与领取）" } else { "PumpSwap Cashback (View & Claim)" });
+                println!(
+                    "  {}  {}",
+                    "15.".bright_magenta().bold(),
+                    if lang == Language::Chinese {
+                        "PumpSwap 返现（查看与领取）"
+                    } else {
+                        "PumpSwap Cashback (View & Claim)"
+                    }
+                );
             }
         }
 
@@ -452,7 +711,9 @@ pub fn show_main_menu() -> Result<(), String> {
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut choice = String::new();
-        io::stdin().read_line(&mut choice).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut choice)
+            .map_err(|e| e.to_string())?;
         let choice = choice.trim();
 
         match choice.to_lowercase().as_str() {
@@ -468,10 +729,8 @@ pub fn show_main_menu() -> Result<(), String> {
                     } else {
                         println!("\n✅ Wallet already unlocked!");
                     }
-                } else {
-                    if let Err(e) = unlock_wallet_interactive(&mut session, lang) {
-                        eprintln!("❌ {}", e);
-                    }
+                } else if let Err(e) = unlock_wallet_interactive(&mut session, lang) {
+                    eprintln!("❌ {}", e);
                 }
                 // 解锁/锁定后直接回到菜单，不再问「是否继续使用」
                 continue;
@@ -484,12 +743,10 @@ pub fn show_main_menu() -> Result<(), String> {
                     } else {
                         println!("\n🔒 Wallet locked");
                     }
+                } else if lang == Language::Chinese {
+                    println!("\n⚠️ 钱包未解锁");
                 } else {
-                    if lang == Language::Chinese {
-                        println!("\n⚠️ 钱包未解锁");
-                    } else {
-                        println!("\n⚠️ Wallet not unlocked");
-                    }
+                    println!("\n⚠️ Wallet not unlocked");
                 }
                 continue;
             }
@@ -544,7 +801,9 @@ pub fn show_main_menu() -> Result<(), String> {
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut continue_choice = String::new();
-        io::stdin().read_line(&mut continue_choice).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut continue_choice)
+            .map_err(|e| e.to_string())?;
         let continue_choice = continue_choice.trim().to_lowercase();
 
         if continue_choice == "n" || continue_choice == "no" {
@@ -570,12 +829,16 @@ fn create_plain_key_interactive(texts: &Texts) -> Result<(), String> {
 
     println!("{}", texts.keypair_generated.green().bold());
     println!();
-    println!("{} {}", texts.public_key.cyan(), pubkey.to_string().white().bold());
+    println!(
+        "{} {}",
+        texts.public_key.cyan(),
+        pubkey.to_string().white().bold()
+    );
     println!("{} {}", texts.private_key.red().bold(), private_key);
     println!();
 
     // 询问输出方式
-    println!("{}",texts.output_method);
+    println!("{}", texts.output_method);
     println!("{}", texts.display_only);
     println!("{}", texts.save_to_file);
     println!();
@@ -583,7 +846,9 @@ fn create_plain_key_interactive(texts: &Texts) -> Result<(), String> {
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut output_choice = String::new();
-    io::stdin().read_line(&mut output_choice).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut output_choice)
+        .map_err(|e| e.to_string())?;
     let output_choice = output_choice.trim();
 
     if output_choice == "2" {
@@ -591,7 +856,9 @@ fn create_plain_key_interactive(texts: &Texts) -> Result<(), String> {
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut file_path = String::new();
-        io::stdin().read_line(&mut file_path).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut file_path)
+            .map_err(|e| e.to_string())?;
         let file_path = file_path.trim();
         let file_path = if file_path.is_empty() {
             "keypair.json"
@@ -602,10 +869,10 @@ fn create_plain_key_interactive(texts: &Texts) -> Result<(), String> {
         // 保存为 Solana keypair JSON 格式 (数组格式)
         let bytes = keypair.to_bytes();
         let json = serde_json::to_string(&bytes.to_vec())
-            .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+            .map_err(|e| texts.write_failed.replace("{}", &e.to_string()))?;
 
         std::fs::write(file_path, json)
-            .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+            .map_err(|e| texts.write_failed.replace("{}", &e.to_string()))?;
 
         println!();
         println!("{}", texts.file_saved.green());
@@ -638,7 +905,9 @@ fn create_encrypted_key_interactive(texts: &Texts) -> Result<(), String> {
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut source_choice = String::new();
-    io::stdin().read_line(&mut source_choice).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut source_choice)
+        .map_err(|e| e.to_string())?;
     let source_choice = source_choice.trim();
 
     let keypair = match source_choice {
@@ -655,7 +924,9 @@ fn create_encrypted_key_interactive(texts: &Texts) -> Result<(), String> {
             io::stdout().flush().map_err(|e| e.to_string())?;
 
             let mut private_key = String::new();
-            io::stdin().read_line(&mut private_key).map_err(|e| e.to_string())?;
+            io::stdin()
+                .read_line(&mut private_key)
+                .map_err(|e| e.to_string())?;
             let private_key = private_key.trim();
 
             if private_key.is_empty() {
@@ -689,7 +960,9 @@ fn create_encrypted_key_interactive(texts: &Texts) -> Result<(), String> {
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut output_choice = String::new();
-    io::stdin().read_line(&mut output_choice).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut output_choice)
+        .map_err(|e| e.to_string())?;
     let output_choice = output_choice.trim();
 
     match output_choice {
@@ -699,7 +972,9 @@ fn create_encrypted_key_interactive(texts: &Texts) -> Result<(), String> {
             io::stdout().flush().map_err(|e| e.to_string())?;
 
             let mut file_path = String::new();
-            io::stdin().read_line(&mut file_path).map_err(|e| e.to_string())?;
+            io::stdin()
+                .read_line(&mut file_path)
+                .map_err(|e| e.to_string())?;
             let file_path = file_path.trim();
             let file_path = if file_path.is_empty() {
                 "keystore.json"
@@ -709,7 +984,7 @@ fn create_encrypted_key_interactive(texts: &Texts) -> Result<(), String> {
 
             let keystore_json = KeyManager::keypair_to_encrypted_json(&keypair, &password)?;
             std::fs::write(file_path, keystore_json)
-                .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+                .map_err(|e| texts.write_failed.replace("{}", &e.to_string()))?;
 
             println!();
             println!("{}", "=".repeat(50).green());
@@ -763,28 +1038,38 @@ fn decrypt_key_interactive(texts: &Texts) -> Result<(), String> {
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut input_choice = String::new();
-    io::stdin().read_line(&mut input_choice).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut input_choice)
+        .map_err(|e| e.to_string())?;
     let input_choice = input_choice.trim();
 
     let (private_key, pubkey) = match input_choice {
         "1" => {
             // 从文件读取
-            print!("{}", texts.file_path.trim_end_matches("(默认: keypair.json): ").trim_end_matches("(default: keypair.json): "));
+            print!(
+                "{}",
+                texts
+                    .file_path
+                    .trim_end_matches("(默认: keypair.json): ")
+                    .trim_end_matches("(default: keypair.json): ")
+            );
             io::stdout().flush().map_err(|e| e.to_string())?;
 
             let mut file_path = String::new();
-            io::stdin().read_line(&mut file_path).map_err(|e| e.to_string())?;
+            io::stdin()
+                .read_line(&mut file_path)
+                .map_err(|e| e.to_string())?;
             let file_path = file_path.trim();
 
             if !std::path::Path::new(file_path).exists() {
-                return Err(format!("{}", texts.file_not_exist.replace("{}", file_path)));
+                return Err(texts.file_not_exist.replace("{}", file_path));
             }
 
             println!();
             let password = prompt_password(texts.enter_password, texts)?;
 
             let keystore_json = std::fs::read_to_string(file_path)
-                .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+                .map_err(|e| texts.write_failed.replace("{}", &e.to_string()))?;
 
             let keypair = KeyManager::keypair_from_encrypted_json(&keystore_json, &password)?;
             let pubkey = keypair.pubkey();
@@ -798,7 +1083,9 @@ fn decrypt_key_interactive(texts: &Texts) -> Result<(), String> {
             io::stdout().flush().map_err(|e| e.to_string())?;
 
             let mut encrypted = String::new();
-            io::stdin().read_line(&mut encrypted).map_err(|e| e.to_string())?;
+            io::stdin()
+                .read_line(&mut encrypted)
+                .map_err(|e| e.to_string())?;
             let encrypted = encrypted.trim();
 
             println!();
@@ -833,21 +1120,24 @@ fn decrypt_key_interactive(texts: &Texts) -> Result<(), String> {
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut output_choice = String::new();
-    io::stdin().read_line(&mut output_choice).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut output_choice)
+        .map_err(|e| e.to_string())?;
     let output_choice = output_choice.trim();
 
     if output_choice == "2" {
-        let default_filename = if texts.file_path.contains("默认") {
-            "decrypted_key.txt"
-        } else {
-            "decrypted_key.txt"
-        };
+        let default_filename = "decrypted_key.txt";
 
-        print!("{}", texts.file_path.replace("keypair.json", default_filename));
+        print!(
+            "{}",
+            texts.file_path.replace("keypair.json", default_filename)
+        );
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut file_path = String::new();
-        io::stdin().read_line(&mut file_path).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut file_path)
+            .map_err(|e| e.to_string())?;
         let file_path = file_path.trim();
         let file_path = if file_path.is_empty() {
             default_filename
@@ -855,9 +1145,15 @@ fn decrypt_key_interactive(texts: &Texts) -> Result<(), String> {
             file_path
         };
 
-        let content = format!("{} {}\n{} {}\n", texts.public_key, pubkey, texts.private_key.trim_end_matches(':'), private_key);
+        let content = format!(
+            "{} {}\n{} {}\n",
+            texts.public_key,
+            pubkey,
+            texts.private_key.trim_end_matches(':'),
+            private_key
+        );
         std::fs::write(file_path, content)
-            .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+            .map_err(|e| texts.write_failed.replace("{}", &e.to_string()))?;
 
         println!();
         println!("{}", texts.file_saved.green());
@@ -878,8 +1174,8 @@ fn prompt_password(prompt: &str, texts: &Texts) -> Result<String, String> {
     print!("{}", prompt);
     io::stdout().flush().map_err(|e| e.to_string())?;
 
-    let password = rpassword::read_password()
-        .map_err(|e| format!("{}", texts.write_failed.replace("{}", &e.to_string())))?;
+    let password =
+        rpassword::read_password().map_err(|e| texts.write_failed.replace("{}", &e.to_string()))?;
 
     Ok(password.trim().to_string())
 }
@@ -897,7 +1193,9 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
     io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut keystore_path = String::new();
-    io::stdin().read_line(&mut keystore_path).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut keystore_path)
+        .map_err(|e| e.to_string())?;
     let keystore_path = keystore_path.trim();
 
     // Only search subdirectories when user pressed Enter without typing a path
@@ -937,12 +1235,13 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
     // Decrypt keypair: use bot_helper::unlock_wallet for password_only to guarantee
     // the exact same code path as bot startup (config/mod.rs → ensure_wallet_ready).
     let keypair = match encryption_type {
-        "password_only" => {
-            crate::bot_helper::unlock_wallet(&keystore_path)
-                .map_err(|e| format!("Failed to decrypt keystore: {}", e))?
-        }
+        "password_only" => crate::bot_helper::unlock_wallet(&keystore_path)
+            .map_err(|e| format!("Failed to decrypt keystore: {}", e))?,
         "triple_factor_v1" => {
-            return Err("Triple-factor wallets not yet supported in interactive mode. Please use the CLI.".to_string());
+            return Err(
+                "Triple-factor wallets not yet supported in interactive mode. Please use the CLI."
+                    .to_string(),
+            );
         }
         _ => {
             return Err(format!("Unknown encryption type: {}", encryption_type));
@@ -958,7 +1257,10 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
         println!("💡 提示: 在本次会话中，Solana操作将使用此钱包，无需重复输入密码");
     } else {
         println!("✅ Wallet unlocked successfully!");
-        println!("📍 Wallet address: {}", session.get_keypair().unwrap().pubkey());
+        println!(
+            "📍 Wallet address: {}",
+            session.get_keypair().unwrap().pubkey()
+        );
         println!("💡 Tip: Solana operations in this session will use this wallet without re-entering password");
     }
 
@@ -967,7 +1269,11 @@ fn unlock_wallet_interactive(session: &mut SessionState, language: Language) -> 
 
 /// Handle Solana operation using session keypair
 #[cfg(feature = "solana-ops")]
-fn handle_solana_operation(choice: &str, language: Language, session: &mut SessionState) -> Result<(), String> {
+fn handle_solana_operation(
+    choice: &str,
+    language: Language,
+    session: &mut SessionState,
+) -> Result<(), String> {
     // Convert Language to operations::Language
     let ops_language = match language {
         Language::English => crate::operations::Language::English,
@@ -996,43 +1302,43 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
     // Call the appropriate operation
     #[cfg(feature = "2fa")]
     let result = match choice {
-        "7" => crate::operations::check_balance(&keypair, ops_language),
-        "8" => crate::operations::transfer_sol(&keypair, ops_language),
-        "9" => crate::operations::create_wsol_ata(&keypair, ops_language),
-        "10" => crate::operations::wrap_sol(&keypair, ops_language),
-        "11" => crate::operations::unwrap_sol(&keypair, ops_language),
-        "12" => crate::operations::close_wsol_ata(&keypair, ops_language),
-        "13" => crate::operations::transfer_token(&keypair, ops_language),
-        "14" => crate::operations::create_nonce_account(&keypair, ops_language),
+        "7" => crate::operations::check_balance(keypair, ops_language),
+        "8" => crate::operations::transfer_sol(keypair, ops_language),
+        "9" => crate::operations::create_wsol_ata(keypair, ops_language),
+        "10" => crate::operations::wrap_sol(keypair, ops_language),
+        "11" => crate::operations::unwrap_sol(keypair, ops_language),
+        "12" => crate::operations::close_wsol_ata(keypair, ops_language),
+        "13" => crate::operations::transfer_token(keypair, ops_language),
+        "14" => crate::operations::create_nonce_account(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "15" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
+        "15" => crate::operations::pumpfun_sell_interactive(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "16" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
+        "16" => crate::operations::pumpswap_sell_interactive(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "17" => crate::operations::pumpfun_cashback_interactive(&keypair, ops_language),
+        "17" => crate::operations::pumpfun_cashback_interactive(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "18" => crate::operations::pumpswap_cashback_interactive(&keypair, ops_language),
+        "18" => crate::operations::pumpswap_cashback_interactive(keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 
     #[cfg(not(feature = "2fa"))]
     let result = match choice {
-        "4" => crate::operations::check_balance(&keypair, ops_language),
-        "5" => crate::operations::transfer_sol(&keypair, ops_language),
-        "6" => crate::operations::create_wsol_ata(&keypair, ops_language),
-        "7" => crate::operations::wrap_sol(&keypair, ops_language),
-        "8" => crate::operations::unwrap_sol(&keypair, ops_language),
-        "9" => crate::operations::close_wsol_ata(&keypair, ops_language),
-        "10" => crate::operations::transfer_token(&keypair, ops_language),
-        "11" => crate::operations::create_nonce_account(&keypair, ops_language),
+        "4" => crate::operations::check_balance(keypair, ops_language),
+        "5" => crate::operations::transfer_sol(keypair, ops_language),
+        "6" => crate::operations::create_wsol_ata(keypair, ops_language),
+        "7" => crate::operations::wrap_sol(keypair, ops_language),
+        "8" => crate::operations::unwrap_sol(keypair, ops_language),
+        "9" => crate::operations::close_wsol_ata(keypair, ops_language),
+        "10" => crate::operations::transfer_token(keypair, ops_language),
+        "11" => crate::operations::create_nonce_account(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "12" => crate::operations::pumpfun_sell_interactive(&keypair, ops_language),
+        "12" => crate::operations::pumpfun_sell_interactive(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "13" => crate::operations::pumpswap_sell_interactive(&keypair, ops_language),
+        "13" => crate::operations::pumpswap_sell_interactive(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "14" => crate::operations::pumpfun_cashback_interactive(&keypair, ops_language),
+        "14" => crate::operations::pumpfun_cashback_interactive(keypair, ops_language),
         #[cfg(feature = "sol-trade-sdk")]
-        "15" => crate::operations::pumpswap_cashback_interactive(&keypair, ops_language),
+        "15" => crate::operations::pumpswap_cashback_interactive(keypair, ops_language),
         _ => Err("Invalid operation".to_string()),
     };
 
@@ -1042,7 +1348,10 @@ fn handle_solana_operation(choice: &str, language: Language, session: &mut Sessi
 /// Setup 2FA authentication interactively
 #[cfg(feature = "2fa")]
 fn setup_2fa_interactive(language: Language) -> Result<(), String> {
-    use crate::{derive_totp_secret_from_hardware_and_password, hardware_fingerprint::HardwareFingerprint, security_question::SecurityQuestion, totp::*};
+    use crate::{
+        derive_totp_secret_from_hardware_and_password, hardware_fingerprint::HardwareFingerprint,
+        security_question::SecurityQuestion, totp::*,
+    };
     use rpassword;
 
     let account = "wallet";
@@ -1052,7 +1361,12 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
     if language == Language::Chinese {
         println!("{}", "  🔐 三因子 2FA 安全设置".bright_magenta().bold());
     } else {
-        println!("{}", "  🔐 Triple-Factor 2FA Security Setup".bright_magenta().bold());
+        println!(
+            "{}",
+            "  🔐 Triple-Factor 2FA Security Setup"
+                .bright_magenta()
+                .bold()
+        );
     }
     println!("{}", "=".repeat(50).bright_magenta());
     println!();
@@ -1078,7 +1392,10 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
     if language == Language::Chinese {
         println!("{}", "步骤 1/4: 收集硬件指纹...".bright_blue());
     } else {
-        println!("{}", "Step 1/4: Collecting hardware fingerprint...".bright_blue());
+        println!(
+            "{}",
+            "Step 1/4: Collecting hardware fingerprint...".bright_blue()
+        );
     }
 
     let hardware_fp = HardwareFingerprint::collect()
@@ -1088,7 +1405,10 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
         println!("{} 硬件指纹已收集（SHA256哈希）", "✅".green());
         println!("   指纹预览: {}...", &hardware_fp.as_str()[..16]);
     } else {
-        println!("{} Hardware fingerprint collected (SHA256 hash)", "✅".green());
+        println!(
+            "{} Hardware fingerprint collected (SHA256 hash)",
+            "✅".green()
+        );
         println!("   Preview: {}...", &hardware_fp.as_str()[..16]);
     }
     println!();
@@ -1101,27 +1421,57 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
     }
 
     let master_password = loop {
-        let password = rpassword::prompt_password(
-            if language == Language::Chinese { "请输入主密码: " } else { "Enter master password: " }
-        ).map_err(|e| format!("Failed to read password: {}", e))?;
+        let password = rpassword::prompt_password(if language == Language::Chinese {
+            "请输入主密码: "
+        } else {
+            "Enter master password: "
+        })
+        .map_err(|e| format!("Failed to read password: {}", e))?;
 
         if password.is_empty() {
-            println!("{} {}", "❌".red(), if language == Language::Chinese { "主密码不能为空" } else { "Master password cannot be empty" });
+            println!(
+                "{} {}",
+                "❌".red(),
+                if language == Language::Chinese {
+                    "主密码不能为空"
+                } else {
+                    "Master password cannot be empty"
+                }
+            );
             continue;
         }
 
         // Check password strength
         if password.len() < 10 {
-            println!("{} {}", "❌".red(), if language == Language::Chinese { "密码长度至少10个字符" } else { "Password must be at least 10 characters" });
+            println!(
+                "{} {}",
+                "❌".red(),
+                if language == Language::Chinese {
+                    "密码长度至少10个字符"
+                } else {
+                    "Password must be at least 10 characters"
+                }
+            );
             continue;
         }
 
-        let password_confirm = rpassword::prompt_password(
-            if language == Language::Chinese { "请再次输入主密码确认: " } else { "Confirm master password: " }
-        ).map_err(|e| format!("Failed to read password: {}", e))?;
+        let password_confirm = rpassword::prompt_password(if language == Language::Chinese {
+            "请再次输入主密码确认: "
+        } else {
+            "Confirm master password: "
+        })
+        .map_err(|e| format!("Failed to read password: {}", e))?;
 
         if password != password_confirm {
-            println!("{} {}", "❌".red(), if language == Language::Chinese { "两次输入的密码不一致" } else { "Passwords do not match" });
+            println!(
+                "{} {}",
+                "❌".red(),
+                if language == Language::Chinese {
+                    "两次输入的密码不一致"
+                } else {
+                    "Passwords do not match"
+                }
+            );
             continue;
         }
 
@@ -1158,7 +1508,8 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
         &master_password,
         account,
         issuer,
-    ).map_err(|e| format!("Failed to derive 2FA secret: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to derive 2FA secret: {}", e))?;
 
     let config = TOTPConfig {
         secret: twofa_secret.clone(),
@@ -1172,9 +1523,15 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
     let totp_manager = TOTPManager::new(config);
 
     if language == Language::Chinese {
-        println!("{}", "📱 请使用 Google Authenticator 或 Authy 扫描以下 QR 码：".yellow());
+        println!(
+            "{}",
+            "📱 请使用 Google Authenticator 或 Authy 扫描以下 QR 码：".yellow()
+        );
     } else {
-        println!("{}", "📱 Scan this QR code with Google Authenticator or Authy:".yellow());
+        println!(
+            "{}",
+            "📱 Scan this QR code with Google Authenticator or Authy:".yellow()
+        );
     }
     println!();
 
@@ -1196,44 +1553,72 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
 
     println!();
     if language == Language::Chinese {
-        println!("{} 或者手动输入密钥: {}", "🔑".bright_cyan(), twofa_secret.bright_white());
+        println!(
+            "{} 或者手动输入密钥: {}",
+            "🔑".bright_cyan(),
+            twofa_secret.bright_white()
+        );
     } else {
-        println!("{} Or enter manually: {}", "🔑".bright_cyan(), twofa_secret.bright_white());
+        println!(
+            "{} Or enter manually: {}",
+            "🔑".bright_cyan(),
+            twofa_secret.bright_white()
+        );
     }
     println!();
 
     // Verify 2FA setup
     loop {
-        print!("{}", if language == Language::Chinese {
-            "请输入认证器显示的 6 位验证码以确认设置: "
-        } else {
-            "Enter the 6-digit code from your authenticator to verify: "
-        });
+        print!(
+            "{}",
+            if language == Language::Chinese {
+                "请输入认证器显示的 6 位验证码以确认设置: "
+            } else {
+                "Enter the 6-digit code from your authenticator to verify: "
+            }
+        );
         io::stdout().flush().map_err(|e| e.to_string())?;
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| e.to_string())?;
         let code = input.trim();
 
         match totp_manager.verify_code(code) {
             Ok(true) => {
-                println!("{}", if language == Language::Chinese {
-                    "✅ 2FA 验证成功！".green()
-                } else {
-                    "✅ 2FA verification successful!".green()
-                });
+                println!(
+                    "{}",
+                    if language == Language::Chinese {
+                        "✅ 2FA 验证成功！".green()
+                    } else {
+                        "✅ 2FA verification successful!".green()
+                    }
+                );
                 break;
             }
             Ok(false) => {
-                println!("{}", if language == Language::Chinese {
-                    "❌ 验证码不正确，请重试".red()
-                } else {
-                    "❌ Code incorrect, please try again".red()
-                });
+                println!(
+                    "{}",
+                    if language == Language::Chinese {
+                        "❌ 验证码不正确，请重试".red()
+                    } else {
+                        "❌ Code incorrect, please try again".red()
+                    }
+                );
                 continue;
             }
             Err(e) => {
-                eprintln!("{} {}: {}", "❌".red(), if language == Language::Chinese { "验证失败" } else { "Verification failed" }, e);
+                eprintln!(
+                    "{} {}: {}",
+                    "❌".red(),
+                    if language == Language::Chinese {
+                        "验证失败"
+                    } else {
+                        "Verification failed"
+                    },
+                    e
+                );
                 continue;
             }
         }
@@ -1245,7 +1630,11 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
         println!();
         println!("{}", "📝 重要信息（请妥善保管）:".yellow().bold());
         println!("  • 硬件指纹: 已绑定到当前设备");
-        println!("  • 安全问题: 问题 {} - {}", question_index + 1, crate::security_question::SECURITY_QUESTIONS[question_index]);
+        println!(
+            "  • 安全问题: 问题 {} - {}",
+            question_index + 1,
+            crate::security_question::SECURITY_QUESTIONS[question_index]
+        );
         println!("  • 2FA密钥: 已添加到认证器");
         println!();
         println!("{}", "💡 下一步: 使用选项5生成三因子钱包".bright_blue());
@@ -1254,10 +1643,17 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
         println!();
         println!("{}", "📝 Important info (keep safe):".yellow().bold());
         println!("  • Hardware fingerprint: Bound to current device");
-        println!("  • Security question: Question {} - {}", question_index + 1, crate::security_question::SECURITY_QUESTIONS[question_index]);
+        println!(
+            "  • Security question: Question {} - {}",
+            question_index + 1,
+            crate::security_question::SECURITY_QUESTIONS[question_index]
+        );
         println!("  • 2FA key: Added to authenticator");
         println!();
-        println!("{}", "💡 Next step: Use option 5 to generate triple-factor wallet".bright_blue());
+        println!(
+            "{}",
+            "💡 Next step: Use option 5 to generate triple-factor wallet".bright_blue()
+        );
     }
 
     Ok(())
@@ -1266,7 +1662,10 @@ fn setup_2fa_interactive(language: Language) -> Result<(), String> {
 /// Generate triple-factor wallet interactively
 #[cfg(feature = "2fa")]
 fn generate_triple_factor_wallet_interactive(_language: Language) -> Result<(), String> {
-    Err("This feature will be implemented soon. Please use CLI command: sol-safekey gen-2fa-wallet".to_string())
+    Err(
+        "This feature will be implemented soon. Please use CLI command: sol-safekey gen-2fa-wallet"
+            .to_string(),
+    )
 }
 
 /// Unlock triple-factor wallet interactively

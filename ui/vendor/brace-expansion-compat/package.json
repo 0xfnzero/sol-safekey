@@ -1,0 +1,22 @@
+{
+  "name": "brace-expansion",
+  "version": "5.0.8",
+  "private": true,
+  "description": "Compatibility export bridge for brace-expansion 5.0.8",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "index.cjs",
+  "exports": {
+    ".": {
+      "require": "./index.cjs",
+      "import": "./index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": "20 || >=22"
+  },
+  "dependencies": {
+    "brace-expansion-upstream": "npm:brace-expansion@5.0.8"
+  }
+}

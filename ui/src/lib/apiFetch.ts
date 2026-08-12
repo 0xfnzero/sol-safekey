@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { buildApiUrl, getApiBaseUrl } from "@/lib/api";
+import { normalizeApiPath } from "@/lib/apiPath";
 
 const SECURE_BODY_HEADER = "x-sol-safekey-secure-body";
 const SECURE_BODY_VERSION = "1";
@@ -7,9 +8,12 @@ const TAURI_SECURE_PROXY_HEADER = "x-sol-safekey-tauri-secure-proxy";
 const SECURE_JSON_METHODS = new Set(["POST", "PUT", "PATCH"]);
 const PLAINTEXT_SECRET_KEYS = new Set([
   "password",
+  "current_password",
+  "new_password",
   "private_key",
   "secret_key",
   "keystore_json",
+  "program_keypair_json",
   "master_password",
   "security_answer",
   "totp_code",
@@ -352,20 +356,6 @@ async function responseJsonError(response: Response): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function normalizeApiPath(path: string): string {
-  const cleanPath = path.replace(/^\//, "");
-  if (
-    !cleanPath ||
-    cleanPath.includes("://") ||
-    cleanPath.includes("\\") ||
-    cleanPath.split("/").some((part) => part === "..") ||
-    !/^[A-Za-z0-9/_.-]+$/.test(cleanPath)
-  ) {
-    throw new Error("Invalid API path.");
-  }
-  return cleanPath;
 }
 
 async function sendApiRequest(cleanPath: string, init: RequestInit): Promise<Response> {

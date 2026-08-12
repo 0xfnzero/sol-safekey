@@ -10,29 +10,29 @@
 //! Or use the startup script:
 //!   ./startup-example.sh
 
-use sol_safekey::{KeyManager, solana_utils::*};
-use solana_sdk::{signature::Keypair, signer::Signer};
-use std::io::{self, BufRead};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use colored::Colorize;
+use sol_safekey::{solana_utils::*, KeyManager};
+use solana_sdk::{signature::Keypair, signer::Signer};
+use std::io::{self, BufRead, IsTerminal};
 
 const DEFAULT_WALLET_PATH: &str = "keystore.json";
 const RPC_URL: &str = "https://api.devnet.solana.com";
 
 /// Read password from stdin (supports both interactive and piped input)
 fn read_password_from_stdin() -> Result<String> {
-    if atty::is(atty::Stream::Stdin) {
+    if io::stdin().is_terminal() {
         // Interactive mode - use rpassword for secure input
         print!("🔑 Enter wallet password: ");
         std::io::Write::flush(&mut std::io::stdout())?;
-        let password = rpassword::read_password()
-            .context("Failed to read password")?;
+        let password = rpassword::read_password().context("Failed to read password")?;
         return Ok(password);
     }
 
     // Piped mode - read from stdin (for startup.sh)
     let stdin = io::stdin();
-    let password = stdin.lock()
+    let password = stdin
+        .lock()
         .lines()
         .next()
         .ok_or_else(|| anyhow::anyhow!("No password provided via stdin"))?
@@ -54,8 +54,7 @@ fn ensure_wallet(wallet_path: &str, password: &str) -> Result<Keypair> {
         println!("{} Unlocking wallet...", "🔓".cyan());
 
         // Read and decrypt wallet
-        let json = std::fs::read_to_string(wallet_path)
-            .context("Failed to read wallet file")?;
+        let json = std::fs::read_to_string(wallet_path).context("Failed to read wallet file")?;
 
         let keypair = KeyManager::keypair_from_encrypted_json(&json, password)
             .map_err(|e| anyhow::anyhow!("Failed to unlock wallet: {}", e))?;
@@ -78,13 +77,15 @@ fn ensure_wallet(wallet_path: &str, password: &str) -> Result<Keypair> {
         let json = KeyManager::keypair_to_encrypted_json(&keypair, password)
             .map_err(|e| anyhow::anyhow!("Failed to encrypt wallet: {}", e))?;
 
-        std::fs::write(wallet_path, json)
-            .context("Failed to save wallet file")?;
+        std::fs::write(wallet_path, json).context("Failed to save wallet file")?;
 
         println!("{} Wallet saved to: {}", "💾".green(), wallet_path);
         println!();
 
-        println!("{} IMPORTANT: Backup your wallet file and remember your password!", "⚠️".yellow());
+        println!(
+            "{} IMPORTANT: Backup your wallet file and remember your password!",
+            "⚠️".yellow()
+        );
         println!("   Wallet file: {}", wallet_path);
         println!();
 
@@ -103,9 +104,11 @@ fn check_balance(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     let balance_sol = lamports_to_sol(balance_lamports);
 
     println!("Address: {}", keypair.pubkey().to_string().yellow());
-    println!("Balance: {} SOL ({} lamports)",
+    println!(
+        "Balance: {} SOL ({} lamports)",
         balance_sol.to_string().green().bold(),
-        balance_lamports);
+        balance_lamports
+    );
 
     if balance_lamports == 0 {
         println!();
@@ -125,8 +128,12 @@ fn demo_transfer(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     let client = SolanaClient::new(rpc_url.to_string());
     let balance = client.get_sol_balance(&keypair.pubkey())?;
 
-    if balance < 10_000_000 {  // 0.01 SOL
-        println!("{} Insufficient balance for transfer demo (need 0.01 SOL)", "⚠️".yellow());
+    if balance < 10_000_000 {
+        // 0.01 SOL
+        println!(
+            "{} Insufficient balance for transfer demo (need 0.01 SOL)",
+            "⚠️".yellow()
+        );
         println!("   Current balance: {} SOL", lamports_to_sol(balance));
         println!("   Please fund your wallet on devnet:");
         println!("   → https://faucet.solana.com");
@@ -138,9 +145,15 @@ fn demo_transfer(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     println!();
     println!("Example code to transfer 0.001 SOL:");
     println!("{}", "─────────────────────────────────────".dimmed());
-    println!("{}", "let recipient = Pubkey::from_str(\"<address>\")?;".yellow());
+    println!(
+        "{}",
+        "let recipient = Pubkey::from_str(\"<address>\")?;".yellow()
+    );
     println!("{}", "let lamports = 1_000_000; // 0.001 SOL".yellow());
-    println!("{}", "let signature = client.transfer_sol(keypair, &recipient, lamports)?;".yellow());
+    println!(
+        "{}",
+        "let signature = client.transfer_sol(keypair, &recipient, lamports)?;".yellow()
+    );
     println!("{}", "println!(\"Signature: {}\", signature);".yellow());
     println!("{}", "─────────────────────────────────────".dimmed());
 
@@ -156,8 +169,12 @@ fn demo_wrap_sol(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     let client = SolanaClient::new(rpc_url.to_string());
     let balance = client.get_sol_balance(&keypair.pubkey())?;
 
-    if balance < 20_000_000 {  // 0.02 SOL
-        println!("{} Insufficient balance for wrap demo (need 0.02 SOL)", "⚠️".yellow());
+    if balance < 20_000_000 {
+        // 0.02 SOL
+        println!(
+            "{} Insufficient balance for wrap demo (need 0.02 SOL)",
+            "⚠️".yellow()
+        );
         println!("   Current balance: {} SOL", lamports_to_sol(balance));
         return Ok(());
     }
@@ -167,8 +184,14 @@ fn demo_wrap_sol(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     println!("Example code to wrap 0.01 SOL to WSOL:");
     println!("{}", "─────────────────────────────────────".dimmed());
     println!("{}", "let lamports = 10_000_000; // 0.01 SOL".yellow());
-    println!("{}", "let signature = client.wrap_sol(keypair, lamports)?;".yellow());
-    println!("{}", "println!(\"Wrapped SOL to WSOL: {}\", signature);".yellow());
+    println!(
+        "{}",
+        "let signature = client.wrap_sol(keypair, lamports)?;".yellow()
+    );
+    println!(
+        "{}",
+        "println!(\"Wrapped SOL to WSOL: {}\", signature);".yellow()
+    );
     println!("{}", "─────────────────────────────────────".dimmed());
 
     Ok(())
@@ -182,8 +205,14 @@ fn demo_unwrap_sol(_keypair: &Keypair, _rpc_url: &str) -> Result<()> {
 
     println!("Example code to unwrap all WSOL back to SOL:");
     println!("{}", "─────────────────────────────────────".dimmed());
-    println!("{}", "let signature = client.unwrap_sol(keypair)?;".yellow());
-    println!("{}", "println!(\"Unwrapped WSOL to SOL: {}\", signature);".yellow());
+    println!(
+        "{}",
+        "let signature = client.unwrap_sol(keypair)?;".yellow()
+    );
+    println!(
+        "{}",
+        "println!(\"Unwrapped WSOL to SOL: {}\", signature);".yellow()
+    );
     println!("{}", "─────────────────────────────────────".dimmed());
 
     Ok(())
@@ -199,8 +228,12 @@ fn demo_create_nonce(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     let balance = client.get_sol_balance(&keypair.pubkey())?;
 
     // Nonce account requires ~0.002 SOL rent + transaction fee
-    if balance < 5_000_000 {  // 0.005 SOL
-        println!("{} Insufficient balance for nonce account (need 0.005 SOL)", "⚠️".yellow());
+    if balance < 5_000_000 {
+        // 0.005 SOL
+        println!(
+            "{} Insufficient balance for nonce account (need 0.005 SOL)",
+            "⚠️".yellow()
+        );
         println!("   Current balance: {} SOL", lamports_to_sol(balance));
         return Ok(());
     }
@@ -214,8 +247,14 @@ fn demo_create_nonce(keypair: &Keypair, rpc_url: &str) -> Result<()> {
     println!();
     println!("Example code to create nonce account:");
     println!("{}", "─────────────────────────────────────".dimmed());
-    println!("{}", "let (nonce_pubkey, sig) = client.create_nonce_account(keypair)?;".yellow());
-    println!("{}", "println!(\"Nonce account: {}\", nonce_pubkey);".yellow());
+    println!(
+        "{}",
+        "let (nonce_pubkey, sig) = client.create_nonce_account(keypair)?;".yellow()
+    );
+    println!(
+        "{}",
+        "println!(\"Nonce account: {}\", nonce_pubkey);".yellow()
+    );
     println!("{}", "println!(\"Signature: {}\", sig);".yellow());
     println!("{}", "─────────────────────────────────────".dimmed());
 
@@ -230,11 +269,26 @@ fn demo_transfer_token(_keypair: &Keypair, _rpc_url: &str) -> Result<()> {
 
     println!("Example code to transfer SPL tokens:");
     println!("{}", "─────────────────────────────────────".dimmed());
-    println!("{}", "let mint = Pubkey::from_str(\"<token_mint_address>\")?;".yellow());
-    println!("{}", "let recipient = Pubkey::from_str(\"<recipient_address>\")?;".yellow());
-    println!("{}", "let amount = 1000; // token amount (smallest units)".yellow());
-    println!("{}", "let signature = client.transfer_token(keypair, &recipient, &mint, amount)?;".yellow());
-    println!("{}", "println!(\"Token transfer: {}\", signature);".yellow());
+    println!(
+        "{}",
+        "let mint = Pubkey::from_str(\"<token_mint_address>\")?;".yellow()
+    );
+    println!(
+        "{}",
+        "let recipient = Pubkey::from_str(\"<recipient_address>\")?;".yellow()
+    );
+    println!(
+        "{}",
+        "let amount = 1000; // token amount (smallest units)".yellow()
+    );
+    println!(
+        "{}",
+        "let signature = client.transfer_token(keypair, &recipient, &mint, amount)?;".yellow()
+    );
+    println!(
+        "{}",
+        "println!(\"Token transfer: {}\", signature);".yellow()
+    );
     println!("{}", "─────────────────────────────────────".dimmed());
 
     Ok(())
@@ -271,8 +325,7 @@ fn main() -> Result<()> {
     println!("{} Password Input", "🔐".cyan());
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    let password = read_password_from_stdin()
-        .context("Failed to read password")?;
+    let password = read_password_from_stdin().context("Failed to read password")?;
 
     println!("{} Password received", "✅".green());
     println!();

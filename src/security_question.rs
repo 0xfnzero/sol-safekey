@@ -39,7 +39,8 @@ impl SecurityQuestion {
             io::stdout().flush().unwrap();
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input)
+            io::stdin()
+                .read_line(&mut input)
                 .map_err(|e| format!("读取输入失败: {}", e))?;
 
             match input.trim().parse::<usize>() {
@@ -62,7 +63,8 @@ impl SecurityQuestion {
             io::stdout().flush().unwrap();
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input)
+            io::stdin()
+                .read_line(&mut input)
                 .map_err(|e| format!("读取输入失败: {}", e))?;
 
             let ans = input.trim();
@@ -96,7 +98,8 @@ impl SecurityQuestion {
             io::stdout().flush().unwrap();
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input)
+            io::stdin()
+                .read_line(&mut input)
                 .map_err(|e| format!("读取输入失败: {}", e))?;
 
             let answer = input.trim().to_lowercase();

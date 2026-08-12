@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-pick-source-directory"
+description = "Open a native folder picker and return the selected Solana program source directory path."
+commands.allow = ["pick_source_directory"]

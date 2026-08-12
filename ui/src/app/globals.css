@@ -56,6 +56,18 @@ body {
   color: hsl(var(--foreground));
 }
 
+.app-shell {
+  user-select: none;
+}
+
+.app-shell input,
+.app-shell textarea,
+.app-shell code,
+.app-shell pre,
+.select-text {
+  user-select: text;
+}
+
 input[type="number"] {
   appearance: textfield;
   -moz-appearance: textfield;

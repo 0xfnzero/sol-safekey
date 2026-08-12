@@ -5,8 +5,14 @@ const ROOT = path.resolve(__dirname, "..");
 const SRC = path.join(ROOT, "src");
 const SENSITIVE_FIELDS = new Set([
   "password",
+  "current_password",
+  "new_password",
   "master_password",
   "private_key",
+  "secret_key",
+  "keystore_json",
+  "program_keypair_json",
+  "programKeypairJson",
   "security_answer",
   "totp_code",
 ]);
@@ -16,7 +22,7 @@ function walk(dir) {
   return entries.flatMap((entry) => {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) return walk(fullPath);
-    if (/\.(tsx|jsx)$/.test(entry.name)) return [fullPath];
+    if (/\.(tsx|jsx|ts|js)$/.test(entry.name)) return [fullPath];
     return [];
   });
 }
@@ -65,6 +71,29 @@ const failures = [];
 
 for (const file of walk(SRC)) {
   const source = fs.readFileSync(file, "utf8");
+  const forbiddenProgramKeypairState = [
+    /\bformData\.(?:program_keypair_json|programKeypairJson)\b/g,
+    /handleFormChange\(\s*["'](?:program_keypair_json|programKeypairJson)["']/g,
+    /\bprogramKeypairJson\b/g,
+  ];
+  for (const pattern of forbiddenProgramKeypairState) {
+    let secretMatch;
+    while ((secretMatch = pattern.exec(source))) {
+      failures.push(
+        `${path.relative(ROOT, file)}:${lineNumber(source, secretMatch.index)} program keypair JSON must not be stored in FormState`,
+      );
+    }
+  }
+
+  const storageMatch = source.match(
+    /(?:localStorage|sessionStorage)\.setItem\([^)]*program[_-]?keypair/i,
+  );
+  if (storageMatch?.index !== undefined) {
+    failures.push(
+      `${path.relative(ROOT, file)}:${lineNumber(source, storageMatch.index)} program keypair JSON must not be persisted in browser storage`,
+    );
+  }
+
   const inputRegex = /<input\b/g;
   let match;
 
@@ -72,7 +101,8 @@ for (const file of walk(SRC)) {
     const tag = readInputTag(source, match.index);
     const fieldMatch = tag.match(/handleFormChange\(\s*["']([^"']+)["']/);
     const valueMatch = tag.match(/value=\{\s*formData\.([A-Za-z0-9_]+)/);
-    const fieldName = fieldMatch?.[1] || valueMatch?.[1];
+    const annotatedFieldMatch = tag.match(/data-sensitive-field=\s*["']([^"']+)["']/);
+    const fieldName = fieldMatch?.[1] || valueMatch?.[1] || annotatedFieldMatch?.[1];
 
     if (!fieldName || !SENSITIVE_FIELDS.has(fieldName)) continue;
     if (/\btype=\s*["']password["']/.test(tag)) continue;

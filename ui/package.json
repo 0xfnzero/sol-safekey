@@ -2,6 +2,9 @@
   "name": "@sol-safekey/ui",
   "version": "0.4.0",
   "private": true,
+  "engines": {
+    "node": "20 || >=22"
+  },
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3840",
     "predev:stack": "node scripts/ensure-out.cjs && node scripts/free-api-port.cjs",
@@ -10,6 +13,9 @@
     "prebuild": "node scripts/assert-no-next-dev.cjs && node scripts/check-sensitive-inputs.cjs",
     "build": "next build",
     "start": "next start",
+    "test:dependency-compat": "node scripts/test-dependency-compat.cjs",
+    "test:devnet-airdrop": "node scripts/test-devnet-airdrop.cjs",
+    "test:program-deploy": "node scripts/test-program-deploy.cjs",
     "lint": "node scripts/check-sensitive-inputs.cjs && eslint",
     "tauri": "tauri",
     "predesktop:dev": "node scripts/refresh-desktop-icons.cjs",
@@ -22,12 +28,11 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
-    "next": "^15.5.19",
+    "next": "^15.5.21",
     "next-intl": "^4.13.0",
     "next-themes": "^0.4.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "shadcn": "^4.0.8",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0"
   },
@@ -38,17 +43,21 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.27",
-    "concurrently": "^10.0.3",
+    "brace-expansion": "file:vendor/brace-expansion-compat",
+    "brace-expansion-upstream": "npm:brace-expansion@5.0.8",
+    "concurrently": "9.2.4",
     "eslint": "^9",
-    "eslint-config-next": "^15.5.19",
-    "postcss": "^8.5.15",
+    "eslint-config-next": "^15.5.21",
+    "postcss": "^8.5.23",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5"
   },
   "overrides": {
+    "brace-expansion": "$brace-expansion",
     "postcss": "$postcss",
-    "picomatch": "4.0.4",
-    "brace-expansion": "1.1.13"
+    "next": {
+      "sharp": "0.35.0"
+    }
   }
 }
