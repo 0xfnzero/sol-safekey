@@ -20,6 +20,25 @@ make install
 make ui-dev
 ```
 
+Start the Tauri desktop app from the same repository root:
+
+```bash
+make desktop-dev
+```
+
+This command starts the local web/API development stack and opens the Tauri shell.
+Keep the app local; do not expose the API port through a public proxy, tunnel, or
+port forward.
+
+中文：从同一个仓库根目录启动 Tauri 桌面端：
+
+```bash
+make desktop-dev
+```
+
+该命令会启动本地 Web/API 开发栈并打开 Tauri 桌面壳。请保持本地运行，
+不要通过公网代理、隧道或端口转发暴露 API 端口。
+
 Development endpoints:
 
 - English UI: `http://127.0.0.1:3840/en/`

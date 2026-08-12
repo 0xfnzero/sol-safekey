@@ -40,6 +40,17 @@ import { SavedWalletPicker } from "@/components/SavedWalletPicker";
 import { DEFAULT_API_PORT } from "@/lib/api";
 import { apiFetch } from "@/lib/apiFetch";
 import {
+  anchorIdlProgramId,
+  defaultAccountAddress,
+  encodeAnchorInstruction,
+  flattenAnchorAccounts,
+  idlTypeLabel,
+  isUnsupportedIdlType,
+  parseAnchorIdlJson,
+  type AnchorIdlInstruction,
+  type AnchorIdlProgram,
+} from "@/lib/anchorIdl";
+import {
   currentNetwork,
   DEFAULT_NETWORK,
   DEFAULT_RPC_PROFILES,
@@ -141,6 +152,7 @@ const WALLET_PASSWORD_FORM_IDS = new Set([
   "close-wsol-ata",
   "create-nonce",
   "program-deploy",
+  "program-invoke",
   "squads-create",
   "squads-sol-transfer",
   "squads-token-transfer",
@@ -220,6 +232,26 @@ interface MenuItem {
 interface ProgramKeypairMetadata {
   filename: string;
   programId: string;
+}
+
+interface ProgramInvokeState {
+  projectId?: string;
+  sourceDir?: string;
+  idlPath?: string;
+  idlJsonText: string;
+  idl?: AnchorIdlProgram;
+  programId: string;
+  selectedInstruction: string;
+  argValues: Record<string, string>;
+  accountValues: Record<string, string>;
+  loading: boolean;
+  error?: string;
+  result?: {
+    status: string;
+    signature?: string;
+    simulationError?: string;
+    logs: string[];
+  };
 }
 
 interface ProgramDeploySourceResponse {
@@ -699,6 +731,7 @@ function defaultBackTarget(formId: string): string | null {
     case "pumpswap-cashback":
       return "pump-workbench";
     case "program-deploy":
+    case "program-invoke":
     case "program-info":
       return "program-workbench";
     case "create-nonce":
@@ -1071,6 +1104,14 @@ export default function Home() {
   const [lastProgramDeploymentIntent, setLastProgramDeploymentIntent] =
     useState<ProgramDeploymentJournalIntent | null>(null);
   const [programSourceLoading, setProgramSourceLoading] = useState(false);
+  const [programInvoke, setProgramInvoke] = useState<ProgramInvokeState>({
+    idlJsonText: "",
+    programId: "",
+    selectedInstruction: "",
+    argValues: {},
+    accountValues: {},
+    loading: false,
+  });
   const [programDeploymentNowMs, setProgramDeploymentNowMs] = useState(() => Date.now());
   const [programKeypairMetadata, setProgramKeypairMetadata] = useState<ProgramKeypairMetadata | null>(null);
   const programKeypairBytesRef = useRef<Uint8Array | null>(null);
@@ -3139,6 +3180,9 @@ export default function Home() {
     if (formId === "create-nonce") {
       return { count: 1 };
     }
+    if (formId === "program-invoke") {
+      return { programInvokeMode: "simulate" };
+    }
     return {};
   };
 
@@ -3224,6 +3268,104 @@ export default function Home() {
     if (authFormsWithWallets.has(formId)) {
       setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
     }
+  };
+
+  const selectProgramInvokeInstruction = (
+    instruction: AnchorIdlInstruction | undefined,
+    walletAddress?: string,
+  ) => {
+    if (!instruction) {
+      setProgramInvoke((prev) => ({
+        ...prev,
+        selectedInstruction: "",
+        argValues: {},
+        accountValues: {},
+      }));
+      return;
+    }
+    const nextAccounts: Record<string, string> = {};
+    for (const account of flattenAnchorAccounts(instruction.accounts)) {
+      const byName = defaultAccountAddress(account.name, account);
+      nextAccounts[account.path] = account.isSigner && walletAddress ? walletAddress : byName;
+    }
+    setProgramInvoke((prev) => ({
+      ...prev,
+      selectedInstruction: instruction.name,
+      argValues: Object.fromEntries(instruction.args.map((arg) => [arg.name, ""])),
+      accountValues: nextAccounts,
+      result: undefined,
+      error: undefined,
+    }));
+  };
+
+  const loadProgramInvokeIdl = async (project: ProgramProject) => {
+    setProgramInvoke((prev) => ({ ...prev, loading: true, error: undefined, result: undefined }));
+    try {
+      const response = await apiFetch("program/idl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_dir: project.sourceDir,
+          artifact_stem: project.programSoName?.replace(/\.so$/i, ""),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || t("features.program-invoke.idlLoadFailed"));
+      }
+      const idlJsonText = JSON.stringify(data.idl_json, null, 2);
+      const idl = parseAnchorIdlJson(idlJsonText);
+      const programId = project.programId || anchorIdlProgramId(idl);
+      const firstInstruction = idl.instructions[0];
+      const firstAccounts: Record<string, string> = {};
+      for (const account of flattenAnchorAccounts(firstInstruction?.accounts || [])) {
+        const byName = defaultAccountAddress(account.name, account);
+        firstAccounts[account.path] = account.isSigner && effectiveWallet ? effectiveWallet.public_key : byName;
+      }
+      setProgramInvoke({
+        projectId: project.id,
+        sourceDir: project.sourceDir,
+        idlPath: String(data.idl_path || ""),
+        idlJsonText,
+        idl,
+        programId,
+        selectedInstruction: firstInstruction?.name || "",
+        argValues: Object.fromEntries((firstInstruction?.args || []).map((arg) => [arg.name, ""])),
+        accountValues: firstAccounts,
+        loading: false,
+      });
+    } catch (error) {
+      setProgramInvoke((prev) => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : t("features.program-invoke.idlLoadFailed"),
+      }));
+    }
+  };
+
+  const openProgramInvoke = (project: ProgramProject) => {
+    clearProgramKeypairMaterial();
+    setTokenActionContext(null);
+    setNonceCreateOpen(false);
+    openParentMenuForForm("program-workbench");
+    setBackTarget("program-workbench");
+    setSelectedForm("program-invoke");
+    setFormData({
+      wallet_id: effectiveWalletId,
+      network: project.network || effectiveNetwork,
+    });
+    setAuthMethod((prev) => ({ ...prev, "program-invoke": "keystore" }));
+    setProgramInvoke({
+      projectId: project.id,
+      sourceDir: project.sourceDir,
+      idlJsonText: "",
+      programId: project.programId || "",
+      selectedInstruction: "",
+      argValues: {},
+      accountValues: {},
+      loading: true,
+    });
+    void loadProgramInvokeIdl(project);
   };
 
   const tokenActionPreset = (token: WalletTokenAsset): FormState => ({
@@ -3548,6 +3690,27 @@ export default function Home() {
         const error = programDeployValidationError(nextFormData);
         return error ? fail(error) : true;
       }
+      case "program-invoke": {
+        if (programInvoke.loading) return fail(t("features.program-invoke.idlLoading"));
+        if (!programInvoke.idl || programInvoke.error) return fail(programInvoke.error || t("features.program-invoke.noIdl"));
+        if (!isLikelySolanaPublicKey(programInvoke.programId)) {
+          return fail(t("features.program-invoke.invalidProgramId"));
+        }
+        const instruction = programInvoke.idl.instructions.find(
+          (item) => item.name === programInvoke.selectedInstruction,
+        );
+        if (!instruction) return fail(t("features.program-invoke.noInstruction"));
+        if (instruction.args.some((arg) => isUnsupportedIdlType(arg.type))) {
+          return fail(t("features.program-invoke.unsupportedType"));
+        }
+        for (const account of flattenAnchorAccounts(instruction.accounts)) {
+          const value = String(programInvoke.accountValues[account.path] || "").trim();
+          if (!isLikelySolanaPublicKey(value)) {
+            return fail(t("features.program-invoke.accountInvalid", { account: account.path }));
+          }
+        }
+        return true;
+      }
       case "squads-create": {
         const members = parseAddressList(nextFormData.members);
         const threshold = parseInt(String(nextFormData.threshold || ""), 10);
@@ -3687,16 +3850,16 @@ export default function Home() {
     setPasswordPrompt({ kind: "create-password", formId, formState: nextFormData });
   };
 
-  const requestPasswordSubmit = (formId: string) => {
+  const requestPasswordSubmit = (formId: string, formOverride?: FormState) => {
     const needsWalletPassword = shouldPromptForWalletPassword(formId);
     const needsMasterPassword = shouldPromptForMasterPassword(formId);
 
     if (!needsWalletPassword && !needsMasterPassword) {
-      void handleSubmit(formId);
+      void handleSubmit(formId, formOverride ?? formData);
       return;
     }
 
-    const nextFormData = walletAuthFormData();
+    const nextFormData = walletAuthFormData(formOverride ?? formData);
     const method = walletAuth(formId);
     if (needsWalletPassword &&
       method === "keystore" &&
@@ -3849,6 +4012,24 @@ export default function Home() {
     return true;
   };
 
+  const validateProgramInvokeWalletPassword = async (state: FormState): Promise<boolean> => {
+    const method = walletAuth("program-invoke");
+    if (method !== "keystore" && method !== "encrypted") return true;
+    const requestBody: ApiRequestBody = {};
+    applyWalletAuth(requestBody, method, state, "private_key");
+    const response = await apiFetch("wallet/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      toast.error(data.error || t("features.program-invoke.passwordInvalid"));
+      return false;
+    }
+    return true;
+  };
+
   const confirmPasswordPrompt = async () => {
     if (!passwordPrompt || passwordConfirmationInFlightRef.current) return;
     const password = passwordPromptValue;
@@ -3888,6 +4069,9 @@ export default function Home() {
           setPasswordPrompt(null);
           clearPasswordPromptSecrets();
           toast.success(t("features.program-deploy.deployStarted"));
+        } else if (passwordPrompt.formId === "program-invoke") {
+          const passwordOk = await validateProgramInvokeWalletPassword(nextFormData);
+          if (!passwordOk) return;
         }
         await handleSubmit(passwordPrompt.formId, nextFormData);
       } else if (passwordPrompt.kind === "create-password") {
@@ -5065,6 +5249,80 @@ export default function Home() {
             if (!programKeypairPath) {
               clearProgramKeypairMaterial();
             }
+          }
+          break;
+        }
+
+        case "program-invoke": {
+          const m = walletAuth("program-invoke");
+          if (!validateWalletAuth(m, formData, "private_key")) {
+            toast.error(t("features.program-invoke.fillAllFields"));
+            setLoading(false);
+            return;
+          }
+          const instruction = programInvoke.idl?.instructions.find(
+            (item) => item.name === programInvoke.selectedInstruction,
+          );
+          if (!instruction) {
+            toast.error(t("features.program-invoke.noInstruction"));
+            setLoading(false);
+            return;
+          }
+
+          let encoded;
+          try {
+            encoded = await encodeAnchorInstruction(
+              programInvoke.programId,
+              instruction,
+              programInvoke.argValues,
+              programInvoke.accountValues,
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            toast.error(
+              message.startsWith("invalid-account:")
+                ? t("features.program-invoke.accountInvalid", { account: message.replace("invalid-account:", "") })
+                : t("features.program-invoke.encodeFailed"),
+            );
+            setLoading(false);
+            return;
+          }
+
+          const mode = String(formData.programInvokeMode || "simulate") === "send" ? "send" : "simulate";
+          const requestBody: Record<string, unknown> = {
+            program_id: encoded.programId,
+            instruction_name: instruction.name,
+            accounts: encoded.accounts,
+            data_base64: encoded.dataBase64,
+            network: submitNetwork(),
+            mode,
+          };
+          applyWalletAuth(requestBody as ApiRequestBody, m, formData, "private_key");
+          const response = await apiFetch("program/invoke", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          });
+          const data = await response.json();
+          const result = {
+            status: String(data.status || ""),
+            signature: typeof data.signature === "string" ? data.signature : undefined,
+            simulationError:
+              typeof data.simulation_error === "string" ? data.simulation_error : undefined,
+            logs: Array.isArray(data.logs) ? data.logs.map((line: unknown) => String(line)) : [],
+          };
+          setProgramInvoke((prev) => ({ ...prev, result }));
+          if (response.ok) {
+            if (mode === "send") {
+              toast.success(t("features.program-invoke.sendSucceeded"));
+              refreshWalletAfterMutation(savedWalletFromForm(formData) ?? effectiveWallet);
+            } else if (result.simulationError) {
+              toast.error(t("features.program-invoke.simulationFailed"));
+            } else {
+              toast.success(t("features.program-invoke.simulationSucceeded"));
+            }
+          } else {
+            toast.error(data.error || t("features.program-invoke.error"));
           }
           break;
         }
@@ -6642,6 +6900,7 @@ export default function Home() {
                     <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-lg border border-white/10 bg-zinc-950 shadow-xl">
                       {[
                         { id: "deploy", label: t("features.program-projects.openDeployPlan"), onClick: () => openProgramProjectDeploy(project) },
+                        { id: "invoke", label: t("features.program-projects.invokeProgram"), onClick: () => openProgramInvoke(project) },
                         { id: "prepare-upgrade", label: t("features.program-projects.prepareUpgradePlan"), onClick: () => openProgramProjectPrepareUpgrade(project) },
                         { id: "upgrade-proposal", label: t("features.program-projects.createUpgradeProposal"), onClick: () => openProgramProjectUpgradeProposal(project, latestUpgradePlan) },
                         {
@@ -6759,6 +7018,14 @@ export default function Home() {
                             >
                               <ChevronRight className="h-3.5 w-3.5" />
                               {t("features.program-projects.viewDeployment")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openProgramInvoke(project)}
+                              className="inline-flex h-9 items-center gap-1 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20"
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                              {t("features.program-projects.invokeProgram")}
                             </button>
                           </div>
                         </div>
@@ -10642,6 +10909,302 @@ export default function Home() {
         );
       }
 
+      case "program-invoke": {
+        const invokeProject = currentProgramProjects.find((project) => project.id === programInvoke.projectId);
+        const invokeWallet = savedWalletFromForm(formData) ?? effectiveWallet;
+        const selectedInstruction = programInvoke.idl?.instructions.find(
+          (instruction) => instruction.name === programInvoke.selectedInstruction,
+        );
+        const selectedAccounts = selectedInstruction ? flattenAnchorAccounts(selectedInstruction.accounts) : [];
+        const invokeMode = String(formData.programInvokeMode || "simulate") === "send" ? "send" : "simulate";
+        const invokeLogs = [
+          ...(programInvoke.result?.signature
+            ? [t("features.program-invoke.signatureLog", { signature: programInvoke.result.signature })]
+            : []),
+          ...(programInvoke.result?.simulationError
+            ? [t("features.program-invoke.simulationErrorLog", { error: programInvoke.result.simulationError })]
+            : []),
+          ...(programInvoke.result?.logs || []),
+        ];
+        const runProgramInvoke = (mode: "simulate" | "send") => {
+          const nextFormData = { ...formData, programInvokeMode: mode };
+          setFormData(nextFormData);
+          requestPasswordSubmit("program-invoke", nextFormData);
+        };
+
+        return (
+          <div className="space-y-4">
+            <section className="space-y-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-semibold text-gray-100">
+                    {invokeProject?.name || t("features.program-invoke.project")}
+                  </p>
+                  {programInvoke.sourceDir && (
+                    <code className="block break-all text-xs text-gray-500">{programInvoke.sourceDir}</code>
+                  )}
+                  {programInvoke.idlPath && (
+                    <p className="break-all text-xs text-gray-400">
+                      {t("features.program-invoke.idlPath")}: {programInvoke.idlPath}
+                    </p>
+                  )}
+                </div>
+                {invokeProject && (
+                  <button
+                    type="button"
+                    onClick={() => void loadProgramInvokeIdl(invokeProject)}
+                    disabled={programInvoke.loading}
+                    className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${programInvoke.loading ? "animate-spin" : ""}`} />
+                    {t("features.program-invoke.reloadIdl")}
+                  </button>
+                )}
+              </div>
+              {programInvoke.loading && (
+                <p className="text-xs text-cyan-200">{t("features.program-invoke.idlLoading")}</p>
+              )}
+              {programInvoke.error && (
+                <p className="rounded-lg border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                  {programInvoke.error}
+                </p>
+              )}
+            </section>
+
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+              <section className="min-w-0 space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <h3 className="text-sm font-semibold text-gray-200">{t("features.program-invoke.functions")}</h3>
+                {programInvoke.idl?.instructions.length ? (
+                  <div className="max-h-96 space-y-1 overflow-y-auto pr-1">
+                    {programInvoke.idl.instructions.map((instruction) => (
+                      <button
+                        key={instruction.name}
+                        type="button"
+                        onClick={() => selectProgramInvokeInstruction(instruction, invokeWallet?.public_key)}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                          instruction.name === programInvoke.selectedInstruction
+                            ? "bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/30"
+                            : "bg-white/5 text-gray-300 hover:bg-white/10"
+                        }`}
+                      >
+                        <span className="block truncate font-medium">{instruction.name}</span>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          {t("features.program-invoke.functionMeta", {
+                            args: instruction.args.length,
+                            accounts: flattenAnchorAccounts(instruction.accounts).length,
+                          })}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">{t("features.program-invoke.noFunctions")}</p>
+                )}
+              </section>
+
+              <section className="min-w-0 space-y-4 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <div>
+                  <label className="block text-sm font-medium mb-2">{t("features.program-invoke.programId")}</label>
+                  <input
+                    value={programInvoke.programId}
+                    onChange={(event) =>
+                      setProgramInvoke((prev) => ({ ...prev, programId: event.target.value.trim(), result: undefined }))
+                    }
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    placeholder={t("features.program-invoke.programIdPlaceholder")}
+                  />
+                </div>
+
+                {selectedInstruction ? (
+                  <>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-gray-200">{t("features.program-invoke.parameters")}</h3>
+                        {selectedInstruction.args.length === 0 ? (
+                          <p className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-gray-500">
+                            {t("features.program-invoke.noParameters")}
+                          </p>
+                        ) : selectedInstruction.args.map((arg) => {
+                          const unsupported = isUnsupportedIdlType(arg.type);
+                          return (
+                            <div key={arg.name}>
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <label className="min-w-0 truncate text-sm font-medium">{arg.name}</label>
+                                <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${
+                                  unsupported ? "bg-amber-400/15 text-amber-100" : "bg-white/10 text-gray-300"
+                                }`}>
+                                  {idlTypeLabel(arg.type)}
+                                </span>
+                              </div>
+                              <input
+                                value={programInvoke.argValues[arg.name] || ""}
+                                onChange={(event) =>
+                                  setProgramInvoke((prev) => ({
+                                    ...prev,
+                                    argValues: { ...prev.argValues, [arg.name]: event.target.value },
+                                    result: undefined,
+                                  }))
+                                }
+                                disabled={unsupported}
+                                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+                                placeholder={
+                                  unsupported
+                                    ? t("features.program-invoke.unsupportedType")
+                                    : t("features.program-invoke.argPlaceholder", { type: idlTypeLabel(arg.type) })
+                                }
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-gray-200">{t("features.program-invoke.accounts")}</h3>
+                        {selectedAccounts.map((account) => (
+                          <div key={account.path}>
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <label className="min-w-0 flex-1 truncate text-sm font-medium">{account.path}</label>
+                              {account.isSigner && (
+                                <span className="rounded bg-cyan-400/15 px-2 py-0.5 text-xs text-cyan-100">
+                                  {t("features.program-invoke.signer")}
+                                </span>
+                              )}
+                              {account.isWritable && (
+                                <span className="rounded bg-emerald-400/15 px-2 py-0.5 text-xs text-emerald-100">
+                                  {t("features.program-invoke.writable")}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <input
+                                value={programInvoke.accountValues[account.path] || ""}
+                                onChange={(event) =>
+                                  setProgramInvoke((prev) => ({
+                                    ...prev,
+                                    accountValues: { ...prev.accountValues, [account.path]: event.target.value.trim() },
+                                    result: undefined,
+                                  }))
+                                }
+                                autoComplete="off"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                                placeholder={t("features.program-invoke.accountPlaceholder")}
+                              />
+                              {account.isSigner && invokeWallet && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setProgramInvoke((prev) => ({
+                                      ...prev,
+                                      accountValues: {
+                                        ...prev.accountValues,
+                                        [account.path]: invokeWallet.public_key,
+                                      },
+                                      result: undefined,
+                                    }))
+                                  }
+                                  className="shrink-0 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20"
+                                >
+                                  {t("features.program-invoke.currentWallet")}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <section className="space-y-3 border-t border-white/10 pt-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="inline-grid grid-cols-2 overflow-hidden rounded-lg border border-white/10 bg-black/20 p-1">
+                          {(["simulate", "send"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => handleFormChange("programInvokeMode", mode)}
+                              className={`min-h-9 px-4 text-sm font-semibold ${
+                                invokeMode === mode
+                                  ? "rounded-md bg-white/15 text-white"
+                                  : "text-gray-400 hover:text-gray-100"
+                              }`}
+                            >
+                              {t(`features.program-invoke.modes.${mode}`)}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => runProgramInvoke("simulate")}
+                            disabled={loading || programInvoke.loading}
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-cyan-300/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-50 hover:bg-cyan-400/20 disabled:opacity-50"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${loading && invokeMode === "simulate" ? "animate-spin" : ""}`} />
+                            {loading && invokeMode === "simulate"
+                              ? t("features.program-invoke.simulating")
+                              : t("features.program-invoke.simulateButton")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => runProgramInvoke("send")}
+                            disabled={loading || programInvoke.loading}
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white hover:from-purple-600 hover:to-pink-600 disabled:opacity-50"
+                          >
+                            <Send className="h-4 w-4" />
+                            {loading && invokeMode === "send"
+                              ? t("features.program-invoke.sending")
+                              : t("features.program-invoke.sendButton")}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">{t("features.program-invoke.signerLimitHint")}</p>
+                    </section>
+
+                    <section className="space-y-2" aria-labelledby="program-invoke-terminal-title">
+                      <h3 id="program-invoke-terminal-title" className="text-sm font-semibold text-gray-200">
+                        {t("features.program-invoke.logs")}
+                      </h3>
+                      <div
+                        className="h-64 select-text overflow-y-auto rounded-lg border border-emerald-300/15 bg-black px-3 py-2 font-mono text-xs leading-5 text-emerald-100 shadow-inner"
+                        role="log"
+                        aria-live="polite"
+                      >
+                        {invokeLogs.length === 0 ? (
+                          <div className="text-gray-500">
+                            <span className="select-none text-emerald-500">$ </span>
+                            {t("features.program-invoke.noLogs")}
+                          </div>
+                        ) : invokeLogs.map((line, index) => (
+                          <div
+                            key={`${index}:${line}`}
+                            className={`whitespace-pre-wrap break-words ${
+                              programInvoke.result?.simulationError && index === 0 ? "text-red-300" : "text-emerald-100"
+                            }`}
+                          >
+                            <span className="select-none text-emerald-500">$ </span>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                ) : (
+                  <p className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-gray-400">
+                    {programInvoke.idl ? t("features.program-invoke.noInstruction") : t("features.program-invoke.noIdl")}
+                  </p>
+                )}
+              </section>
+            </div>
+          </div>
+        );
+      }
+
       case "program-info":
         return (
           <div className="space-y-4">
@@ -12205,6 +12768,7 @@ export default function Home() {
         "pumpswap-cashback": t("features.pumpswap-cashback.title"),
         "create-nonce": t("features.create-nonce.title"),
         "program-deploy": t("features.program-deploy.title"),
+        "program-invoke": t("features.program-invoke.title"),
         "program-info": t("features.program-info.title"),
         "squads-workspace": t("features.workspace.title"),
         "squads-proposals": t("features.workspace.savedProposals"),

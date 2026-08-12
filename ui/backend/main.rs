@@ -56,6 +56,7 @@ use solana_rpc_client_api::{
     response::RpcKeyedAccount,
 };
 use solana_sdk::account::Account;
+use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::sanitize::Sanitize;
@@ -98,6 +99,9 @@ const MAX_SECURE_ENVELOPE_BYTES: usize = MAX_JSON_BODY_BYTES * 2;
 const MAX_KEYSTORE_JSON_BYTES: usize = 128 * 1024;
 const MAX_PROGRAM_SO_BYTES: usize = 3 * 1024 * 1024;
 const MAX_PROGRAM_SO_BASE64_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PROGRAM_IDL_JSON_BYTES: usize = 2 * 1024 * 1024;
+const MAX_GENERIC_PROGRAM_INSTRUCTION_DATA_BYTES: usize = 8 * 1024;
+const MAX_GENERIC_PROGRAM_INSTRUCTION_ACCOUNTS: usize = 64;
 const PROGRAM_WRITE_CHUNK_BYTES: usize = 800;
 const UPGRADEABLE_LOADER_ID: Pubkey =
     Pubkey::from_str_const("BPFLoaderUpgradeab1e11111111111111111111111");
@@ -3070,6 +3074,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/program/deployment-journal/",
             post(program_deployment_journal),
         )
+        .route("/api/program/idl", post(program_idl))
+        .route("/api/program/idl/", post(program_idl))
+        .route("/api/program/invoke", post(program_invoke))
+        .route("/api/program/invoke/", post(program_invoke))
         .route("/api/program/info", post(program_info))
         .route("/api/program/info/", post(program_info))
         // Squads v4 multisig
@@ -6295,6 +6303,15 @@ fn find_program_keypair_path(root: &FsPath, artifact_stem: Option<&str>) -> Opti
         .or_else(|| first_json_file(root, &root.join("target/deploy")))
 }
 
+fn find_program_idl_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
+        candidates.push(format!("target/idl/{stem}.json"));
+    }
+    first_existing_path_owned(root, &candidates)
+        .or_else(|| first_json_file(root, &root.join("target/idl")))
+}
+
 fn find_release_manifest_path(root: &FsPath) -> Option<PathBuf> {
     fs::read_dir(root.join("docs"))
         .ok()?
@@ -6823,6 +6840,225 @@ async fn program_deploy_source(
         build_available,
         build_blocked_reason,
         warnings: build_warnings,
+    }))
+}
+
+#[derive(Deserialize)]
+struct ProgramIdlRequest {
+    source_dir: String,
+    #[serde(default)]
+    artifact_stem: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ProgramIdlResponse {
+    source_dir: String,
+    idl_path: String,
+    idl_json: Value,
+}
+
+async fn program_idl(
+    Json(req): Json<ProgramIdlRequest>,
+) -> Result<Json<ProgramIdlResponse>, ApiError> {
+    let source_dir_raw = req.source_dir.trim();
+    if source_dir_raw.is_empty() || source_dir_raw.len() > 4096 {
+        return Err(program_source_error("源码目录路径无效"));
+    }
+    let source_dir = PathBuf::from(source_dir_raw)
+        .canonicalize()
+        .map_err(|error| program_source_error(format!("源码目录不存在或不可访问: {error}")))?;
+    if !source_dir.is_dir() {
+        return Err(program_source_error("源码目录不是目录"));
+    }
+    let artifact_stem = req
+        .artifact_stem
+        .as_deref()
+        .and_then(safe_artifact_stem)
+        .or_else(|| detect_program_artifact_stem(&source_dir));
+    let idl_path = find_program_idl_path(&source_dir, artifact_stem.as_deref())
+        .ok_or_else(|| program_source_error("未找到 target/idl/*.json，请先编译项目"))?;
+    let text = read_text_file_limited(&idl_path, MAX_PROGRAM_IDL_JSON_BYTES, "Anchor IDL")?;
+    let idl_json: Value = serde_json::from_str(&text)
+        .map_err(|_| program_source_error("Anchor IDL 不是有效 JSON"))?;
+    if !idl_json
+        .get("instructions")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return Err(program_source_error("Anchor IDL 缺少 instructions"));
+    }
+    Ok(Json(ProgramIdlResponse {
+        source_dir: path_string(&source_dir),
+        idl_path: path_string(&idl_path),
+        idl_json,
+    }))
+}
+
+#[derive(Deserialize)]
+struct GenericProgramAccountMetaRequest {
+    pubkey: String,
+    is_signer: bool,
+    is_writable: bool,
+}
+
+#[derive(Deserialize)]
+struct ProgramInvokeRequest {
+    #[serde(flatten)]
+    wallet: WalletAuthRequest,
+    program_id: String,
+    instruction_name: String,
+    accounts: Vec<GenericProgramAccountMetaRequest>,
+    data_base64: String,
+    #[serde(default)]
+    network: Option<String>,
+    #[serde(default)]
+    mode: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ProgramInvokeResponse {
+    status: String,
+    signature: Option<String>,
+    simulation_error: Option<String>,
+    logs: Vec<String>,
+}
+
+fn decode_generic_instruction_data(value: &str) -> Result<Vec<u8>, ApiError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError {
+            message: "Instruction data 不能为空".to_string(),
+        });
+    }
+    let max_base64_len = MAX_GENERIC_PROGRAM_INSTRUCTION_DATA_BYTES.div_ceil(3) * 4;
+    if trimmed.len() > max_base64_len {
+        return Err(ApiError {
+            message: "Instruction data 过大".to_string(),
+        });
+    }
+    let data = BASE64.decode(trimmed.as_bytes()).map_err(|_| ApiError {
+        message: "Instruction data base64 无效".to_string(),
+    })?;
+    if data.is_empty() || data.len() > MAX_GENERIC_PROGRAM_INSTRUCTION_DATA_BYTES {
+        return Err(ApiError {
+            message: "Instruction data 大小无效".to_string(),
+        });
+    }
+    Ok(data)
+}
+
+fn build_generic_program_instruction(
+    program_id: &str,
+    accounts: &[GenericProgramAccountMetaRequest],
+    data_base64: &str,
+) -> Result<Instruction, ApiError> {
+    let program_id = Pubkey::from_str(program_id.trim()).map_err(|_| ApiError {
+        message: "Program ID 无效".to_string(),
+    })?;
+    if accounts.len() > MAX_GENERIC_PROGRAM_INSTRUCTION_ACCOUNTS {
+        return Err(ApiError {
+            message: "Instruction 账户数量过多".to_string(),
+        });
+    }
+    let metas = accounts
+        .iter()
+        .map(|account| {
+            let pubkey = Pubkey::from_str(account.pubkey.trim()).map_err(|_| ApiError {
+                message: format!("账户地址无效: {}", account.pubkey),
+            })?;
+            Ok(if account.is_writable {
+                AccountMeta::new(pubkey, account.is_signer)
+            } else {
+                AccountMeta::new_readonly(pubkey, account.is_signer)
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+    Ok(Instruction {
+        program_id,
+        accounts: metas,
+        data: decode_generic_instruction_data(data_base64)?,
+    })
+}
+
+async fn program_invoke(
+    Json(req): Json<ProgramInvokeRequest>,
+) -> Result<Json<ProgramInvokeResponse>, ApiError> {
+    let signer = req.wallet.keypair()?;
+    let signer_pubkey = signer.pubkey();
+    let instruction =
+        build_generic_program_instruction(&req.program_id, &req.accounts, &req.data_base64)?;
+    let mode = req.mode.as_deref().unwrap_or("simulate");
+    if mode != "simulate" && mode != "send" {
+        return Err(ApiError {
+            message: "调用模式必须是 simulate 或 send".to_string(),
+        });
+    }
+    for account in &instruction.accounts {
+        if account.is_signer && account.pubkey != signer_pubkey {
+            return Err(ApiError {
+                message: format!(
+                    "账户 {} 需要签名，但当前只支持用当前钱包 {} 单签调用",
+                    account.pubkey, signer_pubkey
+                ),
+            });
+        }
+    }
+    let (client, _) = rpc_client_for(req.network.as_deref())?;
+    let blockhash = client.get_latest_blockhash().map_err(|error| ApiError {
+        message: format!("获取 blockhash 失败: {error}"),
+    })?;
+    let transaction = Transaction::new_signed_with_payer(
+        &[instruction],
+        Some(&signer_pubkey),
+        &[&signer],
+        blockhash,
+    );
+    if mode == "simulate" {
+        let simulation = client
+            .simulate_transaction_with_config(
+                &transaction,
+                RpcSimulateTransactionConfig {
+                    sig_verify: true,
+                    replace_recent_blockhash: false,
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    encoding: Some(UiTransactionEncoding::Base64),
+                    accounts: None,
+                    min_context_slot: None,
+                    inner_instructions: false,
+                },
+            )
+            .map_err(|error| ApiError {
+                message: format!("模拟调用 RPC 失败: {error}"),
+            })?;
+        return Ok(Json(ProgramInvokeResponse {
+            status: if simulation.value.err.is_some() {
+                "simulation_failed".to_string()
+            } else {
+                "simulated".to_string()
+            },
+            signature: None,
+            simulation_error: simulation.value.err.map(|error| format!("{error}")),
+            logs: simulation.value.logs.unwrap_or_default(),
+        }));
+    }
+
+    let signature = client
+        .send_and_confirm_transaction(&transaction)
+        .map_err(|error| ApiError {
+            message: format!(
+                "{} 调用失败: {error}",
+                req.instruction_name
+                    .trim()
+                    .chars()
+                    .take(80)
+                    .collect::<String>()
+            ),
+        })?;
+    Ok(Json(ProgramInvokeResponse {
+        status: "success".to_string(),
+        signature: Some(signature.to_string()),
+        simulation_error: None,
+        logs: Vec::new(),
     }))
 }
 
