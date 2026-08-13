@@ -279,6 +279,10 @@
       "downloadRecordJson": "Download JSON",
       "copyProgramId": "Copy Program ID",
       "signature": "Signature",
+      "projectListTitle": "Project List",
+      "selectedProjectTitle": "Current Project",
+      "historyCount": "{count} record(s)",
+      "historyEmpty": "This project has no deployment or upgrade records yet.",
       "planKinds": {
         "direct-deploy": "Direct Deploy",
         "squads-upgrade": "Multisig Upgrade"

@@ -279,6 +279,10 @@
       "downloadRecordJson": "下载 JSON",
       "copyProgramId": "复制 Program ID",
       "signature": "签名",
+      "projectListTitle": "项目列表",
+      "selectedProjectTitle": "当前项目",
+      "historyCount": "{count} 条记录",
+      "historyEmpty": "这个项目还没有部署或升级记录。",
       "planKinds": {
         "direct-deploy": "单签部署",
         "squads-upgrade": "多签升级"
