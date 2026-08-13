@@ -1,8 +1,11 @@
 import {
   type AppNetwork,
+  type ProgramDeploymentHistoryItem,
+  type ProgramDeploymentHistoryKind,
   type ProgramDeploymentPlanKind,
   type ProgramDeploymentPlanStatus,
   type ProgramDeploymentResult,
+  type ProgramProject,
 } from "./appStorage";
 
 type ProgramWorkspaceFormState = Record<string, string | number | undefined>;
@@ -46,6 +49,25 @@ export function programPlanId(
   ].join(":");
 }
 
+export function programDeploymentHistoryId(
+  projectId: string,
+  kind: ProgramDeploymentHistoryKind,
+  network: AppNetwork,
+  createdAt: number,
+  programId?: string,
+  signature?: string | null,
+): string {
+  return [
+    "history",
+    stableLocalId(projectId),
+    kind,
+    network,
+    createdAt.toString(36),
+    stableLocalId(String(programId || "")),
+    stableLocalId(String(signature || "")),
+  ].join(":");
+}
+
 export function isUnfinishedProgramDeploymentStatus(status: ProgramDeploymentPlanStatus | undefined): boolean {
   return status === "running" || status === "buffer-ready" || status === "failed";
 }
@@ -57,6 +79,56 @@ export function deploymentReceiptFilename(programId: unknown): string {
       ? `${normalized.slice(0, 8)}-${normalized.slice(-4)}`
       : normalized || "program";
   return `deploy-${safeFilename(shortId)}.json`;
+}
+
+export function programDeploymentHistoryFilename(item: Pick<ProgramDeploymentHistoryItem, "kind" | "programId" | "createdAt">): string {
+  const normalized = String(item.programId || "program").trim();
+  const shortId =
+    normalized.length > 12
+      ? `${normalized.slice(0, 8)}-${normalized.slice(-4)}`
+      : normalized || "program";
+  const timestamp = new Date(item.createdAt).toISOString().replace(/[:.]/g, "-");
+  return `program-${safeFilename(item.kind)}-${safeFilename(shortId)}-${timestamp}.json`;
+}
+
+export function programDeploymentHistoryToJson(item: ProgramDeploymentHistoryItem): string {
+  return `${JSON.stringify(
+    {
+      schema: "sol-safekey_program_deployment_history",
+      schema_version: 1,
+      exported_at: new Date().toISOString(),
+      record: item,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+export function programProjectDeploymentHistoryToJson(project: ProgramProject): string {
+  return `${JSON.stringify(
+    {
+      schema: "sol-safekey_program_project_history",
+      schema_version: 1,
+      exported_at: new Date().toISOString(),
+      project: {
+        id: project.id,
+        name: project.name,
+        sourceDir: project.sourceDir,
+        network: project.network,
+        programId: project.programId,
+        programSha256: project.programSha256,
+        programBytes: project.programBytes,
+        upgradeAuthority: project.upgradeAuthority,
+        multisig: project.multisig,
+        vault: project.vault,
+        updatedAt: project.updatedAt,
+      },
+      history: project.history || [],
+      plans: project.plans || [],
+    },
+    null,
+    2,
+  )}\n`;
 }
 
 export function deploymentResultToFormState(

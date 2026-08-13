@@ -102,6 +102,7 @@ const MAX_PROGRAM_SO_BASE64_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROGRAM_IDL_JSON_BYTES: usize = 2 * 1024 * 1024;
 const MAX_GENERIC_PROGRAM_INSTRUCTION_DATA_BYTES: usize = 8 * 1024;
 const MAX_GENERIC_PROGRAM_INSTRUCTION_ACCOUNTS: usize = 64;
+const MAX_GENERIC_PROGRAM_ADDITIONAL_SIGNERS: usize = 8;
 const PROGRAM_WRITE_CHUNK_BYTES: usize = 800;
 const UPGRADEABLE_LOADER_ID: Pubkey =
     Pubkey::from_str_const("BPFLoaderUpgradeab1e11111111111111111111111");
@@ -6913,6 +6914,8 @@ struct ProgramInvokeRequest {
     network: Option<String>,
     #[serde(default)]
     mode: Option<String>,
+    #[serde(default)]
+    additional_signers: Vec<GenericProgramAdditionalSignerRequest>,
 }
 
 #[derive(Serialize)]
@@ -6921,6 +6924,54 @@ struct ProgramInvokeResponse {
     signature: Option<String>,
     simulation_error: Option<String>,
     logs: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct GenericProgramAdditionalSignerRequest {
+    pubkey: String,
+    wallet_id: String,
+    password: String,
+}
+
+impl Drop for GenericProgramAdditionalSignerRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
+fn keypair_from_saved_wallet(
+    wallet_id: &str,
+    password: &str,
+    address_label: &str,
+) -> Result<Keypair, ApiError> {
+    let wallet_id = wallet_id.trim();
+    validate_wallet_id(wallet_id)?;
+    if password.is_empty() {
+        return Err(ApiError {
+            message: format!("{address_label} 需要提供钱包密码"),
+        });
+    }
+    let wallet = wallet_store::find(wallet_id).map_err(|message| ApiError { message })?;
+    let keypair = KeyManager::keypair_from_encrypted_json_v2(&wallet.keystore_json, password)
+        .map_err(|e| ApiError {
+            message: format!(
+                "{address_label} 钱包解锁失败: {}。签名操作只接受 authenticated v2 keystore",
+                e
+            ),
+        })?;
+    let expected_pubkey = Pubkey::from_str(address_label).map_err(|_| ApiError {
+        message: format!("Signer 地址无效: {address_label}"),
+    })?;
+    if keypair.pubkey() != expected_pubkey || wallet.public_key != expected_pubkey.to_string() {
+        return Err(ApiError {
+            message: format!(
+                "Signer {} 选择的钱包不匹配，实际解锁为 {}",
+                expected_pubkey,
+                keypair.pubkey()
+            ),
+        });
+    }
+    Ok(keypair)
 }
 
 fn decode_generic_instruction_data(value: &str) -> Result<Vec<u8>, ApiError> {
@@ -6981,7 +7032,7 @@ fn build_generic_program_instruction(
 }
 
 async fn program_invoke(
-    Json(req): Json<ProgramInvokeRequest>,
+    Json(mut req): Json<ProgramInvokeRequest>,
 ) -> Result<Json<ProgramInvokeResponse>, ApiError> {
     let signer = req.wallet.keypair()?;
     let signer_pubkey = signer.pubkey();
@@ -6993,12 +7044,37 @@ async fn program_invoke(
             message: "调用模式必须是 simulate 或 send".to_string(),
         });
     }
+    if req.additional_signers.len() > MAX_GENERIC_PROGRAM_ADDITIONAL_SIGNERS {
+        return Err(ApiError {
+            message: "额外 signer 数量过多".to_string(),
+        });
+    }
+    let mut signers = vec![signer];
+    let mut signer_pubkeys = vec![signer_pubkey];
+    for additional in &req.additional_signers {
+        let requested_pubkey =
+            Pubkey::from_str(additional.pubkey.trim()).map_err(|_| ApiError {
+                message: format!("Signer 地址无效: {}", additional.pubkey),
+            })?;
+        if signer_pubkeys.contains(&requested_pubkey) {
+            continue;
+        }
+        let keypair = keypair_from_saved_wallet(
+            &additional.wallet_id,
+            &additional.password,
+            &requested_pubkey.to_string(),
+        )?;
+        signer_pubkeys.push(keypair.pubkey());
+        signers.push(keypair);
+    }
+    req.additional_signers.clear();
+
     for account in &instruction.accounts {
-        if account.is_signer && account.pubkey != signer_pubkey {
+        if account.is_signer && !signer_pubkeys.contains(&account.pubkey) {
             return Err(ApiError {
                 message: format!(
-                    "账户 {} 需要签名，但当前只支持用当前钱包 {} 单签调用",
-                    account.pubkey, signer_pubkey
+                    "账户 {} 需要签名，请为这个 signer 选择已保存钱包并输入密码",
+                    account.pubkey
                 ),
             });
         }
@@ -7007,10 +7083,14 @@ async fn program_invoke(
     let blockhash = client.get_latest_blockhash().map_err(|error| ApiError {
         message: format!("获取 blockhash 失败: {error}"),
     })?;
+    let signer_refs = signers
+        .iter()
+        .map(|keypair| keypair as &dyn Signer)
+        .collect::<Vec<_>>();
     let transaction = Transaction::new_signed_with_payer(
         &[instruction],
         Some(&signer_pubkey),
-        &[&signer],
+        &signer_refs,
         blockhash,
     );
     if mode == "simulate" {

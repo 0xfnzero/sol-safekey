@@ -72,6 +72,7 @@ import {
   validateRpcUrl,
   type AppNetwork,
   type DownloadHistoryItem,
+  type ProgramDeploymentHistoryItem,
   type ProgramDeploymentPlan,
   type ProgramDeploymentPlanStatus,
   type ProgramDeploymentResult,
@@ -98,6 +99,10 @@ import {
   deploymentReceiptFilename,
   deploymentResultToFormState,
   isUnfinishedProgramDeploymentStatus,
+  programDeploymentHistoryFilename,
+  programDeploymentHistoryId,
+  programDeploymentHistoryToJson,
+  programProjectDeploymentHistoryToJson,
   programPlanId,
   programProjectId,
   safeFilename,
@@ -244,6 +249,8 @@ interface ProgramInvokeState {
   selectedInstruction: string;
   argValues: Record<string, string>;
   accountValues: Record<string, string>;
+  signerWalletIds: Record<string, string>;
+  signerPasswords: Record<string, string>;
   loading: boolean;
   error?: string;
   result?: {
@@ -562,6 +569,10 @@ function shortAddress(value: string): string {
 
 function shortSignature(value: string): string {
   return value.length > 20 ? `${value.slice(0, 8)}...${value.slice(-8)}` : value;
+}
+
+function programDeploymentHistorySignature(item: ProgramDeploymentHistoryItem): string | null {
+  return item.deploySignature || item.signature || item.createBufferSignature || item.authoritySignature || null;
 }
 
 function solscanTransactionUrl(signature: string, network: AppNetwork): string {
@@ -1110,6 +1121,8 @@ export default function Home() {
     selectedInstruction: "",
     argValues: {},
     accountValues: {},
+    signerWalletIds: {},
+    signerPasswords: {},
     loading: false,
   });
   const [programDeploymentNowMs, setProgramDeploymentNowMs] = useState(() => Date.now());
@@ -1157,6 +1170,9 @@ export default function Home() {
     setMasterPasswordPromptValue("");
     setMigrationNewPassword("");
     setMigrationConfirmPassword("");
+    setProgramInvoke((prev) =>
+      Object.keys(prev.signerPasswords).length === 0 ? prev : { ...prev, signerPasswords: {} },
+    );
   }, []);
 
   const clearProgramKeypairMaterial = useCallback(() => {
@@ -2432,6 +2448,7 @@ export default function Home() {
         vault: overrides.vault || existing?.vault,
         updatedAt,
         plans,
+        history: existing?.history || [],
       };
       return {
         ...prev,
@@ -2483,6 +2500,7 @@ export default function Home() {
           nextPlan,
           ...(existingProject?.plans || []).filter((candidate) => candidate.id !== id),
         ].slice(0, 20),
+        history: existingProject?.history || [],
       };
       return {
         ...prev,
@@ -2492,6 +2510,135 @@ export default function Home() {
         ].slice(0, 30),
       };
     });
+  };
+
+  const upsertProgramDeploymentHistory = (
+    sourceDirValue: unknown,
+    entry: Omit<ProgramDeploymentHistoryItem, "id" | "projectId" | "sourceDir" | "createdAt"> & {
+      id?: string;
+      sourceDir?: string;
+      createdAt?: number;
+    },
+  ): string | null => {
+    const sourceDir = String(entry.sourceDir || sourceDirValue || "").trim();
+    if (!sourceDir) return null;
+    const projectId = programProjectId(sourceDir);
+    const createdAt = entry.createdAt || Date.now();
+    const signature =
+      entry.deploySignature || entry.signature || entry.createBufferSignature || entry.authoritySignature || null;
+    const id =
+      entry.id ||
+      programDeploymentHistoryId(
+        projectId,
+        entry.kind,
+        entry.network,
+        createdAt,
+        entry.programId,
+        signature,
+      );
+    const item: ProgramDeploymentHistoryItem = {
+      ...entry,
+      id,
+      projectId,
+      sourceDir,
+      createdAt,
+    };
+    updateWorkspace((prev) => {
+      const existingProject = prev.programProjects.find((project) => project.id === projectId);
+      const existingHistoryItem = existingProject?.history.find((candidate) => candidate.id === id);
+      const nextItem = {
+        ...item,
+        createdAt: entry.createdAt || existingHistoryItem?.createdAt || item.createdAt,
+      };
+      const history = [
+        nextItem,
+        ...(existingProject?.history || []).filter((candidate) => candidate.id !== id),
+      ].slice(0, 100);
+      const project: ProgramProject = {
+        ...existingProject,
+        id: projectId,
+        name: existingProject?.name || sourceDirProjectName(sourceDir),
+        sourceDir,
+        network: entry.network,
+        programId: entry.programId || existingProject?.programId,
+        programSha256: entry.programSha256 || existingProject?.programSha256,
+        programBytes: entry.programBytes || existingProject?.programBytes,
+        upgradeAuthority: entry.upgradeAuthority || existingProject?.upgradeAuthority,
+        multisig: entry.multisig || existingProject?.multisig,
+        vault: entry.vault || existingProject?.vault,
+        updatedAt: Date.now(),
+        plans: existingProject?.plans || [],
+        history,
+      };
+      return {
+        ...prev,
+        programProjects: [
+          project,
+          ...prev.programProjects.filter((candidate) => candidate.id !== projectId),
+        ].slice(0, 30),
+      };
+    });
+    return id;
+  };
+
+  const markProgramUpgradeHistoryExecuted = (
+    proposalValue: unknown,
+    multisigValue: unknown,
+    signatureValue: unknown,
+    networkValue?: unknown,
+  ) => {
+    const proposal = String(proposalValue || "").trim();
+    const multisig = String(multisigValue || "").trim();
+    if (!proposal || !multisig) return;
+    const network = currentNetwork(
+      typeof networkValue === "string" || typeof networkValue === "number"
+        ? networkValue
+        : effectiveNetwork,
+    );
+    const signature = String(signatureValue || "").trim() || null;
+    updateWorkspace((prev) => ({
+      ...prev,
+      programProjects: prev.programProjects.map((project) => {
+        const existing = (project.history || []).find(
+          (item) =>
+            item.kind === "squads-upgrade-proposal" &&
+            item.proposal === proposal &&
+            item.multisig === multisig &&
+            item.network === network,
+        );
+        if (!existing) return project;
+        const executed: ProgramDeploymentHistoryItem = {
+          ...existing,
+          id: programDeploymentHistoryId(
+            project.id,
+            "squads-upgrade-execute",
+            network,
+            Date.now(),
+            existing.programId,
+            signature,
+          ),
+          kind: "squads-upgrade-execute",
+          status: "finalized",
+          signature,
+          completedAt: Date.now(),
+        };
+        return {
+          ...project,
+          updatedAt: Date.now(),
+          history: [
+            executed,
+            ...(project.history || []).filter((item) => item.id !== executed.id),
+          ].slice(0, 100),
+          plans: project.plans.map((plan) =>
+            plan.kind === "squads-upgrade" &&
+            plan.proposal === proposal &&
+            plan.multisig === multisig
+              ? { ...plan, status: "finalized", updatedAt: Date.now() }
+              : plan,
+          ),
+        };
+      }),
+    }));
   };
 
   const saveWorkspaceProposal = (
@@ -2676,6 +2823,14 @@ export default function Home() {
             createdByLabel: proposal.createdByLabel,
           },
         );
+        if (action === "execute" && proposal.kind === "program-upgrade") {
+          markProgramUpgradeHistoryExecuted(
+            proposal.address,
+            proposal.multisig,
+            data.signature,
+            data.network || proposal.network,
+          );
+        }
         setFormData((prev) => ({
           ...prev,
           multisig: proposal.multisig,
@@ -3280,19 +3435,27 @@ export default function Home() {
         selectedInstruction: "",
         argValues: {},
         accountValues: {},
+        signerWalletIds: {},
+        signerPasswords: {},
       }));
       return;
     }
     const nextAccounts: Record<string, string> = {};
+    const signerAccounts = flattenAnchorAccounts(instruction.accounts).filter((account) => account.isSigner);
     for (const account of flattenAnchorAccounts(instruction.accounts)) {
       const byName = defaultAccountAddress(account.name, account);
-      nextAccounts[account.path] = account.isSigner && walletAddress ? walletAddress : byName;
+      nextAccounts[account.path] =
+        account.isSigner && walletAddress && signerAccounts[0]?.path === account.path
+          ? walletAddress
+          : byName;
     }
     setProgramInvoke((prev) => ({
       ...prev,
       selectedInstruction: instruction.name,
       argValues: Object.fromEntries(instruction.args.map((arg) => [arg.name, ""])),
       accountValues: nextAccounts,
+      signerWalletIds: {},
+      signerPasswords: {},
       result: undefined,
       error: undefined,
     }));
@@ -3318,9 +3481,13 @@ export default function Home() {
       const programId = project.programId || anchorIdlProgramId(idl);
       const firstInstruction = idl.instructions[0];
       const firstAccounts: Record<string, string> = {};
+      const firstSignerAccounts = flattenAnchorAccounts(firstInstruction?.accounts || []).filter((account) => account.isSigner);
       for (const account of flattenAnchorAccounts(firstInstruction?.accounts || [])) {
         const byName = defaultAccountAddress(account.name, account);
-        firstAccounts[account.path] = account.isSigner && effectiveWallet ? effectiveWallet.public_key : byName;
+        firstAccounts[account.path] =
+          account.isSigner && effectiveWallet && firstSignerAccounts[0]?.path === account.path
+            ? effectiveWallet.public_key
+            : byName;
       }
       setProgramInvoke({
         projectId: project.id,
@@ -3332,6 +3499,8 @@ export default function Home() {
         selectedInstruction: firstInstruction?.name || "",
         argValues: Object.fromEntries((firstInstruction?.args || []).map((arg) => [arg.name, ""])),
         accountValues: firstAccounts,
+        signerWalletIds: {},
+        signerPasswords: {},
         loading: false,
       });
     } catch (error) {
@@ -3363,6 +3532,8 @@ export default function Home() {
       selectedInstruction: "",
       argValues: {},
       accountValues: {},
+      signerWalletIds: {},
+      signerPasswords: {},
       loading: true,
     });
     void loadProgramInvokeIdl(project);
@@ -3703,10 +3874,22 @@ export default function Home() {
         if (instruction.args.some((arg) => isUnsupportedIdlType(arg.type))) {
           return fail(t("features.program-invoke.unsupportedType"));
         }
+        const primaryInvokeWallet = savedWalletFromForm(nextFormData) ?? effectiveWallet;
         for (const account of flattenAnchorAccounts(instruction.accounts)) {
           const value = String(programInvoke.accountValues[account.path] || "").trim();
           if (!isLikelySolanaPublicKey(value)) {
             return fail(t("features.program-invoke.accountInvalid", { account: account.path }));
+          }
+          if (account.isSigner && value !== String(primaryInvokeWallet?.public_key || "").trim()) {
+            const walletId = String(programInvoke.signerWalletIds[account.path] || "").trim();
+            const password = String(programInvoke.signerPasswords[account.path] || "");
+            const wallet = wallets.find((item) => item.id === walletId);
+            if (!walletId || !password) {
+              return fail(t("features.program-invoke.signerWalletRequired", { account: account.path }));
+            }
+            if (wallet && wallet.public_key !== value) {
+              return fail(t("features.program-invoke.signerWalletMismatch", { account: account.path }));
+            }
           }
         }
         return true;
@@ -5116,8 +5299,19 @@ export default function Home() {
             body: JSON.stringify(requestBody),
           };
           setLastProgramDeploymentIntent(deploymentIntent);
+          let directDeploymentHistoryId: string | null = null;
           if (formData.programSourceDir) {
             upsertProgramProjectPlan(formData.programSourceDir, {
+              kind: "direct-deploy",
+              network: deploymentIntent.network,
+              programId: deploymentIntent.programId,
+              programSha256: deploymentIntent.programSha256,
+              programBytes: deploymentIntent.programLen,
+              maxDataLen: deploymentIntent.maxDataLen,
+              upgradeAuthority: deploymentIntent.upgradeAuthority,
+              status: "running",
+            });
+            directDeploymentHistoryId = upsertProgramDeploymentHistory(formData.programSourceDir, {
               kind: "direct-deploy",
               network: deploymentIntent.network,
               programId: deploymentIntent.programId,
@@ -5183,6 +5377,27 @@ export default function Home() {
                   result: deploymentResult,
                   status: "finalized",
                 });
+                upsertProgramDeploymentHistory(formData.programSourceDir, {
+                  id: directDeploymentHistoryId || undefined,
+                  kind: "direct-deploy",
+                  network: deploymentResult.network,
+                  programId: deploymentResult.programId,
+                  programdataAddress: deploymentResult.programdataAddress,
+                  programSha256: deploymentResult.programSha256,
+                  programBytes: deploymentResult.programBytes,
+                  maxDataLen: deploymentIntent.maxDataLen,
+                  upgradeAuthority: deploymentResult.authority,
+                  bufferAddress: deploymentResult.bufferAddress,
+                  deploySignature: deploymentResult.deploySignature,
+                  createBufferSignature: deploymentResult.createBufferSignature,
+                  receiptJson: deploymentResult.receiptJson,
+                  receiptSha256: deploymentResult.receiptSha256,
+                  deployedSlot: deploymentResult.deployedSlot,
+                  finalizedSlot: deploymentResult.finalizedSlot,
+                  readbackVerified: deploymentResult.readbackVerified,
+                  status: "finalized",
+                  completedAt: deploymentResult.completedAt,
+                });
               }
               setFormData({
                 wallet_id: formData.wallet_id,
@@ -5224,6 +5439,18 @@ export default function Home() {
                   upgradeAuthority: deploymentIntent.upgradeAuthority,
                   status: "failed",
                 });
+                upsertProgramDeploymentHistory(formData.programSourceDir, {
+                  id: directDeploymentHistoryId || undefined,
+                  kind: "direct-deploy",
+                  network: deploymentIntent.network,
+                  programId: deploymentIntent.programId,
+                  programSha256: deploymentIntent.programSha256,
+                  programBytes: deploymentIntent.programLen,
+                  maxDataLen: deploymentIntent.maxDataLen,
+                  upgradeAuthority: deploymentIntent.upgradeAuthority,
+                  status: "failed",
+                  completedAt: Date.now(),
+                });
               }
               toast.error(data.error || t("features.program-deploy.error"));
             }
@@ -5238,6 +5465,18 @@ export default function Home() {
                 maxDataLen: deploymentIntent.maxDataLen,
                 upgradeAuthority: deploymentIntent.upgradeAuthority,
                 status: "failed",
+              });
+              upsertProgramDeploymentHistory(formData.programSourceDir, {
+                id: directDeploymentHistoryId || undefined,
+                kind: "direct-deploy",
+                network: deploymentIntent.network,
+                programId: deploymentIntent.programId,
+                programSha256: deploymentIntent.programSha256,
+                programBytes: deploymentIntent.programLen,
+                maxDataLen: deploymentIntent.maxDataLen,
+                upgradeAuthority: deploymentIntent.upgradeAuthority,
+                status: "failed",
+                completedAt: Date.now(),
               });
             }
             throw error;
@@ -5289,6 +5528,16 @@ export default function Home() {
           }
 
           const mode = String(formData.programInvokeMode || "simulate") === "send" ? "send" : "simulate";
+          const additionalSigners = flattenAnchorAccounts(instruction.accounts)
+            .filter((account) => {
+              const pubkey = String(programInvoke.accountValues[account.path] || "").trim();
+              return account.isSigner && pubkey && pubkey !== String(savedWalletFromForm(formData)?.public_key || effectiveWallet?.public_key || "").trim();
+            })
+            .map((account) => ({
+              pubkey: String(programInvoke.accountValues[account.path] || "").trim(),
+              wallet_id: String(programInvoke.signerWalletIds[account.path] || "").trim(),
+              password: String(programInvoke.signerPasswords[account.path] || ""),
+            }));
           const requestBody: Record<string, unknown> = {
             program_id: encoded.programId,
             instruction_name: instruction.name,
@@ -5296,6 +5545,7 @@ export default function Home() {
             data_base64: encoded.dataBase64,
             network: submitNetwork(),
             mode,
+            additional_signers: additionalSigners,
           };
           applyWalletAuth(requestBody as ApiRequestBody, m, formData, "private_key");
           const response = await apiFetch("program/invoke", {
@@ -5324,6 +5574,7 @@ export default function Home() {
           } else {
             toast.error(data.error || t("features.program-invoke.error"));
           }
+          setProgramInvoke((prev) => ({ ...prev, signerPasswords: {} }));
           break;
         }
 
@@ -5625,6 +5876,20 @@ export default function Home() {
                 bufferAddress: data.buffer_address,
                 status: "buffer-ready",
               });
+              upsertProgramDeploymentHistory(formData.programSourceDir, {
+                kind: "squads-upgrade-buffer",
+                network: currentNetwork(data.network),
+                programId: String(formData.expectedProgramId || formData.programId || "").trim() || undefined,
+                programSha256: String(formData.programSoSha256 || "").trim().toLowerCase() || undefined,
+                programBytes: Number(data.program_bytes || formData.programSoSize || 0) || undefined,
+                multisig: data.multisig,
+                vault: data.vault,
+                bufferAddress: data.buffer_address,
+                createBufferSignature: data.create_signature,
+                authoritySignature: data.authority_signature,
+                status: "buffer-ready",
+                completedAt: Date.now(),
+              });
             }
             setFormData((prev) => ({
               ...prev,
@@ -5686,6 +5951,21 @@ export default function Home() {
                 proposal: data.proposal,
                 transactionIndex: String(data.transaction_index),
                 status: "proposal-created",
+              });
+              upsertProgramDeploymentHistory(formData.programSourceDir, {
+                kind: "squads-upgrade-proposal",
+                network: currentNetwork(data.network),
+                programId: String(formData.programId || "").trim(),
+                programSha256: String(formData.programSoSha256 || "").trim().toLowerCase() || undefined,
+                programBytes: Number(formData.programSoSize || 0) || undefined,
+                multisig: String(formData.multisig || "").trim(),
+                vault: data.vault,
+                bufferAddress: String(formData.bufferAddress || "").trim(),
+                proposal: data.proposal,
+                transactionIndex: String(data.transaction_index),
+                signature: data.signature,
+                status: "proposal-created",
+                completedAt: Date.now(),
               });
             }
             saveWorkspaceProposal(
@@ -5825,6 +6105,12 @@ export default function Home() {
               undefined,
               "executed",
               undefined,
+            );
+            markProgramUpgradeHistoryExecuted(
+              formData.proposal,
+              formData.multisig,
+              data.signature,
+              data.network || submitNetwork(),
             );
             setFormData((prev) => ({
               ...prev,
@@ -6860,6 +7146,7 @@ export default function Home() {
           ) : currentProgramProjects.map((project) => {
             const latestDirectPlan = project.plans.find((plan) => plan.kind === "direct-deploy");
             const latestUpgradePlan = project.plans.find((plan) => plan.kind === "squads-upgrade");
+            const deploymentHistory = [...(project.history || [])].sort((a, b) => b.createdAt - a.createdAt);
             const projectJournalMatches = Boolean(
               latestDirectPlan?.programId &&
                 latestDirectPlan.programSha256 &&
@@ -6903,6 +7190,15 @@ export default function Home() {
                         { id: "invoke", label: t("features.program-projects.invokeProgram"), onClick: () => openProgramInvoke(project) },
                         { id: "prepare-upgrade", label: t("features.program-projects.prepareUpgradePlan"), onClick: () => openProgramProjectPrepareUpgrade(project) },
                         { id: "upgrade-proposal", label: t("features.program-projects.createUpgradeProposal"), onClick: () => openProgramProjectUpgradeProposal(project, latestUpgradePlan) },
+                        {
+                          id: "download-history",
+                          label: t("features.program-projects.downloadProjectHistory"),
+                          onClick: () =>
+                            void downloadFile(
+                              programProjectDeploymentHistoryToJson(project),
+                              `program-history-${safeFilename(project.name)}.json`,
+                            ),
+                        },
                         {
                           id: "remove",
                           label: t("features.workspace.remove"),
@@ -7033,6 +7329,129 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+                {deploymentHistory.length > 0 && (
+                  <div className="space-y-2 rounded-lg border border-cyan-300/15 bg-cyan-400/5 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-cyan-100">
+                          {t("features.program-projects.historyTitle")}
+                        </p>
+                        <p className="mt-1 text-xs text-cyan-100/60">
+                          {t("features.program-projects.historyHint", { count: deploymentHistory.length })}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void downloadFile(
+                            programProjectDeploymentHistoryToJson(project),
+                            `program-history-${safeFilename(project.name)}.json`,
+                          )
+                        }
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs font-semibold text-gray-200 hover:bg-white/20"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {t("features.program-projects.downloadAllHistory")}
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {deploymentHistory.slice(0, 6).map((record) => {
+                        const signature = programDeploymentHistorySignature(record);
+                        return (
+                          <div key={record.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className="rounded bg-cyan-300/10 px-2 py-1 font-semibold text-cyan-100">
+                                    {t(`features.program-projects.historyKinds.${record.kind}`)}
+                                  </span>
+                                  <span className="rounded bg-white/10 px-2 py-1 text-gray-300">
+                                    {t(`features.program-projects.planStatuses.${record.status}`)}
+                                  </span>
+                                  <span className="text-gray-500">
+                                    {new Date(record.completedAt || record.createdAt).toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="mt-2 grid gap-1 text-xs text-gray-500 md:grid-cols-2">
+                                  {record.programId && (
+                                    <p className="break-all">
+                                      {t("features.program-deploy.programId")}: {shortAddress(record.programId)}
+                                    </p>
+                                  )}
+                                  {record.programSha256 && (
+                                    <p className="break-all">
+                                      {t("features.program-deploy.programSha256")}: {shortSignature(record.programSha256)}
+                                    </p>
+                                  )}
+                                  {record.bufferAddress && (
+                                    <p className="break-all">
+                                      {t("features.squads.buffer")}: {shortAddress(record.bufferAddress)}
+                                    </p>
+                                  )}
+                                  {record.proposal && (
+                                    <p className="break-all">
+                                      {t("features.squads.proposal")}: {shortAddress(record.proposal)}
+                                    </p>
+                                  )}
+                                  {signature && (
+                                    <p className="break-all">
+                                      {t("features.program-projects.signature")}: {shortSignature(signature)}
+                                    </p>
+                                  )}
+                                  {record.finalizedSlot !== undefined && (
+                                    <p>
+                                      {t("features.program-deploy.finalizedSlot")}: {record.finalizedSlot}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 flex-wrap gap-2">
+                                {record.programId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(record.programId || "", `program-history-id:${record.id}`)}
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                  >
+                                    {copied === `program-history-id:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                    {t("features.program-projects.copyProgramId")}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void downloadFile(
+                                      programDeploymentHistoryToJson(record),
+                                      programDeploymentHistoryFilename(record),
+                                    )
+                                  }
+                                  className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  {t("features.program-projects.downloadRecordJson")}
+                                </button>
+                                {record.receiptJson && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void downloadFile(
+                                        compactProgramDeploymentReceiptJson(record),
+                                        deploymentReceiptFilename(record.programId),
+                                      )
+                                    }
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    {t("features.program-projects.downloadReceipt")}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {projectJournalMatches && programDeploymentJournal.writeChunkCount > 0 && (
                   <p className="text-xs text-cyan-200">
                     {t("features.program-projects.journalProgress", {
@@ -10916,6 +11335,7 @@ export default function Home() {
           (instruction) => instruction.name === programInvoke.selectedInstruction,
         );
         const selectedAccounts = selectedInstruction ? flattenAnchorAccounts(selectedInstruction.accounts) : [];
+        const selectedSignerAccounts = selectedAccounts.filter((account) => account.isSigner);
         const invokeMode = String(formData.programInvokeMode || "simulate") === "send" ? "send" : "simulate";
         const invokeLogs = [
           ...(programInvoke.result?.signature
@@ -11064,8 +11484,17 @@ export default function Home() {
 
                       <div className="space-y-3">
                         <h3 className="text-sm font-semibold text-gray-200">{t("features.program-invoke.accounts")}</h3>
-                        {selectedAccounts.map((account) => (
-                          <div key={account.path}>
+                        {selectedAccounts.map((account) => {
+                          const accountValue = String(programInvoke.accountValues[account.path] || "").trim();
+                          const selectedSignerWallet = wallets.find(
+                            (wallet) => wallet.id === programInvoke.signerWalletIds[account.path],
+                          );
+                          const isPrimarySigner =
+                            account.isSigner &&
+                            Boolean(invokeWallet) &&
+                            accountValue === invokeWallet?.public_key;
+                          return (
+                          <div key={account.path} className="space-y-2">
                             <div className="mb-2 flex flex-wrap items-center gap-2">
                               <label className="min-w-0 flex-1 truncate text-sm font-medium">{account.path}</label>
                               {account.isSigner && (
@@ -11081,11 +11510,13 @@ export default function Home() {
                             </div>
                             <div className="flex gap-2">
                               <input
-                                value={programInvoke.accountValues[account.path] || ""}
+                                value={accountValue}
                                 onChange={(event) =>
                                   setProgramInvoke((prev) => ({
                                     ...prev,
                                     accountValues: { ...prev.accountValues, [account.path]: event.target.value.trim() },
+                                    signerWalletIds: { ...prev.signerWalletIds, [account.path]: "" },
+                                    signerPasswords: { ...prev.signerPasswords, [account.path]: "" },
                                     result: undefined,
                                   }))
                                 }
@@ -11106,6 +11537,8 @@ export default function Home() {
                                         ...prev.accountValues,
                                         [account.path]: invokeWallet.public_key,
                                       },
+                                      signerWalletIds: { ...prev.signerWalletIds, [account.path]: "" },
+                                      signerPasswords: { ...prev.signerPasswords, [account.path]: "" },
                                       result: undefined,
                                     }))
                                   }
@@ -11115,8 +11548,69 @@ export default function Home() {
                                 </button>
                               )}
                             </div>
+                            {account.isSigner && !isPrimarySigner && (
+                              <div className="grid gap-2 rounded-lg border border-cyan-300/15 bg-cyan-400/5 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-cyan-100">
+                                    {t("features.program-invoke.signerWallet")}
+                                  </label>
+                                  <select
+                                    value={programInvoke.signerWalletIds[account.path] || ""}
+                                    onChange={(event) => {
+                                      const wallet = wallets.find((item) => item.id === event.target.value);
+                                      setProgramInvoke((prev) => ({
+                                        ...prev,
+                                        accountValues: wallet
+                                          ? { ...prev.accountValues, [account.path]: wallet.public_key }
+                                          : prev.accountValues,
+                                        signerWalletIds: { ...prev.signerWalletIds, [account.path]: event.target.value },
+                                        signerPasswords: { ...prev.signerPasswords, [account.path]: "" },
+                                        result: undefined,
+                                      }));
+                                    }}
+                                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                                  >
+                                    <option value="">{t("features.program-invoke.selectSignerWallet")}</option>
+                                    {wallets.map((wallet) => (
+                                      <option key={wallet.id} value={wallet.id}>
+                                        {walletLabel(wallet)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {selectedSignerWallet && selectedSignerWallet.public_key !== accountValue && (
+                                    <p className="mt-1 text-xs text-amber-100">
+                                      {t("features.program-invoke.signerWalletMismatch", { account: account.path })}
+                                    </p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-cyan-100">
+                                    {t("features.program-invoke.signerPassword")}
+                                  </label>
+                                  <input
+                                    type="password"
+                                    data-sensitive-field="password"
+                                    value={programInvoke.signerPasswords[account.path] || ""}
+                                    onChange={(event) =>
+                                      setProgramInvoke((prev) => ({
+                                        ...prev,
+                                        signerPasswords: {
+                                          ...prev.signerPasswords,
+                                          [account.path]: event.target.value,
+                                        },
+                                        result: undefined,
+                                      }))
+                                    }
+                                    disabled={!programInvoke.signerWalletIds[account.path]}
+                                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+                                    placeholder={t("features.program-invoke.signerPasswordPlaceholder")}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                        );
+                        })}
                       </div>
                     </div>
 
@@ -11163,7 +11657,11 @@ export default function Home() {
                           </button>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">{t("features.program-invoke.signerLimitHint")}</p>
+                      <p className="text-xs text-gray-500">
+                        {selectedSignerAccounts.length > 1
+                          ? t("features.program-invoke.multiSignerHint", { count: String(selectedSignerAccounts.length) })
+                          : t("features.program-invoke.signerLimitHint")}
+                      </p>
                     </section>
 
                     <section className="space-y-2" aria-labelledby="program-invoke-terminal-title">
@@ -12784,6 +13282,10 @@ export default function Home() {
       t("formUi.pickFeature")
     : t("app.welcome");
   const showFormHeader = selectedForm !== "wallet-list";
+  const isWideWorkspaceForm = selectedForm === "program-invoke";
+  const contentContainerClass = isWideWorkspaceForm
+    ? "mx-auto w-full max-w-[1520px] p-3 space-y-3 sm:p-4 lg:p-6 lg:space-y-4 2xl:max-w-[1680px]"
+    : "max-w-5xl mx-auto p-3 space-y-3 sm:p-4 lg:p-8 lg:space-y-4";
 
   return (
     <div className="app-shell flex min-h-screen flex-col bg-black text-white lg:h-screen lg:flex-row">
@@ -12939,7 +13441,7 @@ export default function Home() {
       {/* Main Content */}
       <div className="min-w-0 flex-1 overflow-y-auto bg-gradient-to-br from-black via-purple-950 to-black">
         <div className="min-h-full overflow-y-auto">
-          <div className="max-w-5xl mx-auto p-3 space-y-3 sm:p-4 lg:p-8 lg:space-y-4">
+          <div className={contentContainerClass}>
             <div className="bg-black/40 backdrop-blur-xl rounded-xl border border-white/10 p-3 sm:p-4 lg:rounded-2xl lg:p-6">
               {showFormHeader && (
                 <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">

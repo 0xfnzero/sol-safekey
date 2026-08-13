@@ -134,6 +134,43 @@ export interface ProgramDeploymentPlan {
   updatedAt: number;
 }
 
+export type ProgramDeploymentHistoryKind =
+  | "direct-deploy"
+  | "squads-upgrade-buffer"
+  | "squads-upgrade-proposal"
+  | "squads-upgrade-execute";
+
+export interface ProgramDeploymentHistoryItem {
+  id: string;
+  projectId: string;
+  kind: ProgramDeploymentHistoryKind;
+  status: ProgramDeploymentPlanStatus;
+  network: AppNetwork;
+  sourceDir: string;
+  programId?: string;
+  programdataAddress?: string;
+  upgradeAuthority?: string;
+  multisig?: string;
+  vault?: string;
+  bufferAddress?: string;
+  proposal?: string;
+  transactionIndex?: string;
+  programSha256?: string;
+  programBytes?: number;
+  maxDataLen?: number;
+  deploySignature?: string | null;
+  createBufferSignature?: string | null;
+  authoritySignature?: string | null;
+  signature?: string | null;
+  receiptJson?: string;
+  receiptSha256?: string;
+  deployedSlot?: number;
+  finalizedSlot?: number;
+  readbackVerified?: boolean;
+  createdAt: number;
+  completedAt?: number;
+}
+
 export interface ProgramProject {
   id: string;
   name: string;
@@ -150,6 +187,7 @@ export interface ProgramProject {
   vault?: string;
   updatedAt: number;
   plans: ProgramDeploymentPlan[];
+  history: ProgramDeploymentHistoryItem[];
 }
 
 export interface SquadsWorkspace {
@@ -364,11 +402,21 @@ export function loadWorkspace(): SquadsWorkspace {
     const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
     if (!raw) return emptyWorkspace;
     const parsed = JSON.parse(raw) as Partial<SquadsWorkspace>;
+    const programProjects = Array.isArray(parsed.programProjects)
+      ? parsed.programProjects.map((project) => {
+          const candidate = project as Partial<ProgramProject>;
+          return {
+            ...candidate,
+            plans: Array.isArray(candidate.plans) ? candidate.plans : [],
+            history: Array.isArray(candidate.history) ? candidate.history : [],
+          } as ProgramProject;
+        })
+      : [];
     return {
       multisigs: Array.isArray(parsed.multisigs) ? parsed.multisigs : [],
       programs: Array.isArray(parsed.programs) ? parsed.programs : [],
       proposals: Array.isArray(parsed.proposals) ? parsed.proposals : [],
-      programProjects: Array.isArray(parsed.programProjects) ? parsed.programProjects : [],
+      programProjects,
     };
   } catch {
     return emptyWorkspace;

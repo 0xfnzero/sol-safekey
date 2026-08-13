@@ -272,9 +272,22 @@
       "receiptSha256": "Receipt SHA-256",
       "downloadReceipt": "下载 Receipt",
       "viewDeployment": "查看部署结果",
+      "historyTitle": "部署/升级记录",
+      "historyHint": "已保存 {count} 条本地记录，方便多次部署、升级和回溯。",
+      "downloadAllHistory": "下载全部",
+      "downloadProjectHistory": "下载项目记录",
+      "downloadRecordJson": "下载 JSON",
+      "copyProgramId": "复制 Program ID",
+      "signature": "签名",
       "planKinds": {
         "direct-deploy": "单签部署",
         "squads-upgrade": "多签升级"
+      },
+      "historyKinds": {
+        "direct-deploy": "新部署",
+        "squads-upgrade-buffer": "升级 Buffer",
+        "squads-upgrade-proposal": "升级提案",
+        "squads-upgrade-execute": "执行升级"
       },
       "planStatuses": {
         "draft": "草稿",
@@ -926,7 +939,14 @@
       "sendButton": "发送交易",
       "simulating": "模拟中...",
       "sending": "发送中...",
-      "signerLimitHint": "当前通用调用器只支持当前钱包单签；如果 IDL 要求其他 signer，后端会拒绝直接发送。",
+      "signerLimitHint": "当前钱包会作为交易 fee payer 和 signer。",
+      "multiSignerHint": "该函数需要 {count} 个 signer。当前钱包签一个账户，其余 signer 请分别选择已保存钱包并输入密码。",
+      "signerWallet": "Signer 钱包",
+      "selectSignerWallet": "选择已保存钱包",
+      "signerPassword": "Signer 密码",
+      "signerPasswordPlaceholder": "输入该 signer 钱包密码",
+      "signerWalletRequired": "请为 signer 账户 {account} 选择钱包并输入密码",
+      "signerWalletMismatch": "选择的钱包与 signer 账户 {account} 不匹配",
       "logs": "调用日志",
       "noLogs": "模拟或发送后会在这里显示日志。",
       "signatureLog": "交易签名: {signature}",

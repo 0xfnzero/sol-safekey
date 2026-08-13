@@ -272,9 +272,22 @@
       "receiptSha256": "Receipt SHA-256",
       "downloadReceipt": "Download Receipt",
       "viewDeployment": "View Deployment Result",
+      "historyTitle": "Deployment / Upgrade History",
+      "historyHint": "{count} local record(s) saved for repeated deploys, upgrades, and audits.",
+      "downloadAllHistory": "Download All",
+      "downloadProjectHistory": "Download Project History",
+      "downloadRecordJson": "Download JSON",
+      "copyProgramId": "Copy Program ID",
+      "signature": "Signature",
       "planKinds": {
         "direct-deploy": "Direct Deploy",
         "squads-upgrade": "Multisig Upgrade"
+      },
+      "historyKinds": {
+        "direct-deploy": "New Deploy",
+        "squads-upgrade-buffer": "Upgrade Buffer",
+        "squads-upgrade-proposal": "Upgrade Proposal",
+        "squads-upgrade-execute": "Execute Upgrade"
       },
       "planStatuses": {
         "draft": "Draft",
@@ -926,7 +939,14 @@
       "sendButton": "Send Transaction",
       "simulating": "Simulating...",
       "sending": "Sending...",
-      "signerLimitHint": "The generic caller currently supports single-signer calls by the current wallet only. If the IDL requires another signer, the backend rejects direct sending.",
+      "signerLimitHint": "The current wallet signs as the transaction fee payer and signer.",
+      "multiSignerHint": "This function requires {count} signers. The current wallet signs one account; choose saved wallets and passwords for the remaining signers.",
+      "signerWallet": "Signer Wallet",
+      "selectSignerWallet": "Select saved wallet",
+      "signerPassword": "Signer Password",
+      "signerPasswordPlaceholder": "Enter this signer wallet password",
+      "signerWalletRequired": "Choose a wallet and enter the password for signer account {account}",
+      "signerWalletMismatch": "The selected wallet does not match signer account {account}",
       "logs": "Call Logs",
       "noLogs": "Logs appear here after simulation or sending.",
       "signatureLog": "Transaction signature: {signature}",
