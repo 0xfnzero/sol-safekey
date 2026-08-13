@@ -1167,6 +1167,7 @@ export default function Home() {
   const [passwordPrompt, setPasswordPrompt] = useState<PasswordPromptRequest | null>(null);
   const [passwordPromptValue, setPasswordPromptValue] = useState("");
   const [masterPasswordPromptValue, setMasterPasswordPromptValue] = useState("");
+  const [passwordConfirmationBusy, setPasswordConfirmationBusy] = useState(false);
   const [migrationNewPassword, setMigrationNewPassword] = useState("");
   const [migrationConfirmPassword, setMigrationConfirmPassword] = useState("");
   const [programDeploymentJournal, setProgramDeploymentJournal] = useState<ProgramDeploymentJournalState>(
@@ -1423,9 +1424,11 @@ export default function Home() {
   }, [t]);
 
   useEffect(() => {
-    programSoReadVersionRef.current += 1;
-    clearProgramKeypairMaterial();
-  }, [clearProgramKeypairMaterial, effectiveRpcRequest, formData.wallet_id, selectedForm]);
+    if (selectedForm !== "program-deploy") {
+      programSoReadVersionRef.current += 1;
+      clearProgramKeypairMaterial();
+    }
+  }, [clearProgramKeypairMaterial, selectedForm]);
 
   useEffect(() => () => {
     deploymentJournalRequestIdRef.current += 1;
@@ -4240,6 +4243,7 @@ export default function Home() {
   const showWalletPasswordPrompt = passwordPromptFields.includes("password");
   const showMasterPasswordPrompt = passwordPromptFields.includes("master_password");
   const showMigrationPasswords = passwordPrompt?.kind === "migrate-keystore";
+  const passwordPromptIsBusy = loading || passwordConfirmationBusy;
   const isProgramDeploymentPasswordPrompt =
     passwordPrompt?.kind === "form" && passwordPrompt.formId === "program-deploy";
 
@@ -4363,6 +4367,7 @@ export default function Home() {
     }
 
     passwordConfirmationInFlightRef.current = true;
+    setPasswordConfirmationBusy(true);
     try {
       if (passwordPrompt.kind === "form") {
         const nextFormData = walletAuthFormData({
@@ -4409,6 +4414,7 @@ export default function Home() {
       });
     } finally {
       passwordConfirmationInFlightRef.current = false;
+      setPasswordConfirmationBusy(false);
     }
   };
 
@@ -5439,7 +5445,25 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(requestBody),
           };
+          const deploymentIntentKey = programDeploymentIntentKey(deploymentIntent);
+          let deploymentSucceeded = false;
           setLastProgramDeploymentIntent(deploymentIntent);
+          deploymentJournalLoadedIntentKeyRef.current = deploymentIntentKey;
+          setProgramDeploymentJournal((previous) =>
+            previous.intentKey === deploymentIntentKey
+              ? { ...previous, loading: true, error: undefined }
+              : {
+                  intentKey: deploymentIntentKey,
+                  network: deploymentIntent.network,
+                  genesisHash: deploymentIntent.genesisHash,
+                  writeChunkBytes: 0,
+                  writeChunkCount: 0,
+                  journal: null,
+                  deploymentAttempts: [],
+                  loading: true,
+                  error: undefined,
+                },
+          );
           let directDeploymentHistoryId: string | null = null;
           if (formData.programSourceDir) {
             upsertProgramProjectPlan(formData.programSourceDir, {
@@ -5469,6 +5493,7 @@ export default function Home() {
             const data = await response.json();
 
             if (response.ok) {
+              deploymentSucceeded = true;
               const deploymentReceiptJson = buildProgramDeploymentReceiptJson(
                 data,
                 receiptExpectations,
@@ -5593,6 +5618,15 @@ export default function Home() {
                   completedAt: Date.now(),
                 });
               }
+              setProgramDeploymentJournal((previous) =>
+                previous.intentKey === deploymentIntentKey
+                  ? {
+                      ...previous,
+                      loading: false,
+                      error: data.error || t("features.program-deploy.error"),
+                    }
+                  : previous,
+              );
               toast.error(data.error || t("features.program-deploy.error"));
             }
           } catch (error) {
@@ -5620,13 +5654,24 @@ export default function Home() {
                 completedAt: Date.now(),
               });
             }
+            setProgramDeploymentJournal((previous) =>
+              previous.intentKey === deploymentIntentKey
+                ? {
+                    ...previous,
+                    loading: false,
+                    error: error instanceof Error
+                      ? error.message
+                      : t("features.program-deploy.error"),
+                  }
+                : previous,
+            );
             throw error;
           } finally {
             requestBody.program_keypair_json = "";
             requestBody.program_keypair_path = "";
             requestInit.body = null;
             serializedKeypair = "";
-            if (!programKeypairPath) {
+            if (deploymentSucceeded && !programKeypairPath) {
               clearProgramKeypairMaterial();
             }
           }
@@ -10994,9 +11039,11 @@ export default function Home() {
           deploymentLogLines.push(`[${new Date().toLocaleTimeString()}] ${t("features.program-deploy.journalLoading")}`);
         } else {
           deploymentLogLines.push(
-            deploymentJournalReady
-              ? t("features.program-deploy.journalEmpty")
-              : t("features.program-deploy.journalNotReady"),
+            loading
+              ? t("features.program-deploy.journalAutoRefreshing")
+              : deploymentJournalReady
+                ? t("features.program-deploy.journalEmpty")
+                : t("features.program-deploy.journalNotReady"),
           );
         }
         return (
@@ -11083,6 +11130,7 @@ export default function Home() {
                   onChange={(event) => {
                     const walletId = event.target.value;
                     const wallet = wallets.find((candidate) => candidate.id === walletId);
+                    clearProgramDeploymentProgress();
                     setFormData((previous) => ({
                       ...previous,
                       wallet_id: walletId || undefined,
@@ -11423,9 +11471,11 @@ export default function Home() {
                   </>
                 ) : (
                   <p className="text-xs text-cyan-100/80">
-                    {programDeploymentJournal.loading
-                      ? t("features.program-deploy.journalLoading")
-                      : t("features.program-deploy.journalNotReady")}
+                    {loading
+                      ? t("features.program-deploy.journalAutoRefreshing")
+                      : programDeploymentJournal.loading
+                        ? t("features.program-deploy.journalLoading")
+                        : t("features.program-deploy.journalNotReady")}
                   </p>
                 )}
               </div>
@@ -13835,7 +13885,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={closePasswordPrompt}
-                  disabled={loading}
+                  disabled={passwordPromptIsBusy}
                   className="rounded-lg bg-white/10 px-4 py-3 text-sm font-semibold hover:bg-white/20 disabled:opacity-50"
                 >
                   {t("common.cancel")}
@@ -13843,10 +13893,10 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => void confirmPasswordPrompt()}
-                  disabled={loading}
+                  disabled={passwordPromptIsBusy}
                   className="rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-3 text-sm font-semibold hover:from-purple-600 hover:to-pink-600 disabled:opacity-50"
                 >
-                  {loading ? t("common.processing") : passwordPromptButton}
+                  {passwordPromptIsBusy ? t("common.processing") : passwordPromptButton}
                 </button>
               </div>
             </div>
