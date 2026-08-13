@@ -33,6 +33,8 @@ import {
   ExternalLink,
   Menu,
   FolderOpen,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { FieldHelp } from "@/components/FieldHelp";
@@ -7591,6 +7593,29 @@ export default function Home() {
                       <div className="grid gap-3 2xl:grid-cols-2">
                         {deploymentCards.map((record) => {
                           const signature = programDeploymentHistorySignature(record);
+                          const canResumeDirectDeploy =
+                            record.kind === "direct-deploy" &&
+                            isUnfinishedProgramDeploymentStatus(record.status);
+                          const resumeDeployLabel =
+                            record.status === "failed"
+                              ? t("features.program-projects.redeployRecord")
+                              : t("features.program-projects.continueDeployment");
+                          const statusTone =
+                            record.status === "finalized"
+                              ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-200"
+                              : record.status === "failed"
+                                ? "border-red-300/25 bg-red-500/10 text-red-200"
+                                : record.status === "running"
+                                  ? "border-cyan-300/25 bg-cyan-400/10 text-cyan-100"
+                                  : "border-amber-300/25 bg-amber-400/10 text-amber-100";
+                          const StatusIcon =
+                            record.status === "finalized"
+                              ? CheckCircle2
+                              : record.status === "failed"
+                                ? XCircle
+                                : record.status === "running"
+                                  ? RefreshCw
+                                  : AlertTriangle;
                           const recordFields = [
                             record.programId
                               ? [t("features.program-deploy.programId"), record.programId]
@@ -7655,7 +7680,16 @@ export default function Home() {
                           const summaryAddress =
                             record.programId || record.bufferAddress || record.proposal || signature || "";
                           return (
-                            <details key={record.id} className="group rounded-xl border border-white/10 bg-black/25 p-3">
+                            <details
+                              key={record.id}
+                              className={`group rounded-xl border p-3 ${
+                                record.status === "finalized"
+                                  ? "border-emerald-300/15 bg-emerald-400/[0.04]"
+                                  : record.status === "failed"
+                                    ? "border-red-300/15 bg-red-500/[0.04]"
+                                    : "border-white/10 bg-black/25"
+                              }`}
+                            >
                               <summary className="flex cursor-pointer list-none flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex min-w-0 flex-1 items-start gap-3">
                                   <span className="mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 text-gray-300 group-open:bg-cyan-300/10 group-open:text-cyan-100">
@@ -7666,7 +7700,12 @@ export default function Home() {
                                       <span className="rounded-lg bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
                                         {t(`features.program-projects.historyKinds.${record.kind}`)}
                                       </span>
-                                      <span className="rounded-lg bg-white/10 px-2.5 py-1 text-xs text-gray-300">
+                                      <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${statusTone}`}>
+                                        <StatusIcon
+                                          className={`h-3.5 w-3.5 ${
+                                            record.status === "running" ? "animate-spin" : ""
+                                          }`}
+                                        />
                                         {t(`features.program-projects.planStatuses.${record.status}`)}
                                       </span>
                                       {summaryAddress && (
@@ -7713,6 +7752,20 @@ export default function Home() {
                                 </div>
                               )}
                               <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                                {canResumeDirectDeploy && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openProgramDeploymentRecord(project, record)}
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-cyan-400/15 px-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25"
+                                  >
+                                    {record.status === "failed" ? (
+                                      <RefreshCw className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ArrowRightLeft className="h-3.5 w-3.5" />
+                                    )}
+                                    {resumeDeployLabel}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -8133,6 +8186,30 @@ export default function Home() {
         network: project.network,
         programSourceDir: project.sourceDir,
         expectedUpgradeAuthority: plannedUpgradeAuthority,
+      });
+    };
+
+    const openProgramDeploymentRecord = (
+      project: ProgramProject,
+      record: ProgramDeploymentHistoryItem,
+    ) => {
+      const plannedUpgradeAuthority =
+        record.upgradeAuthority || project.upgradeAuthority || effectiveWallet?.public_key;
+      const deploymentPlanWalletId =
+        wallets.find((wallet) => wallet.public_key === plannedUpgradeAuthority)?.id || effectiveWalletId;
+      handleOpenForm("program-deploy", {
+        wallet_id: deploymentPlanWalletId,
+        network: record.network || project.network,
+        programSourceDir: record.sourceDir || project.sourceDir,
+        expectedUpgradeAuthority: plannedUpgradeAuthority,
+        programSoName: project.programSoName,
+        programSoSize: record.programBytes || project.programBytes,
+        programSoSha256: record.programSha256 || project.programSha256,
+        approvedProgramSha256: record.programSha256 || project.programSha256,
+        expectedProgramId: record.programId,
+        max_data_len: record.maxDataLen ? String(record.maxDataLen) : undefined,
+        resumeBufferAddress: record.bufferAddress,
+        ...activeProgramArtifactForProject(project),
       });
     };
 
