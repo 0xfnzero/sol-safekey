@@ -224,6 +224,49 @@ const SOLANA_GENESIS_HASHES: Record<AppNetwork, string> = {
   testnet: "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
 };
 const SOLANA_FAUCET_URL = "https://faucet.solana.com/";
+const PROGRAM_DEPLOY_RESULT_FIELDS = [
+  "programId",
+  "programdataAddress",
+  "bufferAddress",
+  "authority",
+  "signature",
+  "writeCount",
+  "skippedWriteCount",
+  "rentLamports",
+  "estimatedFeesLamports",
+  "feeRateReserveLamports",
+  "recoveryWriteReserveLamports",
+  "totalFeeBudgetLamports",
+  "estimatedRequiredBalanceLamports",
+  "createBufferSignature",
+  "programBytes",
+  "programSha256",
+  "genesisHash",
+  "deployedSlot",
+  "finalizedSlot",
+  "readbackVerified",
+  "deploymentReceiptJson",
+  "deploymentReceiptSha256",
+] as const;
+const PROGRAM_DEPLOY_ARTIFACT_FIELDS = [
+  "programSoBase64",
+  "programSoName",
+  "programSoSize",
+  "programSoSha256",
+  "approvedProgramSha256",
+  "programKeypairPath",
+  "expectedProgramId",
+  "max_data_len",
+  "resumeBufferAddress",
+  "sourceBuildCommand",
+  "sourceBuildTemplate",
+  "sourceBuildStatus",
+  "sourceBuildStdout",
+  "sourceBuildStderr",
+  "sourceBuildError",
+  "sourceBuildBlockedReason",
+  "sourceImportWarnings",
+] as const;
 
 interface MenuItem {
   id: string;
@@ -346,6 +389,30 @@ interface ProgramDeploymentJournalState {
   deploymentAttempts: ProgramDeploymentAttemptRecord[];
   loading: boolean;
   error?: string;
+}
+
+function emptyProgramDeploymentJournalState(): ProgramDeploymentJournalState {
+  return {
+    intentKey: "",
+    network: "",
+    genesisHash: "",
+    writeChunkBytes: 0,
+    writeChunkCount: 0,
+    journal: null,
+    deploymentAttempts: [],
+    loading: false,
+  };
+}
+
+function omitFormFields(
+  state: FormState,
+  fields: readonly string[],
+): FormState {
+  const next = { ...state };
+  fields.forEach((field) => {
+    delete next[field];
+  });
+  return next;
 }
 
 function programDeploymentIntentKey(intent: ProgramDeploymentJournalIntent): string {
@@ -1102,16 +1169,9 @@ export default function Home() {
   const [masterPasswordPromptValue, setMasterPasswordPromptValue] = useState("");
   const [migrationNewPassword, setMigrationNewPassword] = useState("");
   const [migrationConfirmPassword, setMigrationConfirmPassword] = useState("");
-  const [programDeploymentJournal, setProgramDeploymentJournal] = useState<ProgramDeploymentJournalState>({
-    intentKey: "",
-    network: "",
-    genesisHash: "",
-    writeChunkBytes: 0,
-    writeChunkCount: 0,
-    journal: null,
-    deploymentAttempts: [],
-    loading: false,
-  });
+  const [programDeploymentJournal, setProgramDeploymentJournal] = useState<ProgramDeploymentJournalState>(
+    emptyProgramDeploymentJournalState,
+  );
   const [lastProgramDeploymentIntent, setLastProgramDeploymentIntent] =
     useState<ProgramDeploymentJournalIntent | null>(null);
   const [programSourceLoading, setProgramSourceLoading] = useState(false);
@@ -1189,6 +1249,26 @@ export default function Home() {
       delete next.programKeypairPath;
       return next;
     });
+  }, []);
+
+  const resetProgramDeploySession = useCallback(() => {
+    programSoReadVersionRef.current += 1;
+    deploymentJournalRequestIdRef.current += 1;
+    deploymentJournalLoadedIntentKeyRef.current = "";
+    deploymentJournalInFlightIntentKeyRef.current = "";
+    programDeploymentWatchdogTrippedRef.current = false;
+    setLastProgramDeploymentIntent(null);
+    setProgramDeploymentJournal(emptyProgramDeploymentJournalState());
+    clearProgramKeypairMaterial();
+  }, [clearProgramKeypairMaterial]);
+
+  const clearProgramDeploymentProgress = useCallback(() => {
+    deploymentJournalRequestIdRef.current += 1;
+    deploymentJournalLoadedIntentKeyRef.current = "";
+    deploymentJournalInFlightIntentKeyRef.current = "";
+    programDeploymentWatchdogTrippedRef.current = false;
+    setLastProgramDeploymentIntent(null);
+    setProgramDeploymentJournal(emptyProgramDeploymentJournalState());
   }, []);
 
   const selectedRpc = rpcProfiles.find((profile) => profile.id === selectedRpcId) || rpcProfiles[0] || DEFAULT_RPC_PROFILES[0];
@@ -3337,7 +3417,11 @@ export default function Home() {
   };
 
   const clearForm = () => {
-    clearProgramKeypairMaterial();
+    if (selectedForm === "program-deploy") {
+      resetProgramDeploySession();
+    } else {
+      clearProgramKeypairMaterial();
+    }
     setFormData({ network: effectiveNetwork });
   };
 
@@ -3353,6 +3437,16 @@ export default function Home() {
     }
     return {};
   };
+
+  const freshProgramDeployFormState = (preset: FormState = {}): FormState => ({
+    ...(effectiveWalletId ? { wallet_id: effectiveWalletId } : {}),
+    network: effectiveNetwork,
+    ...(effectiveWallet ? { expectedUpgradeAuthority: effectiveWallet.public_key } : {}),
+    ...omitFormFields(
+      omitFormFields(preset, PROGRAM_DEPLOY_RESULT_FIELDS),
+      PROGRAM_DEPLOY_ARTIFACT_FIELDS,
+    ),
+  });
 
   const refreshCurrentWalletAssets = (wallet?: SavedWallet) => {
     const targetWallet = wallet ?? selectedSavedWallet() ?? effectiveWallet;
@@ -3387,6 +3481,9 @@ export default function Home() {
   const handleSelectForm = (formId: string) => {
     setMobileMenuOpen(false);
     clearForm();
+    if (formId === "program-deploy") {
+      resetProgramDeploySession();
+    }
     setTokenActionContext(null);
     setNonceCreateOpen(false);
     if (formId !== "create-nonce") {
@@ -3395,6 +3492,11 @@ export default function Home() {
     openParentMenuForForm(formId);
     setSelectedForm(formId);
     setBackTarget(defaultBackTarget(formId));
+    if (formId === "program-deploy") {
+      setFormData(freshProgramDeployFormState());
+      setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
+      return;
+    }
     if (authFormsWithWallets.has(formId)) {
       setAuthMethod({ ...authMethod, [formId]: "keystore" });
       if (effectiveWalletId) {
@@ -3415,7 +3517,11 @@ export default function Home() {
   };
 
   const handleOpenForm = (formId: string, preset: FormState = {}, sourceForm?: string | null) => {
-    clearProgramKeypairMaterial();
+    if (formId === "program-deploy") {
+      resetProgramDeploySession();
+    } else {
+      clearProgramKeypairMaterial();
+    }
     setTokenActionContext(null);
     setNonceCreateOpen(false);
     if (formId !== "create-nonce") {
@@ -3424,6 +3530,11 @@ export default function Home() {
     openParentMenuForForm(defaultBackTarget(formId) ?? formId);
     setBackTarget(sourceForm === undefined ? selectedForm ?? defaultBackTarget(formId) : sourceForm);
     setSelectedForm(formId);
+    if (formId === "program-deploy") {
+      setFormData(freshProgramDeployFormState(preset));
+      setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
+      return;
+    }
     setFormData({
       ...(authFormsWithWallets.has(formId) && effectiveWalletId ? { wallet_id: effectiveWalletId } : {}),
       network: effectiveNetwork,
@@ -4437,12 +4548,15 @@ export default function Home() {
     if (!file) return;
     const readVersion = programSoReadVersionRef.current + 1;
     programSoReadVersionRef.current = readVersion;
+    clearProgramDeploymentProgress();
     setFormData((prev) => {
-      const next = { ...prev };
+      const next = omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS);
       delete next.programSoBase64;
       delete next.programSoName;
       delete next.programSoSize;
       delete next.programSoSha256;
+      delete next.approvedProgramSha256;
+      delete next.resumeBufferAddress;
       return next;
     });
     if (file.size > MAX_PROGRAM_SO_FILE_BYTES) {
@@ -4501,6 +4615,7 @@ export default function Home() {
     const input = event.currentTarget;
     const file = input.files?.[0];
     clearProgramKeypairMaterial();
+    clearProgramDeploymentProgress();
     if (!file) return;
 
     const readVersion = programKeypairReadVersionRef.current;
@@ -4531,8 +4646,12 @@ export default function Home() {
       keypairBytes = null;
       setProgramKeypairMetadata({ filename: file.name, programId });
       setFormData((prev) => {
-        const next: FormState = { ...prev, expectedProgramId: programId };
+        const next: FormState = {
+          ...omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS),
+          expectedProgramId: programId,
+        };
         delete next.programKeypairPath;
+        delete next.resumeBufferAddress;
         return next;
       });
       toast.success(t("features.program-deploy.programKeypairLoaded"));
@@ -4555,6 +4674,7 @@ export default function Home() {
       return;
     }
     setProgramSourceLoading(true);
+    clearProgramDeploymentProgress();
     try {
       const response = await apiFetch("program/deploy-source", {
         method: "POST",
@@ -4571,8 +4691,11 @@ export default function Home() {
       }
 
       const applySourceData = (nextData: ProgramDeploySourceResponse) => {
-        const programId = String(nextData.expected_program_id || "").trim();
-        const programKeypairPath = String(nextData.program_keypair_path || "").trim();
+        const sourceProgramId = String(nextData.expected_program_id || "").trim();
+        const sourceProgramKeypairPath = String(nextData.program_keypair_path || "").trim();
+        const importsProgramKeypair = selectedForm !== "program-deploy";
+        const programId = importsProgramKeypair ? sourceProgramId : "";
+        const programKeypairPath = importsProgramKeypair ? sourceProgramKeypairPath : "";
         const programSoBase64 = String(nextData.program_so_base64 || "").trim();
         const programSoSha256 = String(nextData.program_so_sha256 || "").trim().toLowerCase();
         const approvedProgramSha256 = String(nextData.approved_program_sha256 || "").trim().toLowerCase();
@@ -4601,34 +4724,39 @@ export default function Home() {
               : t("features.program-deploy.importedProgramKeypair"),
             programId,
           });
+        } else {
+          setProgramKeypairMetadata(null);
         }
-        setFormData((prev) => ({
-          ...prev,
-          programSourceDir: nextData.source_dir || sourceDir,
-          network,
-          programSoBase64: programSoBase64 || undefined,
-          programSoName: nextData.program_so_name || nextData.program_so_path || undefined,
-          programSoSize: programSoSize || undefined,
-          programSoSha256: programSoSha256 || undefined,
-          approvedProgramSha256: approvedProgramSha256 || prev.approvedProgramSha256,
-          programKeypairPath: programKeypairPath ||
-            (programId && programId === String(prev.expectedProgramId || "").trim()
-              ? String(prev.programKeypairPath || "").trim()
-              : "") ||
-            undefined,
-          expectedProgramId: programId || prev.expectedProgramId,
-          sourceBuildCommand: nextData.build_command || undefined,
-          sourceBuildTemplate: nextData.build_template || undefined,
-          sourceBuildStatus: nextData.build_status || undefined,
-          sourceBuildStdout: nextData.build_stdout || undefined,
-          sourceBuildStderr: nextData.build_stderr || undefined,
-          sourceBuildError: nextData.build_error || undefined,
-          sourceBuildBlockedReason: nextData.build_blocked_reason || undefined,
-          sourceImportWarnings: [
-            ...(Array.isArray(nextData.warnings) ? nextData.warnings : []),
-            ...(nextData.build_error ? [nextData.build_error] : []),
-          ].join("\n") || undefined,
-        }));
+        setFormData((prev) => {
+          const cleanPrevious = omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS);
+          return {
+            ...cleanPrevious,
+            programSourceDir: nextData.source_dir || sourceDir,
+            network,
+            programSoBase64: programSoBase64 || undefined,
+            programSoName: nextData.program_so_name || nextData.program_so_path || undefined,
+            programSoSize: programSoSize || undefined,
+            programSoSha256: programSoSha256 || undefined,
+            approvedProgramSha256: approvedProgramSha256 || undefined,
+            programKeypairPath: programKeypairPath ||
+              (programId && programId === String(prev.expectedProgramId || "").trim()
+                ? String(prev.programKeypairPath || "").trim()
+                : "") ||
+              undefined,
+            expectedProgramId: programId || undefined,
+            sourceBuildCommand: nextData.build_command || undefined,
+            sourceBuildTemplate: nextData.build_template || undefined,
+            sourceBuildStatus: nextData.build_status || undefined,
+            sourceBuildStdout: nextData.build_stdout || undefined,
+            sourceBuildStderr: nextData.build_stderr || undefined,
+            sourceBuildError: nextData.build_error || undefined,
+            sourceBuildBlockedReason: nextData.build_blocked_reason || undefined,
+            sourceImportWarnings: [
+              ...(Array.isArray(nextData.warnings) ? nextData.warnings : []),
+              ...(nextData.build_error ? [nextData.build_error] : []),
+            ].join("\n") || undefined,
+          };
+        });
         saveProgramProjectFromSource(nextData, {
           network,
           upgradeAuthority: String(formData.expectedUpgradeAuthority || "").trim() || undefined,
@@ -7960,13 +8088,7 @@ export default function Home() {
         network: project.network,
         programSourceDir: project.sourceDir,
         expectedUpgradeAuthority: plannedUpgradeAuthority,
-        programSoName: project.programSoName,
-        programSoSize: project.programBytes,
-        programSoSha256: project.programSha256,
-        approvedProgramSha256: project.programSha256,
-        ...activeProgramArtifactForProject(project),
       });
-      clearProgramKeypairMaterial();
     };
 
     const openProgramProjectPrepareUpgrade = (project: ProgramProject) => {
