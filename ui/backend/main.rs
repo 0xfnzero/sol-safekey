@@ -6181,10 +6181,27 @@ fn first_json_file(root: &FsPath, directory: &FsPath) -> Option<PathBuf> {
         .min()
 }
 
-fn first_so_file(root: &FsPath, directory: &FsPath) -> Option<PathBuf> {
+fn file_modified_time_key(path: &FsPath) -> SystemTime {
+    path.metadata()
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+fn newest_file(paths: Vec<PathBuf>) -> Option<PathBuf> {
+    paths
+        .into_iter()
+        .max_by(|left, right| {
+            file_modified_time_key(left)
+                .cmp(&file_modified_time_key(right))
+                .then_with(|| left.cmp(right))
+        })
+}
+
+fn so_file_paths(root: &FsPath, directory: &FsPath) -> Vec<PathBuf> {
     fs::read_dir(directory)
-        .ok()?
-        .filter_map(Result::ok)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
         .map(|entry| entry.path())
         .filter_map(|path| canonical_child_path(root, &path, ".so 产物").ok())
         .filter(|path| {
@@ -6194,7 +6211,35 @@ fn first_so_file(root: &FsPath, directory: &FsPath) -> Option<PathBuf> {
                     .and_then(|ext| ext.to_str())
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("so"))
         })
-        .min()
+        .collect()
+}
+
+fn newest_existing_path_owned(root: &FsPath, candidates: &[String]) -> Option<PathBuf> {
+    newest_file(
+        candidates
+            .iter()
+            .map(|relative| root.join(relative))
+            .filter_map(|path| canonical_child_path(root, &path, "候选产物").ok())
+            .filter(|path| path.is_file())
+            .collect(),
+    )
+}
+
+fn newest_build_metadata_file(root: &FsPath, directory: &FsPath) -> Option<PathBuf> {
+    newest_file(
+        fs::read_dir(directory)
+            .ok()?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter_map(|path| canonical_child_path(root, &path, "build metadata").ok())
+            .filter(|path| {
+                let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                    return false;
+                };
+                path.is_file() && name.ends_with("-build.json")
+            })
+            .collect(),
+    )
 }
 
 fn safe_artifact_stem(value: &str) -> Option<String> {
@@ -6287,9 +6332,12 @@ fn find_program_so_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<Pa
         candidates.push(format!("target/verifiable/{stem}.so"));
         candidates.push(format!("target/deploy/{stem}.so"));
     }
-    first_existing_path_owned(root, &candidates)
-        .or_else(|| first_so_file(root, &root.join("target/verifiable")))
-        .or_else(|| first_so_file(root, &root.join("target/deploy")))
+    newest_existing_path_owned(root, &candidates)
+        .or_else(|| {
+            let mut all_candidates = so_file_paths(root, &root.join("target/verifiable"));
+            all_candidates.extend(so_file_paths(root, &root.join("target/deploy")));
+            newest_file(all_candidates)
+        })
 }
 
 fn find_program_keypair_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
@@ -6371,7 +6419,7 @@ fn release_metadata_sha_and_len(
         candidates.push(format!("target/verifiable/{stem}-build.json"));
     }
     let Some(metadata_path) = first_existing_path_owned(root, &candidates)
-        .or_else(|| first_json_file(root, &root.join("target/verifiable")))
+        .or_else(|| newest_build_metadata_file(root, &root.join("target/verifiable")))
     else {
         return Ok((None, None));
     };
@@ -6439,14 +6487,17 @@ fn load_program_source_artifacts(
     let mut warnings = Vec::new();
     let mut program_so_base64 = None;
     let mut program_so_sha256 = None;
+    let mut approved_program_sha256 = None;
     let mut program_so_size = None;
     let mut program_so_name = None;
     if let Some(path) = program_so_path.as_ref() {
         let bytes = read_bytes_file_limited(path, MAX_PROGRAM_SO_BYTES, ".so 文件")?;
         let actual_sha = program_deploy::sha256_hex(&bytes);
         let actual_len = bytes.len();
+        let mut metadata_matches_selected_so = true;
         if let Some(expected_sha) = metadata_sha.as_ref() {
             if expected_sha != &actual_sha {
+                metadata_matches_selected_so = false;
                 warnings.push(format!(
                     "build metadata SHA-256 为 {expected_sha}，但 .so 实际为 {actual_sha}"
                 ));
@@ -6454,11 +6505,15 @@ fn load_program_source_artifacts(
         }
         if let Some(expected_len) = metadata_len {
             if expected_len != actual_len {
+                metadata_matches_selected_so = false;
                 warnings.push(format!(
                     "build metadata 长度为 {expected_len}，但 .so 实际为 {actual_len}"
                 ));
             }
         }
+        approved_program_sha256 = metadata_sha
+            .filter(|_| metadata_matches_selected_so)
+            .or_else(|| Some(actual_sha.clone()));
         program_so_base64 = Some(BASE64.encode(&bytes));
         program_so_sha256 = Some(actual_sha);
         program_so_size = Some(actual_len);
@@ -6499,7 +6554,7 @@ fn load_program_source_artifacts(
         program_so_name,
         program_so_base64,
         program_so_sha256: program_so_sha256.clone(),
-        approved_program_sha256: metadata_sha.or(program_so_sha256),
+        approved_program_sha256: approved_program_sha256.or(program_so_sha256),
         program_so_size,
         program_keypair_path,
         expected_program_id,
@@ -7504,6 +7559,50 @@ mod generic_program_deployment_policy_tests {
         let canonical_source = source.canonicalize().unwrap();
         assert!(find_program_so_path(&canonical_source, None).is_none());
         assert!(find_program_keypair_path(&canonical_source, None).is_none());
+    }
+
+    #[test]
+    fn program_source_artifact_discovery_prefers_newer_deploy_so() {
+        let source = unique_temp_path("source-artifact-newer-deploy");
+        fs::create_dir_all(source.join("target/verifiable")).unwrap();
+        fs::create_dir_all(source.join("target/deploy")).unwrap();
+        fs::write(source.join("target/verifiable/fnzero.so"), b"old-verifiable").unwrap();
+
+        std::thread::sleep(Duration::from_millis(20));
+
+        let deploy_so = source.join("target/deploy/fnzero.so");
+        let deploy_bytes = b"new-deploy";
+        fs::write(&deploy_so, deploy_bytes).unwrap();
+        fs::write(
+            source.join("target/verifiable/fnzero-build.json"),
+            format!(
+                r#"{{"artifacts":{{"program":{{"sha256":"{}","length":{}}}}}}}"#,
+                "0".repeat(64),
+                99
+            ),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let selected = find_program_so_path(&canonical_source, Some("fnzero")).unwrap();
+        assert_eq!(selected, deploy_so.canonicalize().unwrap());
+
+        let artifacts =
+            load_program_source_artifacts(&canonical_source, Some("fnzero"), Some("devnet"), true)
+                .unwrap();
+        let deploy_sha = program_deploy::sha256_hex(deploy_bytes);
+        assert_eq!(artifacts.program_so_path, Some(deploy_so.canonicalize().unwrap()));
+        assert_eq!(artifacts.program_so_sha256.as_deref(), Some(deploy_sha.as_str()));
+        assert_eq!(
+            artifacts.approved_program_sha256.as_deref(),
+            Some(deploy_sha.as_str())
+        );
+        assert!(artifacts
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("build metadata SHA-256")));
+
+        let _ = fs::remove_dir_all(source);
     }
 }
 
