@@ -7164,6 +7164,53 @@ export default function Home() {
             const latestDirectPlan = project.plans.find((plan) => plan.kind === "direct-deploy");
             const latestUpgradePlan = project.plans.find((plan) => plan.kind === "squads-upgrade");
             const deploymentHistory = [...(project.history || [])].sort((a, b) => b.createdAt - a.createdAt);
+            const fallbackDeploymentCards = [latestDirectPlan, latestUpgradePlan]
+              .filter((plan): plan is ProgramDeploymentPlan => Boolean(plan))
+              .filter((plan) => {
+                const planProgramId = plan.result?.programId || plan.programId || "";
+                return !deploymentHistory.some((record) => {
+                  const sameProgram = !planProgramId || !record.programId || record.programId === planProgramId;
+                  const sameKind = plan.kind === "direct-deploy"
+                    ? record.kind === "direct-deploy"
+                    : record.kind.startsWith("squads-upgrade");
+                  return sameProgram && sameKind;
+                });
+              })
+              .map((plan): ProgramDeploymentHistoryItem => ({
+                id: `plan-card:${plan.id}`,
+                projectId: project.id,
+                kind: plan.kind === "direct-deploy"
+                  ? "direct-deploy"
+                  : plan.proposal
+                    ? "squads-upgrade-proposal"
+                    : "squads-upgrade-buffer",
+                status: plan.status,
+                network: plan.network,
+                sourceDir: project.sourceDir,
+                programId: plan.result?.programId || plan.programId,
+                programdataAddress: plan.result?.programdataAddress,
+                upgradeAuthority: plan.result?.authority || plan.upgradeAuthority,
+                multisig: plan.multisig,
+                vault: plan.vault,
+                bufferAddress: plan.result?.bufferAddress || plan.bufferAddress,
+                proposal: plan.proposal,
+                transactionIndex: plan.transactionIndex,
+                programSha256: plan.result?.programSha256 || plan.programSha256,
+                programBytes: plan.result?.programBytes || plan.programBytes,
+                maxDataLen: plan.maxDataLen,
+                deploySignature: plan.result?.deploySignature,
+                createBufferSignature: plan.result?.createBufferSignature,
+                receiptJson: plan.result?.receiptJson,
+                receiptSha256: plan.result?.receiptSha256,
+                deployedSlot: plan.result?.deployedSlot,
+                finalizedSlot: plan.result?.finalizedSlot,
+                readbackVerified: plan.result?.readbackVerified,
+                createdAt: plan.createdAt,
+                completedAt: plan.result?.completedAt,
+              }));
+            const deploymentCards = [...deploymentHistory, ...fallbackDeploymentCards].sort(
+              (a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt),
+            );
             const projectJournalMatches = Boolean(
               latestDirectPlan?.programId &&
                 latestDirectPlan.programSha256 &&
@@ -7183,7 +7230,7 @@ export default function Home() {
                 )
               : 0;
             return (
-              <div className="grid gap-4 xl:grid-cols-[18rem_minmax(0,1fr)]">
+              <div className="grid gap-4 xl:grid-cols-[17rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)]">
                 <aside className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
@@ -7308,74 +7355,6 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {[latestDirectPlan, latestUpgradePlan].filter(Boolean).map((plan) => (
-                      <div key={plan!.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-gray-200">
-                              {t(`features.program-projects.planKinds.${plan!.kind}`)}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-500">
-                              {t(`features.program-projects.planStatuses.${plan!.status}`)}
-                            </p>
-                          </div>
-                          {plan!.kind === "squads-upgrade" && (
-                            <button
-                              type="button"
-                              onClick={() => openProgramProjectUpgradeProposal(project, plan!)}
-                              className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
-                            >
-                              {t("features.program-projects.continue")}
-                            </button>
-                          )}
-                        </div>
-                        {plan!.multisig && (
-                          <p className="mt-2 break-all text-xs text-gray-500">
-                            {t("features.squads.multisig")}: {plan!.multisig}
-                          </p>
-                        )}
-                        {plan!.bufferAddress && (
-                          <p className="mt-2 break-all text-xs text-gray-500">
-                            {t("features.squads.buffer")}: {plan!.bufferAddress}
-                          </p>
-                        )}
-                        {plan!.proposal && (
-                          <p className="mt-2 break-all text-xs text-gray-500">
-                            {t("features.squads.proposal")}: {plan!.proposal}
-                          </p>
-                        )}
-                        {plan!.result && (
-                          <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-200">
-                              <Check className="h-3.5 w-3.5" />
-                              <span>
-                                {t("features.program-projects.deploymentCompletedAt", {
-                                  time: new Date(plan!.result.completedAt).toLocaleString(),
-                                })}
-                              </span>
-                            </div>
-                            {plan!.result.receiptJson && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void downloadFile(
-                                    compactProgramDeploymentReceiptJson(plan!.result),
-                                    deploymentReceiptFilename(plan!.result?.programId || plan!.programId),
-                                  )
-                                }
-                                className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs font-semibold text-gray-200 hover:bg-white/20"
-                              >
-                                <Download className="h-3.5 w-3.5" />
-                                {t("features.program-projects.downloadReceipt")}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
                   <div className="space-y-2 rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
@@ -7383,7 +7362,7 @@ export default function Home() {
                           {t("features.program-projects.historyTitle")}
                         </p>
                         <p className="mt-1 text-xs text-cyan-100/60">
-                          {t("features.program-projects.historyHint", { count: deploymentHistory.length })}
+                          {t("features.program-projects.historyHint", { count: deploymentCards.length })}
                         </p>
                       </div>
                       <button
@@ -7401,73 +7380,98 @@ export default function Home() {
                       </button>
                     </div>
 
-                    {deploymentHistory.length === 0 ? (
+                    {deploymentCards.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-white/10 bg-black/20 p-6 text-center text-sm text-gray-400">
                         {t("features.program-projects.historyEmpty")}
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {deploymentHistory.map((record) => {
+                      <div className="grid gap-3 2xl:grid-cols-2">
+                        {deploymentCards.map((record) => {
                           const signature = programDeploymentHistorySignature(record);
+                          const recordFields = [
+                            record.programId
+                              ? [t("features.program-deploy.programId"), record.programId]
+                              : null,
+                            record.programdataAddress
+                              ? [t("features.program-projects.programdata"), record.programdataAddress]
+                              : null,
+                            record.programSha256
+                              ? [t("features.program-deploy.programSha256"), record.programSha256]
+                              : null,
+                            record.programBytes
+                              ? [t("features.program-projects.programBytes", { bytes: record.programBytes }), ""]
+                              : null,
+                            record.maxDataLen
+                              ? [t("features.program-deploy.maxDataLen"), String(record.maxDataLen)]
+                              : null,
+                            record.upgradeAuthority
+                              ? [t("features.program-deploy.authority"), record.upgradeAuthority]
+                              : null,
+                            record.multisig
+                              ? [t("features.squads.multisig"), record.multisig]
+                              : null,
+                            record.vault
+                              ? [t("features.squads.vault"), record.vault]
+                              : null,
+                            record.bufferAddress
+                              ? [t("features.squads.buffer"), record.bufferAddress]
+                              : null,
+                            record.proposal
+                              ? [t("features.squads.proposal"), record.proposal]
+                              : null,
+                            record.transactionIndex
+                              ? [t("features.squads.transactionIndex"), record.transactionIndex]
+                              : null,
+                            record.deployedSlot !== undefined
+                              ? [t("features.program-deploy.deployedSlot"), String(record.deployedSlot)]
+                              : null,
+                            record.finalizedSlot !== undefined
+                              ? [t("features.program-deploy.finalizedSlot"), String(record.finalizedSlot)]
+                              : null,
+                            record.readbackVerified !== undefined
+                              ? [
+                                  t("features.program-deploy.readbackVerification"),
+                                  record.readbackVerified
+                                    ? t("features.program-deploy.readbackPassed")
+                                    : t("features.program-deploy.readbackFailed"),
+                                ]
+                              : null,
+                            record.createBufferSignature
+                              ? [t("features.program-deploy.createBufferSignature"), record.createBufferSignature]
+                              : null,
+                            record.authoritySignature
+                              ? [t("features.program-projects.authoritySignature"), record.authoritySignature]
+                              : null,
+                            record.deploySignature
+                              ? [t("features.program-projects.deploySignature"), record.deploySignature]
+                              : null,
+                            record.signature
+                              ? [t("features.program-projects.signature"), record.signature]
+                              : null,
+                          ].filter((field): field is [string, string] => Boolean(field));
                           return (
-                            <div key={record.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                                    <span className="rounded bg-cyan-300/10 px-2 py-1 font-semibold text-cyan-100">
+                            <div key={record.id} className="rounded-xl border border-white/10 bg-black/25 p-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-lg bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
                                       {t(`features.program-projects.historyKinds.${record.kind}`)}
                                     </span>
-                                    <span className="rounded bg-white/10 px-2 py-1 text-gray-300">
+                                    <span className="rounded-lg bg-white/10 px-2.5 py-1 text-xs text-gray-300">
                                       {t(`features.program-projects.planStatuses.${record.status}`)}
                                     </span>
-                                    <span className="text-gray-500">
-                                      {new Date(record.completedAt || record.createdAt).toLocaleString()}
-                                    </span>
                                   </div>
-                                  <div className="mt-2 grid gap-1 text-xs text-gray-500 md:grid-cols-2">
-                                    {record.programId && (
-                                      <p className="break-all">
-                                        {t("features.program-deploy.programId")}: {shortAddress(record.programId)}
-                                      </p>
-                                    )}
-                                    {record.programSha256 && (
-                                      <p className="break-all">
-                                        {t("features.program-deploy.programSha256")}: {shortSignature(record.programSha256)}
-                                      </p>
-                                    )}
-                                    {record.bufferAddress && (
-                                      <p className="break-all">
-                                        {t("features.squads.buffer")}: {shortAddress(record.bufferAddress)}
-                                      </p>
-                                    )}
-                                    {record.proposal && (
-                                      <p className="break-all">
-                                        {t("features.squads.proposal")}: {shortAddress(record.proposal)}
-                                      </p>
-                                    )}
-                                    {signature && (
-                                      <p className="break-all">
-                                        {t("features.program-projects.signature")}: {shortSignature(signature)}
-                                      </p>
-                                    )}
-                                    {record.finalizedSlot !== undefined && (
-                                      <p>
-                                        {t("features.program-deploy.finalizedSlot")}: {record.finalizedSlot}
-                                      </p>
-                                    )}
-                                  </div>
+                                  <p className="text-sm font-semibold text-gray-100">
+                                    {record.completedAt
+                                      ? t("features.program-projects.recordCompletedAt", {
+                                          time: new Date(record.completedAt).toLocaleString(),
+                                        })
+                                      : t("features.program-projects.recordCreatedAt", {
+                                          time: new Date(record.createdAt).toLocaleString(),
+                                        })}
+                                  </p>
                                 </div>
-                                <div className="flex shrink-0 flex-wrap gap-2">
-                                  {record.programId && (
-                                    <button
-                                      type="button"
-                                      onClick={() => copyToClipboard(record.programId || "", `program-history-id:${record.id}`)}
-                                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
-                                    >
-                                      {copied === `program-history-id:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                      {t("features.program-projects.copyProgramId")}
-                                    </button>
-                                  )}
+                                <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -7498,6 +7502,53 @@ export default function Home() {
                                   )}
                                 </div>
                               </div>
+                              {recordFields.length > 0 && (
+                                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                                  {recordFields.map(([label, value]) => (
+                                    <div key={`${record.id}:${label}`} className="rounded-lg bg-black/25 px-3 py-2">
+                                      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                                        {label}
+                                      </p>
+                                      {value ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(value, `program-history-field:${record.id}:${label}`)}
+                                          className="mt-1 block max-w-full truncate text-left font-mono text-xs text-gray-300 hover:text-white"
+                                          title={value}
+                                        >
+                                          {copied === `program-history-field:${record.id}:${label}`
+                                            ? t("common.copied")
+                                            : value}
+                                        </button>
+                                      ) : (
+                                        <p className="mt-1 text-xs text-gray-300">{label}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {signature && (
+                                <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(signature, `program-history-signature:${record.id}`)}
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                  >
+                                    {copied === `program-history-signature:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                    {t("features.program-projects.copySignature")}
+                                  </button>
+                                  {record.programId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => copyToClipboard(record.programId || "", `program-history-id:${record.id}`)}
+                                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                    >
+                                      {copied === `program-history-id:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                      {t("features.program-projects.copyProgramId")}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -13336,9 +13387,15 @@ export default function Home() {
       t("formUi.pickFeature")
     : t("app.welcome");
   const showFormHeader = selectedForm !== "wallet-list";
-  const isWideWorkspaceForm = selectedForm === "program-invoke";
+  const isWideWorkspaceForm = [
+    "program-workbench",
+    "program-deploy",
+    "program-invoke",
+    "squads-prepare-upgrade-buffer",
+    "squads-program-upgrade",
+  ].includes(selectedForm || "");
   const contentContainerClass = isWideWorkspaceForm
-    ? "mx-auto w-full max-w-[1520px] p-3 space-y-3 sm:p-4 lg:p-6 lg:space-y-4 2xl:max-w-[1680px]"
+    ? "mx-auto w-full max-w-[1760px] p-3 space-y-3 sm:p-4 lg:p-5 lg:space-y-4 2xl:max-w-[1900px]"
     : "max-w-5xl mx-auto p-3 space-y-3 sm:p-4 lg:p-8 lg:space-y-4";
 
   return (
