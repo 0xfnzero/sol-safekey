@@ -264,7 +264,6 @@
       "invokeProgram": "函数调用",
       "prepareUpgradePlan": "升级 Buffer",
       "createUpgradeProposal": "升级提案",
-      "deployModeHint": "重新部署会创建新的 Program ID；升级会保留当前 Program ID。",
       "continue": "继续",
       "journalProgress": "当前部署记录: {completed}/{total} 分片，状态 {status}",
       "deploymentCompletedAt": "部署完成：{time}",

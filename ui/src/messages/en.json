@@ -264,7 +264,6 @@
       "invokeProgram": "Call Functions",
       "prepareUpgradePlan": "Upgrade Buffer",
       "createUpgradeProposal": "Upgrade Proposal",
-      "deployModeHint": "Redeploy creates a new Program ID; upgrade keeps the current Program ID.",
       "continue": "Continue",
       "journalProgress": "Current deployment record: {completed}/{total} chunks, status {status}",
       "deploymentCompletedAt": "Deployment completed: {time}",

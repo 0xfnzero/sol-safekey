@@ -7277,8 +7277,8 @@ export default function Home() {
 
                 <div className="min-w-0 space-y-3">
                   <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
                           {t("features.program-projects.selectedProjectTitle")}
                         </p>
@@ -7296,7 +7296,7 @@ export default function Home() {
                           </span>
                         </div>
                       </div>
-                      <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+                      <div className="flex shrink-0 justify-start sm:justify-end">
                         <details data-close-on-outside className="relative">
                           <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20">
                             {t("features.workspace.actions")}
@@ -7371,9 +7371,6 @@ export default function Home() {
                           </div>
                         </details>
                       </div>
-                      <p className="text-xs text-gray-500 lg:text-right">
-                        {t("features.program-projects.deployModeHint")}
-                      </p>
                     </div>
 
                     {project.programId && (
