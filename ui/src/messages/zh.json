@@ -787,6 +787,8 @@
       "compileRequiredTitle": "项目尚未编译",
       "compileRequiredHint": "没有读取到可部署的 .so 或 Program keypair。请先编译并导入，完成后部署按钮会自动启用。",
       "compileRequiredAction": "编译并导入",
+      "programKeypairRequiredTitle": "还需选择 Program keypair",
+      "programKeypairRequiredHint": "编译产物已导入。为避免重新部署误用旧 Program ID，请重新选择本次新部署使用的 Program Keypair JSON。",
       "importedProgramKeypair": "源码目录 keypair",
       "programFile": "合约 .so 文件",
       "programFileTooltip": "选择要部署的 Solana SBF 编译产物（.so），最大 3 MiB。请使用已审计且可复现构建的文件。",

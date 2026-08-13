@@ -10765,12 +10765,16 @@ export default function Home() {
           ? programDeploymentJournal.deploymentAttempts
           : [];
         const programSourceDir = String(formData.programSourceDir || "").trim();
-        const sourceHasDeployableArtifacts = Boolean(
-          formData.programSoBase64 &&
-            (programKeypairMetadata || String(formData.programKeypairPath || "").trim()) &&
-            String(formData.programSoSha256 || "").trim(),
+        const sourceHasCompiledProgram = Boolean(
+          formData.programSoBase64 && String(formData.programSoSha256 || "").trim(),
         );
-        const sourceNeedsBuild = Boolean(programSourceDir && !sourceHasDeployableArtifacts);
+        const sourceHasProgramKeypair = Boolean(
+          programKeypairMetadata || String(formData.programKeypairPath || "").trim(),
+        );
+        const sourceNeedsBuild = Boolean(programSourceDir && !sourceHasCompiledProgram);
+        const sourceNeedsProgramKeypair = Boolean(
+          programSourceDir && sourceHasCompiledProgram && !sourceHasProgramKeypair,
+        );
         const deployValidationMessage = loading ? null : programDeployValidationError(formData);
         const writeAttempts = deploymentAttempts.filter((attempt) => attempt.stage === "write");
         const writeChunkCount = programDeploymentJournal.writeChunkCount;
@@ -11426,7 +11430,7 @@ export default function Home() {
                 )}
               </div>
             )}
-            {programSourceDir && (programSourceLoading || sourceNeedsBuild) && (
+            {programSourceDir && (programSourceLoading || sourceNeedsBuild || sourceNeedsProgramKeypair) && (
               <div className="space-y-3 rounded-lg border border-amber-300/20 bg-amber-400/10 p-3">
                 <div className="flex items-start gap-3">
                   {programSourceLoading ? (
@@ -11438,16 +11442,20 @@ export default function Home() {
                     <p className="text-sm font-semibold text-amber-100">
                       {programSourceLoading
                         ? t("features.program-deploy.sourceAutoReadingTitle")
-                        : t("features.program-deploy.compileRequiredTitle")}
+                        : sourceNeedsProgramKeypair
+                          ? t("features.program-deploy.programKeypairRequiredTitle")
+                          : t("features.program-deploy.compileRequiredTitle")}
                     </p>
                     <p className="mt-1 text-xs text-amber-100/80">
                       {programSourceLoading
                         ? t("features.program-deploy.sourceAutoReadingHint")
-                        : t("features.program-deploy.compileRequiredHint")}
+                        : sourceNeedsProgramKeypair
+                          ? t("features.program-deploy.programKeypairRequiredHint")
+                          : t("features.program-deploy.compileRequiredHint")}
                     </p>
                   </div>
                 </div>
-                {!programSourceLoading && (
+                {!programSourceLoading && sourceNeedsBuild && (
                   <button
                     type="button"
                     onClick={() => void handleProgramSourceImport(true)}
@@ -11460,7 +11468,7 @@ export default function Home() {
                 )}
               </div>
             )}
-            {!loading && !programSourceLoading && deployValidationMessage && !sourceNeedsBuild && (
+            {!loading && !programSourceLoading && deployValidationMessage && !sourceNeedsBuild && !sourceNeedsProgramKeypair && (
               <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300">
                 {deployValidationMessage}
               </p>

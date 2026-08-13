@@ -787,6 +787,8 @@
       "compileRequiredTitle": "Project has not been built",
       "compileRequiredHint": "No deployable .so or program keypair was loaded. Build and import first; the deploy button will enable when the artifacts are ready.",
       "compileRequiredAction": "Build and Import",
+      "programKeypairRequiredTitle": "Program keypair still required",
+      "programKeypairRequiredHint": "The compiled artifact has been imported. To avoid reusing an old Program ID during redeploy, select the Program Keypair JSON for this new deployment.",
       "importedProgramKeypair": "Source directory keypair",
       "programFile": "Contract .so File",
       "programFileTooltip": "Select the compiled Solana SBF program (.so) to deploy, up to 3 MiB. Use the audited, reproducibly built artifact.",
