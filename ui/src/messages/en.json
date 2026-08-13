@@ -287,6 +287,9 @@
       "selectedProjectTitle": "Current Project",
       "historyCount": "{count} record(s)",
       "historyEmpty": "This project has no deployment or upgrade records yet.",
+      "moreActions": "More",
+      "removeProject": "Remove Project",
+      "removeConfirm": "Remove project “{name}”? This only deletes local project and deployment/upgrade records. It does not affect the on-chain Program.",
       "planKinds": {
         "direct-deploy": "Direct Deploy",
         "squads-upgrade": "Multisig Upgrade"

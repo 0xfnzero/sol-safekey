@@ -287,6 +287,9 @@
       "selectedProjectTitle": "当前项目",
       "historyCount": "{count} 条记录",
       "historyEmpty": "这个项目还没有部署或升级记录。",
+      "moreActions": "更多",
+      "removeProject": "移除项目",
+      "removeConfirm": "确认移除项目“{name}”？这只会删除本地项目记录和部署/升级记录，不会影响链上 Program。",
       "planKinds": {
         "direct-deploy": "单签部署",
         "squads-upgrade": "多签升级"
