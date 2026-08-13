@@ -7513,40 +7513,6 @@ export default function Home() {
                                     </p>
                                   </div>
                                 </div>
-                                <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      void downloadFile(
-                                        programDeploymentHistoryToJson(record),
-                                        programDeploymentHistoryFilename(record),
-                                      );
-                                    }}
-                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
-                                  >
-                                    <Download className="h-3.5 w-3.5" />
-                                    {t("features.program-projects.downloadRecordJson")}
-                                  </button>
-                                  {record.receiptJson && (
-                                    <button
-                                      type="button"
-                                      onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        void downloadFile(
-                                          compactProgramDeploymentReceiptJson(record),
-                                          deploymentReceiptFilename(record.programId),
-                                        );
-                                      }}
-                                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
-                                    >
-                                      <Download className="h-3.5 w-3.5" />
-                                    {t("features.program-projects.downloadReceipt")}
-                                  </button>
-                                  )}
-                                </div>
                               </summary>
                               {recordFields.length > 0 && (
                                 <div className="mt-4 grid gap-2 md:grid-cols-2">
@@ -7573,8 +7539,36 @@ export default function Home() {
                                   ))}
                                 </div>
                               )}
-                              {signature && (
-                                <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                              <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void downloadFile(
+                                      programDeploymentHistoryToJson(record),
+                                      programDeploymentHistoryFilename(record),
+                                    )
+                                  }
+                                  className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  {t("features.program-projects.downloadRecordJson")}
+                                </button>
+                                {record.receiptJson && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void downloadFile(
+                                        compactProgramDeploymentReceiptJson(record),
+                                        deploymentReceiptFilename(record.programId),
+                                      )
+                                    }
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    {t("features.program-projects.downloadReceipt")}
+                                  </button>
+                                )}
+                                {signature && (
                                   <button
                                     type="button"
                                     onClick={() => copyToClipboard(signature, `program-history-signature:${record.id}`)}
@@ -7583,18 +7577,18 @@ export default function Home() {
                                     {copied === `program-history-signature:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                                     {t("features.program-projects.copySignature")}
                                   </button>
-                                  {record.programId && (
-                                    <button
-                                      type="button"
-                                      onClick={() => copyToClipboard(record.programId || "", `program-history-id:${record.id}`)}
-                                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
-                                    >
-                                      {copied === `program-history-id:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                      {t("features.program-projects.copyProgramId")}
-                                    </button>
-                                  )}
-                                </div>
-                              )}
+                                )}
+                                {record.programId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(record.programId || "", `program-history-id:${record.id}`)}
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/10 px-2 text-xs hover:bg-white/20"
+                                  >
+                                    {copied === `program-history-id:${record.id}` ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                    {t("features.program-projects.copyProgramId")}
+                                  </button>
+                                )}
+                              </div>
                             </details>
                           );
                         })}
@@ -7617,36 +7611,7 @@ export default function Home() {
           })()}
         </section>
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-gray-300">{t("features.workspace.savedPrograms")}</h3>
-            <details data-close-on-outside className="relative">
-              <summary className="cursor-pointer list-none px-3 py-2 bg-white/10 rounded-lg text-sm hover:bg-white/20">
-                {t("features.workspace.actions")}
-              </summary>
-              <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-lg border border-white/10 bg-zinc-950 shadow-xl">
-                {[
-                  { id: "program-info", label: t("features.program-info.title"), onClick: () => handleOpenForm("program-info") },
-                  {
-                    id: "program-deploy",
-                    label: t("features.program-deploy.title"),
-                    onClick: () => handleOpenForm("program-deploy"),
-                  },
-                ].map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
-                    onClick={() => {
-                      action.onClick();
-                      closeDropdownMenus();
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/10"
-                  >
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-            </details>
-          </div>
+          <h3 className="text-sm font-semibold text-gray-300">{t("features.workspace.savedPrograms")}</h3>
           {currentPrograms.length === 0 ? (
             <p className="text-xs text-gray-500">{t("features.workspace.emptyPrograms")}</p>
           ) : currentPrograms.map((item) => (
@@ -7657,8 +7622,12 @@ export default function Home() {
                   <code className="block text-xs text-gray-400 break-all">{item.address}</code>
                 </div>
                 <details data-close-on-outside className="relative shrink-0">
-                  <summary className="cursor-pointer list-none px-3 py-1.5 bg-white/10 rounded text-xs hover:bg-white/20">
-                    {t("features.workspace.actions")}
+                  <summary
+                    className="inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white"
+                    title={t("features.workspace.actions")}
+                    aria-label={t("features.workspace.actions")}
+                  >
+                    <Menu className="h-4 w-4" />
                   </summary>
                   <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-white/10 bg-zinc-950 shadow-xl">
                     {[
