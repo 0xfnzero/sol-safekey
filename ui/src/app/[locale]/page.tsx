@@ -97,7 +97,6 @@ import {
 } from "@/lib/programDeploy";
 import {
   deploymentReceiptFilename,
-  deploymentResultToFormState,
   isUnfinishedProgramDeploymentStatus,
   programDeploymentHistoryFilename,
   programDeploymentHistoryId,
@@ -7299,7 +7298,7 @@ export default function Home() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => openProgramProjectDeploy(project)} className="inline-flex h-9 items-center gap-1 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20">
-                          <ChevronRight className="h-3.5 w-3.5" />
+                          <Plus className="h-3.5 w-3.5" />
                           {t("features.program-projects.openDeployPlan")}
                         </button>
                         <button type="button" onClick={() => openProgramInvoke(project)} className="inline-flex h-9 items-center gap-1 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20">
@@ -7351,6 +7350,9 @@ export default function Home() {
                           </div>
                         </details>
                       </div>
+                      <p className="text-xs text-gray-500 lg:text-right">
+                        {t("features.program-projects.deployModeHint")}
+                      </p>
                     </div>
 
                     {project.programId && (
@@ -7963,37 +7965,21 @@ export default function Home() {
         : {};
 
     const openProgramProjectDeploy = (project: ProgramProject) => {
-      const latestDirectPlan = project.plans.find((plan) => plan.kind === "direct-deploy");
-      const planMaxDataLen = Number(latestDirectPlan?.maxDataLen || 0);
-      const plannedUpgradeAuthority = latestDirectPlan?.upgradeAuthority || project.upgradeAuthority || effectiveWallet?.public_key;
+      const plannedUpgradeAuthority = project.upgradeAuthority || effectiveWallet?.public_key;
       const deploymentPlanWalletId =
         wallets.find((wallet) => wallet.public_key === plannedUpgradeAuthority)?.id || effectiveWalletId;
       handleOpenForm("program-deploy", {
         wallet_id: deploymentPlanWalletId,
-        network: latestDirectPlan?.network || project.network,
+        network: project.network,
         programSourceDir: project.sourceDir,
-        programKeypairPath: project.programKeypairPath,
-        expectedProgramId: latestDirectPlan?.programId || project.programId,
         expectedUpgradeAuthority: plannedUpgradeAuthority,
         programSoName: project.programSoName,
-        programSoSize: latestDirectPlan?.programBytes || project.programBytes,
-        programSoSha256: latestDirectPlan?.programSha256 || project.programSha256,
-        approvedProgramSha256: latestDirectPlan?.programSha256 || project.programSha256,
-        max_data_len: Number.isSafeInteger(planMaxDataLen) && planMaxDataLen > 0
-          ? String(planMaxDataLen)
-          : undefined,
-        resumeBufferAddress: latestDirectPlan?.bufferAddress,
-        ...deploymentResultToFormState(latestDirectPlan?.result, t),
+        programSoSize: project.programBytes,
+        programSoSha256: project.programSha256,
+        approvedProgramSha256: project.programSha256,
         ...activeProgramArtifactForProject(project),
       });
-      const metadataProgramId = latestDirectPlan?.programId || project.programId;
-      if (metadataProgramId && project.programKeypairPath) {
-        setProgramKeypairMetadata({
-          filename: project.programKeypairPath.split(/[\\/]/).pop() || project.programKeypairPath,
-          programId: metadataProgramId,
-        });
-      }
-      autoReadProgramProjectSource(project.sourceDir);
+      clearProgramKeypairMaterial();
     };
 
     const openProgramProjectPrepareUpgrade = (project: ProgramProject) => {
@@ -11033,6 +11019,9 @@ export default function Home() {
               </div>
             )}
 
+            <p className="rounded-lg border border-cyan-300/15 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100/80">
+              {t("features.program-deploy.redeployHint")}
+            </p>
             {renderProgramSourceImport()}
             {renderProgramFileInput()}
             <div>
