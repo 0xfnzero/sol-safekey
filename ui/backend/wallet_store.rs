@@ -132,6 +132,7 @@ pub const PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED: &str = "finalized";
 pub const PROGRAM_DEPLOYMENT_ATTEMPT_FINALIZED_FAILED: &str = "finalized_failed";
 pub const PROGRAM_DEPLOYMENT_ATTEMPT_EXPIRED_ABSENT: &str = "expired_absent";
 pub const PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION: u32 = 1;
+pub const PROGRAM_DEPLOYMENT_STATUS_FINALIZED: &str = "finalized";
 
 impl From<SavedWallet> for WalletSummary {
     fn from(wallet: SavedWallet) -> Self {
@@ -730,6 +731,21 @@ pub fn reserve_program_deployment_with_attempt(
     reserve_program_deployment_with_attempt_with_connection(&mut conn, &mut record, &mut attempt)
 }
 
+pub fn replace_inactive_program_deployment_with_attempt(
+    mut record: ProgramDeploymentRecord,
+    mut attempt: ProgramDeploymentAttemptRecord,
+) -> Result<ProgramDeploymentRecord, String> {
+    let _guard = store_lock()
+        .lock()
+        .map_err(|_| "数据库写锁已损坏".to_string())?;
+    let mut conn = open_connection()?;
+    replace_inactive_program_deployment_with_attempt_with_connection(
+        &mut conn,
+        &mut record,
+        &mut attempt,
+    )
+}
+
 fn reserve_program_deployment_with_connection(
     conn: &mut Connection,
     record: &mut ProgramDeploymentRecord,
@@ -755,6 +771,69 @@ fn reserve_program_deployment_with_attempt_with_connection(
     reserve_program_deployment_with_optional_attempt(conn, record, Some(attempt))
 }
 
+fn replace_inactive_program_deployment_with_attempt_with_connection(
+    conn: &mut Connection,
+    record: &mut ProgramDeploymentRecord,
+    attempt: &mut ProgramDeploymentAttemptRecord,
+) -> Result<ProgramDeploymentRecord, String> {
+    if attempt.stage != PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER
+        || attempt.chunk_index.is_some()
+        || attempt.status != PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED
+        || record.attempt_evidence_version != PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION
+    {
+        return Err(
+            "替换部署记录时，新 attempt 必须是 signed create_buffer 且不得包含 chunk index"
+                .to_string(),
+        );
+    }
+    validate_program_deployment_attempt_binding(record, attempt, false)?;
+    let now = now_unix_secs()?;
+    record.created_at = now;
+    record.updated_at = now;
+    attempt.created_at = now;
+    attempt.updated_at = now;
+    let transaction = conn
+        .transaction()
+        .map_err(|error| format!("开始替换部署 journal 事务失败: {error}"))?;
+    let existing = transaction
+        .query_row(
+            PROGRAM_DEPLOYMENT_SELECT,
+            params![record.genesis_hash, record.program_id],
+            row_to_program_deployment,
+        )
+        .optional()
+        .map_err(|error| format!("读取旧部署 journal 失败: {error}"))?
+        .ok_or_else(|| "旧部署 journal 不存在，无法替换".to_string())?;
+    if existing.status == PROGRAM_DEPLOYMENT_STATUS_FINALIZED {
+        return Err("旧部署 journal 已 finalized，拒绝替换".to_string());
+    }
+    transaction
+        .execute(
+            "DELETE FROM program_deployment_attempts WHERE genesis_hash = ?1 AND program_id = ?2",
+            params![record.genesis_hash, record.program_id],
+        )
+        .map_err(|error| format!("删除旧部署 attempts 失败: {error}"))?;
+    transaction
+        .execute(
+            "DELETE FROM program_deployment_journal WHERE genesis_hash = ?1 AND program_id = ?2",
+            params![record.genesis_hash, record.program_id],
+        )
+        .map_err(|error| format!("删除旧部署 journal 失败: {error}"))?;
+    insert_program_deployment_journal(&transaction, record)?;
+    insert_program_deployment_attempt(&transaction, attempt)?;
+    let stored = transaction
+        .query_row(
+            PROGRAM_DEPLOYMENT_SELECT,
+            params![record.genesis_hash, record.program_id],
+            row_to_program_deployment,
+        )
+        .map_err(|error| format!("回读新部署 journal 失败: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("提交替换部署 journal 失败: {error}"))?;
+    Ok(stored)
+}
+
 fn reserve_program_deployment_with_optional_attempt(
     conn: &mut Connection,
     record: &mut ProgramDeploymentRecord,
@@ -770,41 +849,8 @@ fn reserve_program_deployment_with_optional_attempt(
     let transaction = conn
         .transaction()
         .map_err(|error| format!("开始部署 journal 事务失败: {error}"))?;
-    let inserted = transaction
-        .execute(
-            "INSERT INTO program_deployment_journal (\
-                genesis_hash, program_id, program_sha256, program_len, max_data_len, \
-                upgrade_authority, buffer_address, status, create_signature, \
-                create_last_valid_block_height, last_write_signature, last_write_chunk_index, \
-                last_write_last_valid_block_height, completed_writes, deploy_signature, \
-                deploy_last_valid_block_height, attempt_evidence_version, revision, created_at, updated_at\
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20) \
-             ON CONFLICT(genesis_hash, program_id) DO NOTHING",
-            params![
-                record.genesis_hash,
-                record.program_id,
-                record.program_sha256,
-                record.program_len,
-                record.max_data_len,
-                record.upgrade_authority,
-                record.buffer_address,
-                record.status,
-                record.create_signature,
-                record.create_last_valid_block_height,
-                record.last_write_signature,
-                record.last_write_chunk_index,
-                record.last_write_last_valid_block_height,
-                record.completed_writes,
-                record.deploy_signature,
-                record.deploy_last_valid_block_height,
-                record.attempt_evidence_version,
-                record.revision,
-                record.created_at,
-                record.updated_at,
-            ],
-        )
-        .map_err(|error| format!("写入部署 journal 失败: {error}"))?
-        == 1;
+    let inserted =
+        insert_program_deployment_journal_with_conflict(&transaction, record, true)? == 1;
     if inserted {
         if let Some(attempt) = attempt.as_deref() {
             insert_program_deployment_attempt(&transaction, attempt)?;
@@ -821,6 +867,68 @@ fn reserve_program_deployment_with_optional_attempt(
         .commit()
         .map_err(|error| format!("提交部署 journal 失败: {error}"))?;
     Ok((stored, inserted))
+}
+
+fn insert_program_deployment_journal(
+    conn: &Connection,
+    record: &ProgramDeploymentRecord,
+) -> Result<(), String> {
+    let inserted = insert_program_deployment_journal_with_conflict(conn, record, false)?;
+    if inserted != 1 {
+        return Err("写入部署 journal 失败：未插入记录".to_string());
+    }
+    Ok(())
+}
+
+fn insert_program_deployment_journal_with_conflict(
+    conn: &Connection,
+    record: &ProgramDeploymentRecord,
+    ignore_conflict: bool,
+) -> Result<usize, String> {
+    let sql = if ignore_conflict {
+        "INSERT INTO program_deployment_journal (\
+            genesis_hash, program_id, program_sha256, program_len, max_data_len, \
+            upgrade_authority, buffer_address, status, create_signature, \
+            create_last_valid_block_height, last_write_signature, last_write_chunk_index, \
+            last_write_last_valid_block_height, completed_writes, deploy_signature, \
+            deploy_last_valid_block_height, attempt_evidence_version, revision, created_at, updated_at\
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20) \
+         ON CONFLICT(genesis_hash, program_id) DO NOTHING"
+    } else {
+        "INSERT INTO program_deployment_journal (\
+            genesis_hash, program_id, program_sha256, program_len, max_data_len, \
+            upgrade_authority, buffer_address, status, create_signature, \
+            create_last_valid_block_height, last_write_signature, last_write_chunk_index, \
+            last_write_last_valid_block_height, completed_writes, deploy_signature, \
+            deploy_last_valid_block_height, attempt_evidence_version, revision, created_at, updated_at\
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"
+    };
+    conn.execute(
+        sql,
+        params![
+            record.genesis_hash,
+            record.program_id,
+            record.program_sha256,
+            record.program_len,
+            record.max_data_len,
+            record.upgrade_authority,
+            record.buffer_address,
+            record.status,
+            record.create_signature,
+            record.create_last_valid_block_height,
+            record.last_write_signature,
+            record.last_write_chunk_index,
+            record.last_write_last_valid_block_height,
+            record.completed_writes,
+            record.deploy_signature,
+            record.deploy_last_valid_block_height,
+            record.attempt_evidence_version,
+            record.revision,
+            record.created_at,
+            record.updated_at,
+        ],
+    )
+    .map_err(|error| format!("写入部署 journal 失败: {error}"))
 }
 
 fn deployment_attempt_stage_and_chunk_are_valid(stage: &str, chunk_index: Option<usize>) -> bool {
@@ -1972,6 +2080,122 @@ mod tests {
             )
             .unwrap();
         assert_eq!(competing_count, 0);
+    }
+
+    #[test]
+    fn inactive_deployment_can_be_replaced_for_redeploy() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        let mut old = deployment_record("buffer-old", "artifact-old");
+        old.status = "create_buffer_requires_reconciliation".to_string();
+        let mut old_attempt = deployment_attempt(
+            PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER,
+            "buffer-old",
+            None,
+            "old-create",
+            42,
+        );
+        let (old, _) = reserve_program_deployment_with_attempt_with_connection(
+            &mut conn,
+            &mut old,
+            &mut old_attempt,
+        )
+        .unwrap();
+        let old = transition_program_deployment_attempt_with_connection(
+            &mut conn,
+            &old,
+            "old-create",
+            PROGRAM_DEPLOYMENT_ATTEMPT_SIGNED,
+            PROGRAM_DEPLOYMENT_ATTEMPT_EXPIRED_ABSENT,
+            "create_buffer_requires_reconciliation",
+            0,
+        )
+        .unwrap();
+
+        let mut next = deployment_record("buffer-new", "artifact-new");
+        next.status = "create_buffer_signed".to_string();
+        let mut next_attempt = deployment_attempt(
+            PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER,
+            "buffer-new",
+            None,
+            "new-create",
+            84,
+        );
+        let replaced = replace_inactive_program_deployment_with_attempt_with_connection(
+            &mut conn,
+            &mut next,
+            &mut next_attempt,
+        )
+        .unwrap();
+        assert_eq!(old.program_id, replaced.program_id);
+        assert_eq!(replaced.buffer_address, "buffer-new");
+        assert_eq!(replaced.program_sha256, "artifact-new");
+
+        let attempts =
+            load_program_deployment_attempts_with_connection(&conn, "devnet-genesis", "program-id")
+                .unwrap();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].signature, "new-create");
+    }
+
+    #[test]
+    fn non_finalized_deployment_can_be_replaced_for_redeploy() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        let mut active = deployment_record("buffer-active", "artifact-old");
+        let mut active_attempt = deployment_attempt(
+            PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER,
+            "buffer-active",
+            None,
+            "active-create",
+            42,
+        );
+        let (_active, _) = reserve_program_deployment_with_attempt_with_connection(
+            &mut conn,
+            &mut active,
+            &mut active_attempt,
+        )
+        .unwrap();
+
+        let mut next = deployment_record("buffer-new", "artifact-new");
+        let mut next_attempt = deployment_attempt(
+            PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER,
+            "buffer-new",
+            None,
+            "new-create",
+            84,
+        );
+        let replaced = replace_inactive_program_deployment_with_attempt_with_connection(
+            &mut conn,
+            &mut next,
+            &mut next_attempt,
+        )
+        .unwrap();
+        assert_eq!(replaced.buffer_address, "buffer-new");
+        let active_count: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM program_deployment_attempts WHERE signature = ?1",
+                ["active-create"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_count, 0);
+
+        conn.execute(
+            "UPDATE program_deployment_journal SET status = ?1 WHERE genesis_hash = ?2 AND program_id = ?3",
+            params![PROGRAM_DEPLOYMENT_STATUS_FINALIZED, "devnet-genesis", "program-id"],
+        )
+        .unwrap();
+        assert!(
+            replace_inactive_program_deployment_with_attempt_with_connection(
+                &mut conn,
+                &mut next,
+                &mut next_attempt,
+            )
+            .is_err()
+        );
     }
 
     #[test]

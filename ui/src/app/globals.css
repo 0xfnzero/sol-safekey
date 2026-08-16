@@ -57,6 +57,7 @@ body {
 }
 
 .app-shell {
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -65,6 +66,7 @@ body {
 .app-shell code,
 .app-shell pre,
 .select-text {
+  -webkit-user-select: text;
   user-select: text;
 }
 

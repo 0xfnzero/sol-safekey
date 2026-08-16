@@ -21,6 +21,14 @@ test("derives stable workspace identifiers and display names", () => {
   assert.equal(sourceDirProjectName("/tmp/example-program/"), "example-program");
   assert.equal(sourceDirProjectName(""), "program");
   assert.equal(programProjectId("/TMP/Example"), programProjectId("/tmp/example"));
+  assert.notEqual(
+    programProjectId("/tmp/example", "Wallet111"),
+    programProjectId("/tmp/example", "Wallet222"),
+  );
+  assert.equal(
+    programProjectId("/TMP/Example", "Wallet111"),
+    programProjectId("/tmp/example", "wallet111"),
+  );
   assert.equal(
     programPlanId("project:abc", "direct-deploy", "devnet", "Program111", "Multi111"),
     programPlanId("project:abc", "direct-deploy", "devnet", "Program111", "Multi111"),
@@ -31,6 +39,7 @@ test("builds safe deployment filenames and status predicates", () => {
   assert.equal(safeFilename(" bad/name wallet "), "bad-name-wallet");
   assert.equal(deploymentReceiptFilename("ABCDEFGH1234567890"), "deploy-ABCDEFGH-7890.json");
   assert.equal(deploymentReceiptFilename(""), "deploy-program.json");
+  assert.equal(isUnfinishedProgramDeploymentStatus("ready"), true);
   assert.equal(isUnfinishedProgramDeploymentStatus("running"), true);
   assert.equal(isUnfinishedProgramDeploymentStatus("buffer-ready"), true);
   assert.equal(isUnfinishedProgramDeploymentStatus("failed"), true);
@@ -96,7 +105,7 @@ test("exports generic deployment history records", () => {
     completedAt: 1_700_000_000_500,
   };
   const filename = programDeploymentHistoryFilename(history);
-  assert.match(filename, /^program-direct-deploy-Program1-1111-.*\.json$/);
+  assert.equal(filename, "deploy-Program1-1111-20231114-221320.json");
 
   const record = JSON.parse(programDeploymentHistoryToJson(history));
   assert.equal(record.schema, "sol-safekey_program_deployment_history");

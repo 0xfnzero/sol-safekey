@@ -15,6 +15,7 @@ const SOL_SAFEKEY_API_PORT: u16 = 3841;
 const MAX_PROXY_BODY_BYTES: usize = 12 * 1024 * 1024;
 const MAX_DOWNLOAD_FILE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SECURE_PUBLIC_KEY_PEM_BYTES: usize = 2 * 1024;
+const PROGRAM_DEPLOY_PROXY_TIMEOUT_SECS: u64 = 60 * 60;
 const SECURE_BODY_HEADER: &str = "x-sol-safekey-secure-body";
 const SECURE_BODY_VERSION: &str = "1";
 
@@ -108,7 +109,9 @@ async fn proxy_api_request(
     let url = format!("http://127.0.0.1:{}/api/{}", SOL_SAFEKEY_API_PORT, path);
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
+        .timeout(std::time::Duration::from_secs(
+            PROGRAM_DEPLOY_PROXY_TIMEOUT_SECS,
+        ))
         .build()
         .map_err(|e| e.to_string())?;
 

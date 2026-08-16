@@ -19,6 +19,12 @@ export const LOCAL_TOKEN_METADATA: LocalTokenMetadata[] = [
     logoUri: "/token-icons/usdc.png",
   },
   {
+    mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    symbol: "USDC",
+    name: "USD Coin",
+    logoUri: "/token-icons/usdc.png",
+  },
+  {
     mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
     symbol: "USDT",
     name: "USDT",

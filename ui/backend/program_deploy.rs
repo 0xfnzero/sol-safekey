@@ -17,6 +17,12 @@ pub const DEPLOY_FEE_RATE_RESERVE_BPS: u64 = 2_000;
 pub const DEPLOY_RECOVERY_WRITE_PERCENT: usize = 5;
 pub const DEPLOY_MIN_RECOVERY_WRITES: usize = 8;
 
+const ANCHOR_PROGRAM_MARKERS: &[&[u8]] = &[
+    b"DeclaredProgramIdMismatch",
+    b"The declared program id does not match the actual program id",
+    b"AnchorError occurred",
+];
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeploymentReadback {
     pub deployed_slot: u64,
@@ -159,6 +165,35 @@ pub fn require_sha256(bytes: &[u8], expected_sha256: &str) -> Result<String, Str
         return Err(format!("Program SHA-256 is {actual}, expected {expected}"));
     }
     Ok(actual)
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
+pub fn looks_like_anchor_program(program: &[u8]) -> bool {
+    ANCHOR_PROGRAM_MARKERS
+        .iter()
+        .any(|marker| contains_bytes(program, marker))
+}
+
+pub fn require_anchor_declared_program_id(
+    program: &[u8],
+    expected_program_id: &Pubkey,
+) -> Result<(), String> {
+    if !looks_like_anchor_program(program) {
+        return Ok(());
+    }
+    let expected_program_id_bytes = expected_program_id.to_bytes();
+    if contains_bytes(program, &expected_program_id_bytes) {
+        return Ok(());
+    }
+    Err(format!(
+        "Anchor .so 编译产物中的 declare_id! 与目标 Program ID 不匹配：当前目标 Program ID 为 {expected_program_id}，但 .so 内未包含该地址。请执行 clean 后重新编译，或选择与该 .so 匹配的 Program keypair。"
+    ))
 }
 
 /// Applies the strictest offline SBF loading and bytecode verification available
@@ -440,6 +475,19 @@ mod tests {
         );
         assert!(require_sha256(program, "not-a-hash").is_err());
         assert!(require_sha256(b"\x7fELFother", &expected).is_err());
+    }
+
+    #[test]
+    fn anchor_program_id_validation_requires_embedded_target_id() {
+        let expected = Pubkey::new_unique();
+        let other = Pubkey::new_unique();
+        let mut matching_anchor = b"\x7fELFAnchorError occurred".to_vec();
+        matching_anchor.extend_from_slice(&expected.to_bytes());
+        assert!(require_anchor_declared_program_id(&matching_anchor, &expected).is_ok());
+        assert!(require_anchor_declared_program_id(&matching_anchor, &other).is_err());
+
+        let non_anchor = b"\x7fELFplain-sbf-program";
+        assert!(require_anchor_declared_program_id(non_anchor, &expected).is_ok());
     }
 
     #[test]

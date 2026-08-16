@@ -45,10 +45,15 @@ import {
   anchorIdlProgramId,
   defaultAccountAddress,
   encodeAnchorInstruction,
+  encodeAnchorSeedArgToBase64,
   flattenAnchorAccounts,
   idlTypeLabel,
+  isValidAnchorAccountAddress,
   isUnsupportedIdlType,
   parseAnchorIdlJson,
+  resolveAnchorAccountAddress,
+  type AnchorIdlArg,
+  type FlatAnchorAccount,
   type AnchorIdlInstruction,
   type AnchorIdlProgram,
 } from "@/lib/anchorIdl";
@@ -137,6 +142,8 @@ const DEFAULT_POST_MUTATION_ASSET_REFRESH_DELAYS_MS = [0, 1800];
 const POST_SELL_ASSET_REFRESH_DELAYS_MS = [0, 1200, 3000, 7000, 12000];
 const PROGRAM_DEPLOY_SLOW_PROGRESS_MS = 90_000;
 const PROGRAM_DEPLOY_STALLED_MS = 180_000;
+const WALLET_LIST_LOAD_RETRY_DELAYS_MS = [350, 900, 1_800, 3_000, 5_000, 8_000, 13_000];
+const UPGRADEABLE_LOADER_ID = "BPFLoaderUpgradeab1e11111111111111111111111";
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 const SOLANA_TOKEN_LOGO_URI = "/token-icons/solana.png";
 const ALLOW_DIRECT_SECRET_INPUT =
@@ -158,7 +165,9 @@ const WALLET_PASSWORD_FORM_IDS = new Set([
   "close-wsol-ata",
   "create-nonce",
   "program-deploy",
+  "program-upgrade",
   "program-invoke",
+  "program-invoke-standalone",
   "squads-create",
   "squads-sol-transfer",
   "squads-token-transfer",
@@ -174,6 +183,12 @@ const WALLET_PASSWORD_FORM_IDS = new Set([
   "pumpfun-cashback",
   "pumpswap-cashback",
 ]);
+
+const PROGRAM_INVOKE_FORM_IDS = new Set(["program-invoke", "program-invoke-standalone"]);
+
+function isProgramInvokeForm(formId: string): boolean {
+  return PROGRAM_INVOKE_FORM_IDS.has(formId);
+}
 
 const CREATE_PASSWORD_FORM_IDS = new Set([
   "create-encrypted",
@@ -226,6 +241,7 @@ const SOLANA_GENESIS_HASHES: Record<AppNetwork, string> = {
   testnet: "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
 };
 const SOLANA_FAUCET_URL = "https://faucet.solana.com/";
+const CIRCLE_FAUCET_URL = "https://faucet.circle.com/";
 const PROGRAM_DEPLOY_RESULT_FIELDS = [
   "programId",
   "programdataAddress",
@@ -250,26 +266,6 @@ const PROGRAM_DEPLOY_RESULT_FIELDS = [
   "deploymentReceiptJson",
   "deploymentReceiptSha256",
 ] as const;
-const PROGRAM_DEPLOY_ARTIFACT_FIELDS = [
-  "programSoBase64",
-  "programSoName",
-  "programSoSize",
-  "programSoSha256",
-  "approvedProgramSha256",
-  "programKeypairPath",
-  "expectedProgramId",
-  "max_data_len",
-  "resumeBufferAddress",
-  "sourceBuildCommand",
-  "sourceBuildTemplate",
-  "sourceBuildStatus",
-  "sourceBuildStdout",
-  "sourceBuildStderr",
-  "sourceBuildError",
-  "sourceBuildBlockedReason",
-  "sourceImportWarnings",
-] as const;
-
 interface MenuItem {
   id: string;
   label: string;
@@ -287,6 +283,7 @@ interface ProgramInvokeState {
   projectId?: string;
   sourceDir?: string;
   idlPath?: string;
+  idlFileName?: string;
   idlJsonText: string;
   idl?: AnchorIdlProgram;
   programId: string;
@@ -301,9 +298,30 @@ interface ProgramInvokeState {
     status: string;
     signature?: string;
     simulationError?: string;
+    rawSimulationError?: string;
+    errorMessage?: string;
+    rawErrorMessage?: string;
     logs: string[];
   };
 }
+
+function emptyProgramInvokeState(preset: Partial<ProgramInvokeState> = {}): ProgramInvokeState {
+  return {
+    idlJsonText: "",
+    programId: "",
+    selectedInstruction: "",
+    argValues: {},
+    accountValues: {},
+    signerWalletIds: {},
+    signerPasswords: {},
+    loading: false,
+    ...preset,
+  };
+}
+
+type ProgramInvokeWalletPickerTarget =
+  | { kind: "arg"; name: string }
+  | { kind: "account"; path: string; signer: boolean };
 
 interface ProgramDeploySourceResponse {
   source_dir: string;
@@ -319,7 +337,6 @@ interface ProgramDeploySourceResponse {
   program_so_name?: string | null;
   program_so_base64?: string | null;
   program_so_sha256?: string | null;
-  approved_program_sha256?: string | null;
   program_so_size?: number | null;
   program_keypair_path?: string | null;
   expected_program_id?: string | null;
@@ -331,6 +348,25 @@ interface ProgramDeploySourceResponse {
   manifest_operational_admin?: string | null;
   build_available: boolean;
   build_blocked_reason?: string | null;
+  source_validation_errors?: string[];
+  warnings: string[];
+}
+
+interface ProgramKeypairArtifactResponse {
+  source_dir: string;
+  artifact_stem?: string | null;
+  program_keypair_path?: string | null;
+  expected_program_id?: string | null;
+  warnings?: string[];
+}
+
+interface ProgramGenerateKeypairResponse {
+  source_dir: string;
+  artifact_stem: string;
+  program_keypair_path: string;
+  backup_program_keypair_path?: string | null;
+  expected_program_id: string;
+  updated_source_files: string[];
   warnings: string[];
 }
 
@@ -389,6 +425,8 @@ interface ProgramDeploymentJournalState {
   writeChunkCount: number;
   journal: ProgramDeploymentJournalRecord | null;
   deploymentAttempts: ProgramDeploymentAttemptRecord[];
+  conflictingJournal: ProgramDeploymentJournalRecord | null;
+  conflictingDeploymentAttempts: ProgramDeploymentAttemptRecord[];
   loading: boolean;
   error?: string;
 }
@@ -402,6 +440,8 @@ function emptyProgramDeploymentJournalState(): ProgramDeploymentJournalState {
     writeChunkCount: 0,
     journal: null,
     deploymentAttempts: [],
+    conflictingJournal: null,
+    conflictingDeploymentAttempts: [],
     loading: false,
   };
 }
@@ -441,18 +481,35 @@ function isNullableSafeInteger(value: unknown): value is number | null {
 function parseProgramDeploymentJournalRecord(
   value: unknown,
   intent: ProgramDeploymentJournalIntent,
+  options: { requireIntentMatch?: boolean } = {},
 ): ProgramDeploymentJournalRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("invalid-journal-record");
   }
   const record = value as Record<string, unknown>;
+  const requireIntentMatch = options.requireIntentMatch ?? true;
+  const intentFieldsMatch =
+    record.genesis_hash === intent.genesisHash &&
+    record.program_id === intent.programId &&
+    record.program_sha256 === intent.programSha256 &&
+    record.program_len === intent.programLen &&
+    record.max_data_len === intent.maxDataLen &&
+    record.upgrade_authority === intent.upgradeAuthority;
+  const conflictScopeMatches =
+    record.genesis_hash === intent.genesisHash &&
+    record.program_id === intent.programId;
   if (
-    record.genesis_hash !== intent.genesisHash ||
-    record.program_id !== intent.programId ||
-    record.program_sha256 !== intent.programSha256 ||
-    record.program_len !== intent.programLen ||
-    record.max_data_len !== intent.maxDataLen ||
-    record.upgrade_authority !== intent.upgradeAuthority ||
+    (requireIntentMatch ? !intentFieldsMatch : !conflictScopeMatches) ||
+    typeof record.program_sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/i.test(record.program_sha256) ||
+    !Number.isSafeInteger(record.program_len) ||
+    Number(record.program_len) <= 0 ||
+    Number(record.program_len) > MAX_PROGRAM_SO_FILE_BYTES ||
+    !Number.isSafeInteger(record.max_data_len) ||
+    Number(record.max_data_len) < Number(record.program_len) ||
+    Number(record.max_data_len) > MAX_PROGRAM_SO_FILE_BYTES ||
+    typeof record.upgrade_authority !== "string" ||
+    !isLikelySolanaPublicKey(record.upgrade_authority) ||
     typeof record.buffer_address !== "string" ||
     !isLikelySolanaPublicKey(record.buffer_address) ||
     typeof record.status !== "string" ||
@@ -510,6 +567,174 @@ function parseProgramDeploymentAttemptRecord(
     throw new Error("invalid-deployment-attempt");
   }
   return record as unknown as ProgramDeploymentAttemptRecord;
+}
+
+function programDeploymentJournalToHistoryItem(
+  project: ProgramProject,
+  journal: ProgramDeploymentJournalRecord,
+  attempts: ProgramDeploymentAttemptRecord[],
+  network: AppNetwork,
+  status: ProgramDeploymentPlanStatus,
+): ProgramDeploymentHistoryItem {
+  const signature =
+    journal.deploy_signature ||
+    [...attempts]
+      .sort((a, b) => b.updated_at - a.updated_at)
+      .find((attempt) => attempt.signature)?.signature ||
+    journal.create_signature ||
+    null;
+  return {
+    id: `journal-card:${journal.genesis_hash}:${journal.program_id}:${journal.program_sha256}:${journal.buffer_address}:${journal.revision}`,
+    projectId: project.id,
+    kind: "direct-deploy",
+    status,
+    network,
+    sourceDir: project.sourceDir,
+    programId: journal.program_id,
+    upgradeAuthority: journal.upgrade_authority,
+    bufferAddress: journal.buffer_address,
+    programSha256: journal.program_sha256,
+    programBytes: journal.program_len,
+    maxDataLen: journal.max_data_len,
+    deploySignature: journal.deploy_signature,
+    createBufferSignature: journal.create_signature,
+    signature,
+    createdAt: journal.created_at * 1000,
+    completedAt: journal.status === "finalized" ? journal.updated_at * 1000 : undefined,
+  };
+}
+
+function programDeploymentRecordsMatch(
+  record: ProgramDeploymentHistoryItem,
+  journal: ProgramDeploymentHistoryItem,
+): boolean {
+  const optionalMatches = (left: unknown, right: unknown) =>
+    left === undefined || left === null || left === "" || right === undefined || right === null || right === "" || left === right;
+  return (
+    record.kind === journal.kind &&
+    record.network === journal.network &&
+    record.programId === journal.programId &&
+    optionalMatches(record.programSha256, journal.programSha256) &&
+    optionalMatches(record.programBytes, journal.programBytes) &&
+    optionalMatches(record.maxDataLen, journal.maxDataLen) &&
+    optionalMatches(record.upgradeAuthority, journal.upgradeAuthority)
+  );
+}
+
+function mergeProgramDeploymentHistoryWithJournal(
+  record: ProgramDeploymentHistoryItem,
+  journal: ProgramDeploymentHistoryItem | null,
+): ProgramDeploymentHistoryItem {
+  if (!journal || !programDeploymentRecordsMatch(record, journal)) return record;
+  return {
+    ...record,
+    status: journal.status,
+    bufferAddress: journal.bufferAddress || record.bufferAddress,
+    deploySignature: journal.deploySignature || record.deploySignature,
+    createBufferSignature: journal.createBufferSignature || record.createBufferSignature,
+    signature: journal.signature || record.signature,
+    completedAt: journal.completedAt || record.completedAt,
+  };
+}
+
+function planMatchesHistoryRecord(
+  plan: ProgramDeploymentPlan,
+  record: Pick<
+    ProgramDeploymentHistoryItem,
+    "kind" | "programId" | "network" | "proposal" | "bufferAddress"
+  > | null | undefined,
+): boolean {
+  if (!record) return false;
+  if (plan.network !== record.network) return false;
+  const planProgramId = String(plan.result?.programId || plan.programId || "").trim();
+  const recordProgramId = String(record.programId || "").trim();
+  if (planProgramId && recordProgramId && planProgramId !== recordProgramId) return false;
+  if (plan.kind === "direct-deploy") return record.kind === "direct-deploy";
+  if (plan.kind === "direct-upgrade") return record.kind === "direct-upgrade";
+  if (plan.kind === "squads-upgrade") {
+    const planProposal = String(plan.proposal || "").trim();
+    const recordProposal = String(record.proposal || "").trim();
+    if (planProposal && recordProposal) return planProposal === recordProposal;
+    const planBuffer = String(plan.result?.bufferAddress || plan.bufferAddress || "").trim();
+    const recordBuffer = String(record.bufferAddress || "").trim();
+    if (planBuffer && recordBuffer && planBuffer === recordBuffer) {
+      return record.kind.startsWith("squads-upgrade");
+    }
+    return record.kind.startsWith("squads-upgrade");
+  }
+  return false;
+}
+
+function programDeploymentHistoryDedupeKey(record: ProgramDeploymentHistoryItem): string {
+  if (record.kind !== "direct-deploy" || !record.programId) {
+    return record.id;
+  }
+  const anchor =
+    record.deploySignature ||
+    record.bufferAddress ||
+    record.programSha256 ||
+    record.createBufferSignature ||
+    record.signature ||
+    "";
+  return [
+    record.kind,
+    record.network,
+    record.programId,
+    anchor,
+  ].join(":");
+}
+
+function programDeploymentHistoryRank(record: ProgramDeploymentHistoryItem): number {
+  const statusRank =
+    record.status === "finalized" ? 100 :
+      record.status === "failed" ? 60 :
+        record.status === "running" ? 40 :
+          20;
+  const detailRank = [
+    record.deploySignature,
+    record.createBufferSignature,
+    record.bufferAddress,
+    record.programSha256,
+    record.programBytes,
+    record.maxDataLen,
+    record.completedAt,
+  ].filter(Boolean).length;
+  return statusRank + detailRank;
+}
+
+function dedupeProgramDeploymentHistory(
+  records: ProgramDeploymentHistoryItem[],
+): ProgramDeploymentHistoryItem[] {
+  const merged = new Map<string, ProgramDeploymentHistoryItem>();
+  records.forEach((record) => {
+    const key = programDeploymentHistoryDedupeKey(record);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, record);
+      return;
+    }
+    const [primary, secondary] =
+      programDeploymentHistoryRank(record) >= programDeploymentHistoryRank(existing)
+        ? [record, existing]
+        : [existing, record];
+    merged.set(key, {
+      ...secondary,
+      ...primary,
+      id: primary.id,
+      createdAt: Math.min(primary.createdAt, secondary.createdAt),
+      completedAt: primary.completedAt || secondary.completedAt,
+      deploySignature: primary.deploySignature || secondary.deploySignature,
+      createBufferSignature: primary.createBufferSignature || secondary.createBufferSignature,
+      authoritySignature: primary.authoritySignature || secondary.authoritySignature,
+      signature: primary.signature || secondary.signature,
+      bufferAddress: primary.bufferAddress || secondary.bufferAddress,
+      programSha256: primary.programSha256 || secondary.programSha256,
+      programBytes: primary.programBytes || secondary.programBytes,
+      maxDataLen: primary.maxDataLen || secondary.maxDataLen,
+      upgradeAuthority: primary.upgradeAuthority || secondary.upgradeAuthority,
+    });
+  });
+  return [...merged.values()];
 }
 
 type WorkspaceProposalAction = "approve" | "reject" | "execute";
@@ -641,6 +866,40 @@ function shortSignature(value: string): string {
 
 function programDeploymentHistorySignature(item: ProgramDeploymentHistoryItem): string | null {
   return item.deploySignature || item.signature || item.createBufferSignature || item.authoritySignature || null;
+}
+
+function lastFinalizedProgramArtifactSha(
+  project: ProgramProject | null | undefined,
+  programIdValue: unknown,
+): string | null {
+  const programId = String(programIdValue || "").trim();
+  if (!project || !programId) return null;
+  // Only trust finalized deploy/upgrade *history* entries. Do not fall back to
+  // project.programSha256 — that field is refreshed on every source import and
+  // would make a freshly imported .so look "already deployed".
+  const finalized = [...(project.history || [])]
+    .filter((item) => {
+      if (item.status !== "finalized") return false;
+      if (String(item.programId || "").trim() !== programId) return false;
+      if (!(item.kind === "direct-deploy" || item.kind === "direct-upgrade" || item.kind === "squads-upgrade-execute")) {
+        return false;
+      }
+      return Boolean(String(item.programSha256 || "").trim());
+    })
+    .sort((a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt));
+  const fromHistory = String(finalized[0]?.programSha256 || "").trim().toLowerCase();
+  return fromHistory || null;
+}
+
+function isStaleProgramUpgradeArtifact(
+  project: ProgramProject | null | undefined,
+  programIdValue: unknown,
+  programSha256Value: unknown,
+): boolean {
+  const currentSha = String(programSha256Value || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(currentSha)) return false;
+  const lastSha = lastFinalizedProgramArtifactSha(project, programIdValue);
+  return Boolean(lastSha && lastSha === currentSha);
 }
 
 function solscanTransactionUrl(signature: string, network: AppNetwork): string {
@@ -810,9 +1069,12 @@ function defaultBackTarget(formId: string): string | null {
     case "pumpswap-cashback":
       return "pump-workbench";
     case "program-deploy":
+    case "program-upgrade":
     case "program-invoke":
     case "program-info":
       return "program-workbench";
+    case "program-invoke-standalone":
+      return "contract-tools";
     case "create-nonce":
       return "nonce-workbench";
     case "squads-proposals":
@@ -1095,6 +1357,10 @@ function parseAddressList(value: string | number | undefined): string[] {
 
 export default function Home() {
   const t = useTranslations();
+  const tf = (key: string, fallback: string, vars?: Record<string, string | number>) => {
+    const value = t(key, vars);
+    return value === key ? fallback : value;
+  };
 
   const menuItems: MenuItem[] = [
     {
@@ -1128,10 +1394,24 @@ export default function Home() {
       ],
     },
     {
-      id: "program-workbench",
-      label: t("features.program-workbench.title"),
+      id: "contract-tools",
+      label: tf("features.contract-tools.title", "合约工具"),
       icon: <Hash className="w-5 h-5" />,
       network: true,
+      children: [
+        {
+          id: "program-workbench",
+          label: t("features.program-workbench.title"),
+          icon: <Hash className="w-4 h-4" />,
+          network: true,
+        },
+        {
+          id: "program-invoke-standalone",
+          label: t("features.program-invoke.title"),
+          icon: <Send className="w-4 h-4" />,
+          network: true,
+        },
+      ],
     },
     {
       id: "squads-workspace",
@@ -1153,6 +1433,7 @@ export default function Home() {
   const [authMethod, setAuthMethod] = useState<{ [key: string]: "keystore" | "private" | "encrypted" }>({});
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
   const [walletsLoading, setWalletsLoading] = useState(false);
+  const [walletsLoadError, setWalletsLoadError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<SquadsWorkspace>(emptyWorkspace);
   const [selectedProgramProjectId, setSelectedProgramProjectId] = useState("");
   const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryItem[]>([]);
@@ -1165,6 +1446,7 @@ export default function Home() {
   const [newRpcUrl, setNewRpcUrl] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [walletActionsMenuOpen, setWalletActionsMenuOpen] = useState<string | null>(null);
+  const [walletFaucetMenuOpen, setWalletFaucetMenuOpen] = useState(false);
   const [backTarget, setBackTarget] = useState<string | null>(null);
   const [passwordPrompt, setPasswordPrompt] = useState<PasswordPromptRequest | null>(null);
   const [passwordPromptValue, setPasswordPromptValue] = useState("");
@@ -1178,6 +1460,28 @@ export default function Home() {
   const [lastProgramDeploymentIntent, setLastProgramDeploymentIntent] =
     useState<ProgramDeploymentJournalIntent | null>(null);
   const [programSourceLoading, setProgramSourceLoading] = useState(false);
+  const [programDeployInlineError, setProgramDeployInlineError] = useState<{
+    friendly: string;
+    raw: string;
+  } | null>(null);
+  const [programUpgradeInlineError, setProgramUpgradeInlineError] = useState<{
+    friendly: string;
+    raw: string;
+  } | null>(null);
+  const [programUpgradeProgress, setProgramUpgradeProgress] = useState<{
+    active: boolean;
+    program_id: string;
+    network: string;
+    stage: string;
+    message: string;
+    write_completed: number;
+    write_total: number;
+    program_bytes: number;
+    buffer_address?: string | null;
+    last_signature?: string | null;
+    error?: string | null;
+    updated_at_ms: number;
+  } | null>(null);
   const [programInvoke, setProgramInvoke] = useState<ProgramInvokeState>({
     idlJsonText: "",
     programId: "",
@@ -1188,19 +1492,34 @@ export default function Home() {
     signerPasswords: {},
     loading: false,
   });
+  const [programInvokeWalletPickerTarget, setProgramInvokeWalletPickerTarget] =
+    useState<ProgramInvokeWalletPickerTarget | null>(null);
+  const [historyDeletePrompt, setHistoryDeletePrompt] = useState<{
+    projectId: string;
+    recordId: string;
+  } | null>(null);
+  const [dismissedHistoryCardIds, setDismissedHistoryCardIds] = useState<string[]>([]);
   const [programDeploymentNowMs, setProgramDeploymentNowMs] = useState(() => Date.now());
   const [programKeypairMetadata, setProgramKeypairMetadata] = useState<ProgramKeypairMetadata | null>(null);
   const programKeypairBytesRef = useRef<Uint8Array | null>(null);
+  const programSoInputRef = useRef<HTMLInputElement | null>(null);
   const programKeypairInputRef = useRef<HTMLInputElement | null>(null);
+  const programInvokeIdlFileInputRef = useRef<HTMLInputElement | null>(null);
   const programKeypairReadVersionRef = useRef(0);
   const programSoReadVersionRef = useRef(0);
+  const programKeypairArtifactRequestIdRef = useRef(0);
   const deploymentJournalRequestIdRef = useRef(0);
   const deploymentJournalLoadedIntentKeyRef = useRef("");
   const deploymentJournalInFlightIntentKeyRef = useRef("");
+  const lastProgramDeploymentIntentRef = useRef<ProgramDeploymentJournalIntent | null>(null);
+  const programDeploymentJournalRef = useRef<ProgramDeploymentJournalState>(emptyProgramDeploymentJournalState());
   const programDeploymentLogPanelRef = useRef<HTMLDivElement | null>(null);
   const programDeploymentWatchdogTrippedRef = useRef(false);
+  lastProgramDeploymentIntentRef.current = lastProgramDeploymentIntent;
+  programDeploymentJournalRef.current = programDeploymentJournal;
   const passwordConfirmationInFlightRef = useRef(false);
   const [walletAssets, setWalletAssets] = useState<WalletAssetsState | null>(null);
+  const [walletSolBalanceCache, setWalletSolBalanceCache] = useState<Record<string, string>>({});
   const [walletTransactions, setWalletTransactions] = useState<WalletTransactionsState | null>(null);
   const [walletOverviewTab, setWalletOverviewTab] = useState<"assets" | "transactions">("assets");
   const [visibleTokenCount, setVisibleTokenCount] = useState(TOKEN_ASSET_PAGE_SIZE);
@@ -1240,6 +1559,7 @@ export default function Home() {
 
   const clearProgramKeypairMaterial = useCallback(() => {
     programKeypairReadVersionRef.current += 1;
+    programKeypairArtifactRequestIdRef.current += 1;
     programKeypairBytesRef.current?.fill(0);
     programKeypairBytesRef.current = null;
     if (programKeypairInputRef.current) {
@@ -1247,12 +1567,18 @@ export default function Home() {
     }
     setProgramKeypairMetadata(null);
     setFormData((prev) => {
-      if (!prev.programKeypairPath) return prev;
+      if (!prev.programKeypairPath && (selectedForm !== "program-deploy" || !prev.expectedProgramId)) {
+        return prev;
+      }
       const next = { ...prev };
       delete next.programKeypairPath;
+      if (selectedForm === "program-deploy") {
+        delete next.expectedProgramId;
+        delete next.resumeBufferAddress;
+      }
       return next;
     });
-  }, []);
+  }, [selectedForm]);
 
   const resetProgramDeploySession = useCallback(() => {
     programSoReadVersionRef.current += 1;
@@ -1282,6 +1608,22 @@ export default function Home() {
   const visibleRpcProfiles = rpcProfiles.filter((profile) => profile.network === settingsNetwork);
   const effectiveWalletId = currentWalletId || wallets[0]?.id || "";
   const effectiveWallet = wallets.find((wallet) => wallet.id === effectiveWalletId);
+  const effectiveProgramWorkspaceOwner = effectiveWallet?.public_key || "";
+  const effectiveProgramWorkspaceOwnerLabel = effectiveWallet?.name || undefined;
+  const effectiveWalletActor: WorkspaceActor = {
+    createdBy: effectiveProgramWorkspaceOwner || undefined,
+    createdByLabel: effectiveProgramWorkspaceOwnerLabel,
+  };
+
+  const scopedProgramProjectId = useCallback((sourceDir: string): string =>
+    programProjectId(sourceDir, effectiveProgramWorkspaceOwner), [effectiveProgramWorkspaceOwner]);
+
+  const isActiveProgramWorkspaceActor = useCallback((actor: WorkspaceActor | ProgramProject): boolean => {
+    if (!effectiveProgramWorkspaceOwner) return false;
+    const record = actor as WorkspaceActor & Partial<ProgramProject>;
+    const owner = record.ownerWallet || record.createdBy;
+    return owner === effectiveProgramWorkspaceOwner;
+  }, [effectiveProgramWorkspaceOwner]);
 
   useEffect(() => {
     activeWalletContextRef.current = {
@@ -1314,6 +1656,8 @@ export default function Home() {
             writeChunkCount: 0,
             journal: null,
             deploymentAttempts: [],
+            conflictingJournal: null,
+            conflictingDeploymentAttempts: [],
             loading: true,
             error: undefined,
           },
@@ -1344,7 +1688,11 @@ export default function Home() {
         data.network !== intent.network ||
         data.genesis_hash !== intent.genesisHash ||
         !Array.isArray(data.deployment_attempts) ||
-        (data.journal !== null && data.journal === undefined)
+        !Array.isArray(data.conflicting_deployment_attempts || []) ||
+        (data.journal !== null && data.journal === undefined) ||
+        (data.conflicting_journal !== null &&
+          data.conflicting_journal !== undefined &&
+          (typeof data.conflicting_journal !== "object" || Array.isArray(data.conflicting_journal)))
       ) {
         throw new Error(t("features.program-deploy.journalInvalid"));
       }
@@ -1362,27 +1710,15 @@ export default function Home() {
       const deploymentAttempts = data.deployment_attempts.map((attempt: unknown) =>
         parseProgramDeploymentAttemptRecord(attempt, intent),
       );
+      const conflictingJournal =
+        data.conflicting_journal === null || data.conflicting_journal === undefined
+          ? null
+          : parseProgramDeploymentJournalRecord(data.conflicting_journal, intent, { requireIntentMatch: false });
+      const conflictingDeploymentAttempts = (data.conflicting_deployment_attempts || []).map((attempt: unknown) =>
+        parseProgramDeploymentAttemptRecord(attempt, intent),
+      );
       if (requestId !== deploymentJournalRequestIdRef.current) return;
-      setProgramDeploymentJournal({
-        intentKey,
-        network: data.network,
-        genesisHash: data.genesis_hash,
-        writeChunkBytes,
-        writeChunkCount,
-        journal,
-        deploymentAttempts,
-        loading: false,
-      });
-    } catch (error) {
-      if (requestId !== deploymentJournalRequestIdRef.current) return;
-      const message = error instanceof Error ? error.message : t("features.program-deploy.journalLoadError");
-      const recordedMaxDataLen = Number(message.match(/\bmax_len=(\d+)\b/)?.[1] || 0);
-      if (
-        Number.isSafeInteger(recordedMaxDataLen) &&
-        recordedMaxDataLen > 0 &&
-        recordedMaxDataLen <= MAX_PROGRAM_SO_FILE_BYTES &&
-        recordedMaxDataLen !== intent.maxDataLen
-      ) {
+      if (conflictingJournal && conflictingJournal.max_data_len !== intent.maxDataLen) {
         deploymentJournalLoadedIntentKeyRef.current = "";
         setFormData((prev) => {
           const programId = String(prev.expectedProgramId || "").trim();
@@ -1393,16 +1729,32 @@ export default function Home() {
             programId !== intent.programId ||
             programSha256 !== intent.programSha256 ||
             programLen !== intent.programLen ||
-            upgradeAuthority !== intent.upgradeAuthority
+            upgradeAuthority !== intent.upgradeAuthority ||
+            conflictingJournal.max_data_len < programLen
           ) {
             return prev;
           }
           return {
             ...prev,
-            max_data_len: String(recordedMaxDataLen),
+            max_data_len: String(conflictingJournal.max_data_len),
           };
         });
       }
+      setProgramDeploymentJournal({
+        intentKey,
+        network: data.network,
+        genesisHash: data.genesis_hash,
+        writeChunkBytes,
+        writeChunkCount,
+        journal,
+        deploymentAttempts,
+        conflictingJournal,
+        conflictingDeploymentAttempts,
+        loading: false,
+      });
+    } catch (error) {
+      if (requestId !== deploymentJournalRequestIdRef.current) return;
+      const message = error instanceof Error ? error.message : t("features.program-deploy.journalLoadError");
       setProgramDeploymentJournal((previous) =>
         options.preserveCurrent && previous.intentKey === intentKey
           ? { ...previous, loading: false, error: message }
@@ -1414,6 +1766,8 @@ export default function Home() {
               writeChunkCount: 0,
               journal: null,
               deploymentAttempts: [],
+              conflictingJournal: null,
+              conflictingDeploymentAttempts: [],
               loading: false,
               error: message,
             },
@@ -1499,6 +1853,8 @@ export default function Home() {
               writeChunkCount: 0,
               journal: null,
               deploymentAttempts: [],
+              conflictingJournal: null,
+              conflictingDeploymentAttempts: [],
               loading: false,
             }
           : previous,
@@ -1545,7 +1901,8 @@ export default function Home() {
       if (
         programId !== journal.program_id ||
         programSha256 !== journal.program_sha256 ||
-        programLen !== journal.program_len
+        programLen !== journal.program_len ||
+        journal.max_data_len < programLen
       ) {
         return prev;
       }
@@ -1581,6 +1938,7 @@ export default function Home() {
     formData.sourceBuildStatus,
     formData.sourceBuildStderr,
     formData.sourceBuildStdout,
+    formData.sourceValidationErrors,
     formData.sourceImportWarnings,
     programSourceLoading,
   ]);
@@ -1598,6 +1956,21 @@ export default function Home() {
   useEffect(() => {
     walletAssetsRef.current = walletAssets;
   }, [walletAssets]);
+
+  useEffect(() => {
+    if (
+      !walletAssets ||
+      walletAssets.network !== effectiveNetwork ||
+      !walletAssets.solBalance ||
+      walletAssets.solBalance === "--"
+    ) {
+      return;
+    }
+    setWalletSolBalanceCache((prev) => {
+      if (prev[walletAssets.address] === walletAssets.solBalance) return prev;
+      return { ...prev, [walletAssets.address]: walletAssets.solBalance };
+    });
+  }, [effectiveNetwork, walletAssets]);
 
   useEffect(() => {
     const tokenCount = walletAssets?.tokens.length ?? 0;
@@ -1751,8 +2124,25 @@ export default function Home() {
 
   const loadWallets = useCallback(async () => {
     setWalletsLoading(true);
+    setWalletsLoadError(null);
     try {
-      const loadedWallets = await fetchWallets();
+      let lastError: unknown = null;
+      let loadedWallets: SavedWallet[] | null = null;
+      for (let attempt = 0; attempt <= WALLET_LIST_LOAD_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+          loadedWallets = await fetchWallets();
+          break;
+        } catch (error) {
+          lastError = error;
+          const delayMs = WALLET_LIST_LOAD_RETRY_DELAYS_MS[attempt];
+          if (delayMs === undefined) break;
+          await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        }
+      }
+      if (!loadedWallets) {
+        throw lastError ?? new Error(t("features.walletContext.walletsLoadFailed"));
+      }
+      setWalletsLoadError(null);
       setWallets(loadedWallets);
       const storedWalletId = loadStoredWalletId();
       const nextWalletId = loadedWallets.some((wallet) => wallet.id === storedWalletId)
@@ -1779,12 +2169,16 @@ export default function Home() {
         return { ...prev, wallet_id: nextWalletId };
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "加载钱包列表失败";
+      const rawMessage = err instanceof Error ? err.message : "";
+      const message = rawMessage
+        ? t("features.walletContext.walletsLoadFailedWithDetail", { message: rawMessage })
+        : t("features.walletContext.walletsLoadFailed");
+      setWalletsLoadError(message);
       toast.error(message);
     } finally {
       setWalletsLoading(false);
     }
-  }, [selectedForm, setCurrentWallet]);
+  }, [selectedForm, setCurrentWallet, t]);
 
   const selectedSavedWallet = (): SavedWallet | undefined => {
     const walletId = String(formData.wallet_id ?? effectiveWalletId).trim();
@@ -1912,6 +2306,87 @@ export default function Home() {
       walletAssetsInFlightRef.current.delete(requestKey);
     }
   }, [effectiveNetwork, effectiveRpcRequest, t]);
+
+  const loadCachedWalletSolBalances = useCallback(async (walletList: SavedWallet[]) => {
+    if (walletList.length === 0) {
+      setWalletSolBalanceCache({});
+      return;
+    }
+    const cachedEntries = await Promise.all(
+      walletList.map(async (wallet) => {
+        try {
+          const response = await apiFetch("wallet/assets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: wallet.public_key,
+              network: effectiveRpcRequest,
+              refresh: false,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok || data.updated_at == null) {
+            return null;
+          }
+          return [wallet.public_key, String(data.sol_balance ?? "0")] as const;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const fromCache = new Map<string, string>();
+    for (const entry of cachedEntries) {
+      if (entry) fromCache.set(entry[0], entry[1]);
+    }
+    const live = walletAssetsRef.current;
+    if (
+      live &&
+      live.network === effectiveNetwork &&
+      live.solBalance &&
+      live.solBalance !== "--" &&
+      !fromCache.has(live.address)
+    ) {
+      fromCache.set(live.address, live.solBalance);
+    }
+
+    setWalletSolBalanceCache(Object.fromEntries(fromCache));
+
+    const missing = walletList.filter((wallet) => !fromCache.has(wallet.public_key));
+    if (missing.length === 0) return;
+
+    const fetchedEntries = await Promise.all(
+      missing.map(async (wallet) => {
+        try {
+          const response = await apiFetch("wallet/balance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: wallet.public_key,
+              network: effectiveRpcRequest,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok || data.balance == null) return null;
+          return [wallet.public_key, String(data.balance)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    setWalletSolBalanceCache((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const entry of fetchedEntries) {
+        if (!entry) continue;
+        if (next[entry[0]] === entry[1]) continue;
+        next[entry[0]] = entry[1];
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [effectiveNetwork, effectiveRpcRequest]);
 
   const loadWalletTransactions = useCallback(async (
     wallet?: SavedWallet,
@@ -2183,6 +2658,14 @@ export default function Home() {
   }, [effectiveWallet, effectiveRpcRequest, loadWalletAssets, loadWalletTransactions, loadNonceAccounts]);
 
   useEffect(() => {
+    setWalletSolBalanceCache({});
+  }, [effectiveNetwork, effectiveRpcRequest]);
+
+  useEffect(() => {
+    void loadCachedWalletSolBalances(wallets);
+  }, [wallets, effectiveNetwork, effectiveRpcRequest, loadCachedWalletSolBalances]);
+
+  useEffect(() => {
     if (!effectiveWallet) return;
     const activeOperationForm =
       selectedForm !== "wallet-list" &&
@@ -2333,10 +2816,13 @@ export default function Home() {
     setWorkspace(loadWorkspace());
   }, []);
 
+  const programProjectSelectionScope = `${currentNetwork(effectiveNetwork)}|${effectiveProgramWorkspaceOwner}`;
+
   useEffect(() => {
-    const visibleProjects = workspace.programProjects.filter(
-      (project) => project.network === currentNetwork(effectiveNetwork),
-    );
+    const [selectionNetwork, selectionOwner] = programProjectSelectionScope.split("|", 2);
+    const visibleProjects = workspace.programProjects.filter((project) => {
+      return project.network === selectionNetwork && project.ownerWallet === selectionOwner;
+    });
     if (visibleProjects.length === 0) {
       if (selectedProgramProjectId) setSelectedProgramProjectId("");
       return;
@@ -2344,7 +2830,34 @@ export default function Home() {
     if (!visibleProjects.some((project) => project.id === selectedProgramProjectId)) {
       setSelectedProgramProjectId(visibleProjects[0].id);
     }
-  }, [effectiveNetwork, selectedProgramProjectId, workspace.programProjects]);
+  }, [programProjectSelectionScope, selectedProgramProjectId, workspace.programProjects]);
+
+  useEffect(() => {
+    if (!programInvoke.projectId) return;
+    const project = workspace.programProjects.find((item) => item.id === programInvoke.projectId);
+    if (
+      project &&
+      project.network === currentNetwork(effectiveNetwork) &&
+      isActiveProgramWorkspaceActor(project)
+    ) {
+      return;
+    }
+    setProgramInvoke({
+      idlJsonText: "",
+      programId: "",
+      selectedInstruction: "",
+      argValues: {},
+      accountValues: {},
+      signerWalletIds: {},
+      signerPasswords: {},
+      loading: false,
+    });
+  }, [
+    effectiveNetwork,
+    isActiveProgramWorkspaceActor,
+    programInvoke.projectId,
+    workspace.programProjects,
+  ]);
 
   useEffect(() => {
     const preventNumberInputWheel = (event: WheelEvent) => {
@@ -2364,6 +2877,7 @@ export default function Home() {
 
   const closeDropdownMenus = useCallback(() => {
     setWalletActionsMenuOpen(null);
+    setWalletFaucetMenuOpen(false);
     document.querySelectorAll<HTMLDetailsElement>("details[data-close-on-outside][open]").forEach((details) => {
       details.open = false;
     });
@@ -2378,6 +2892,9 @@ export default function Home() {
 
       if (!(target instanceof Element) || !target.closest("[data-wallet-actions-menu]")) {
         setWalletActionsMenuOpen(null);
+      }
+      if (!(target instanceof Element) || !target.closest("[data-wallet-faucet-menu]")) {
+        setWalletFaucetMenuOpen(false);
       }
 
       document.querySelectorAll<HTMLDetailsElement>("details[data-close-on-outside][open]").forEach((details) => {
@@ -2408,6 +2925,156 @@ export default function Home() {
       return next;
     });
   };
+
+  useEffect(() => {
+    if (!effectiveProgramWorkspaceOwner || (workspace.programProjects.length === 0 && workspace.programs.length === 0)) {
+      return;
+    }
+    let changed = false;
+    const migratedProjects = new Map<string, ProgramProject>();
+    for (const project of workspace.programProjects) {
+      if (project.ownerWallet) {
+        migratedProjects.set(project.id, project);
+        continue;
+      }
+      changed = true;
+      const nextProjectId = scopedProgramProjectId(project.sourceDir);
+      const migratedProject: ProgramProject = {
+        ...project,
+        id: nextProjectId,
+        ownerWallet: effectiveProgramWorkspaceOwner,
+        ownerWalletLabel: effectiveProgramWorkspaceOwnerLabel,
+        plans: (project.plans || []).map((plan) => ({
+          ...plan,
+          id: programPlanId(nextProjectId, plan.kind, plan.network, plan.programId, plan.multisig),
+          projectId: nextProjectId,
+        })),
+        history: (project.history || []).map((record) => ({
+          ...record,
+          projectId: nextProjectId,
+        })),
+      };
+      const existing = migratedProjects.get(nextProjectId);
+      migratedProjects.set(nextProjectId, existing
+        ? {
+            ...existing,
+            ...migratedProject,
+            plans: [...migratedProject.plans, ...(existing.plans || [])].slice(0, 20),
+            history: dedupeProgramDeploymentHistory([
+              ...(migratedProject.history || []),
+              ...(existing.history || []),
+            ]).slice(0, 100),
+            updatedAt: Math.max(existing.updatedAt || 0, migratedProject.updatedAt || 0),
+          }
+        : migratedProject);
+    }
+    const migratedPrograms = workspace.programs.map((program) => {
+      if (program.createdBy) return program;
+      changed = true;
+      return {
+        ...program,
+        createdBy: effectiveProgramWorkspaceOwner,
+        createdByLabel: effectiveProgramWorkspaceOwnerLabel,
+      };
+    });
+    if (!changed) return;
+    updateWorkspace((prev) => ({
+      ...prev,
+      programs: migratedPrograms,
+      programProjects: [...migratedProjects.values()],
+    }));
+  }, [
+    effectiveProgramWorkspaceOwner,
+    effectiveProgramWorkspaceOwnerLabel,
+    scopedProgramProjectId,
+    workspace.programProjects,
+    workspace.programs,
+  ]);
+
+  useEffect(() => {
+    const candidates = workspace.programProjects
+      .filter((project) => isActiveProgramWorkspaceActor(project))
+      .flatMap((project) =>
+        (project.history || [])
+          .filter((record) =>
+            record.kind === "direct-deploy" &&
+            isUnfinishedProgramDeploymentStatus(record.status) &&
+            record.programId,
+          )
+          .map((record) => ({ project, record })),
+      );
+    if (candidates.length === 0) return;
+    let cancelled = false;
+    const reconcile = async () => {
+      for (const { project, record } of candidates.slice(0, 5)) {
+        const network = currentNetwork(record.network || project.network || effectiveNetwork);
+        const intent: ProgramDeploymentJournalIntent = {
+          requestNetwork: network,
+          network,
+          genesisHash: SOLANA_GENESIS_HASHES[network],
+          programId: String(record.programId || ""),
+          programSha256: "0".repeat(64),
+          programLen: 1,
+          maxDataLen: 1,
+          upgradeAuthority: "11111111111111111111111111111112",
+        };
+        try {
+          const response = await apiFetch("program/deployment-journal/by-program", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              network: intent.requestNetwork,
+              expected_genesis_hash: intent.genesisHash,
+              program_id: intent.programId,
+            }),
+          });
+          const data = await response.json();
+          if (cancelled || !response.ok || !data?.journal) continue;
+          const journalIntent = {
+            ...intent,
+            programSha256: String(data.journal.program_sha256 || ""),
+            programLen: Number(data.journal.program_len || 0),
+            maxDataLen: Number(data.journal.max_data_len || 0),
+            upgradeAuthority: String(data.journal.upgrade_authority || ""),
+          };
+          const journal = parseProgramDeploymentJournalRecord(data.journal, journalIntent);
+          if (journal.status !== "finalized") continue;
+          updateWorkspace((prev) => ({
+            ...prev,
+            programProjects: prev.programProjects.map((item) =>
+              item.id !== project.id
+                ? item
+                : {
+                    ...item,
+                    history: dedupeProgramDeploymentHistory(
+                      (item.history || []).map((historyItem) =>
+                        historyItem.id !== record.id
+                          ? historyItem
+                          : mergeProgramDeploymentHistoryWithJournal(
+                              historyItem,
+                              programDeploymentJournalToHistoryItem(
+                                item,
+                                journal,
+                                [],
+                                network,
+                                "finalized",
+                              ),
+                            ),
+                      ),
+                    ),
+                  },
+            ),
+          }));
+        } catch {
+          // Best-effort local reconciliation; leave the saved history unchanged if the journal is unavailable.
+        }
+      }
+    };
+    void reconcile();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveNetwork, isActiveProgramWorkspaceActor, workspace.programProjects]);
 
   const saveWorkspaceMultisig = (
     addressValue: unknown,
@@ -2460,8 +3127,19 @@ export default function Home() {
     updateWorkspace((prev) => ({
       ...prev,
       programs: [
-        { address, label, network, updatedAt },
-        ...prev.programs.filter((item) => item.address !== address || item.network !== network),
+        {
+          address,
+          label,
+          network,
+          updatedAt,
+          createdBy: effectiveWalletActor.createdBy,
+          createdByLabel: effectiveWalletActor.createdByLabel,
+        },
+        ...prev.programs.filter((item) =>
+          item.address !== address ||
+          item.network !== network ||
+          item.createdBy !== effectiveWalletActor.createdBy,
+        ),
       ].slice(0, 50),
     }));
   };
@@ -2479,7 +3157,7 @@ export default function Home() {
     const sourceDir = String(source.source_dir || "").trim();
     if (!sourceDir) return;
     const network = overrides.network || currentNetwork(source.manifest_network || formData.network || effectiveNetwork);
-    const projectId = programProjectId(sourceDir);
+    const projectId = scopedProgramProjectId(sourceDir);
     const programId = String(source.expected_program_id || source.manifest_program_id || "").trim() || undefined;
     const programSha256 = String(source.program_so_sha256 || "").trim().toLowerCase() || undefined;
     const programBytes = Number(source.program_so_size || 0) || undefined;
@@ -2487,54 +3165,44 @@ export default function Home() {
       String(overrides.upgradeAuthority || source.manifest_upgrade_authority || formData.expectedUpgradeAuthority || "").trim() ||
       undefined;
     const updatedAt = Date.now();
-    const directPlan: ProgramDeploymentPlan = {
-      id: programPlanId(projectId, "direct-deploy", network, programId),
-      projectId,
-      kind: "direct-deploy",
-      network,
-      sourceDir,
-      programId,
-      programSha256,
-      programBytes,
-      maxDataLen: programBytes,
-      upgradeAuthority,
-      status: programId && programSha256 && programBytes && upgradeAuthority ? (overrides.status || "ready") : "draft",
-      createdAt: updatedAt,
-      updatedAt,
-    };
     updateWorkspace((prev) => {
       const existing = prev.programProjects.find((project) => project.id === projectId);
       const existingPlans = existing?.plans || [];
-      const existingDirectPlan = existingPlans.find((plan) => plan.id === directPlan.id);
-      const preservesRecoveryIntent = Boolean(
-        existingDirectPlan &&
-          isUnfinishedProgramDeploymentStatus(existingDirectPlan.status) &&
-          existingDirectPlan.programId === directPlan.programId &&
-          existingDirectPlan.programSha256 === directPlan.programSha256 &&
-          existingDirectPlan.programBytes === directPlan.programBytes,
-      );
-      const mergedDirectPlan = {
-        ...existingDirectPlan,
-        ...directPlan,
-        ...(preservesRecoveryIntent
-          ? {
-              maxDataLen: existingDirectPlan?.maxDataLen,
-              bufferAddress: existingDirectPlan?.bufferAddress,
-              status: existingDirectPlan?.status,
-            }
-          : {}),
-        createdAt: existingDirectPlan?.createdAt || directPlan.createdAt,
-      };
-      const plans = [
-        mergedDirectPlan,
-        ...existingPlans.filter((plan) => plan.id !== directPlan.id),
-      ].slice(0, 20);
+      // Only refresh artifact fields on already-started deploy plans.
+      // Do not create draft/ready plans just because the deploy form was opened or source was imported.
+      const plans = existingPlans.map((plan) => {
+        if (plan.kind !== "direct-deploy" || plan.network !== network) return plan;
+        if (!isUnfinishedProgramDeploymentStatus(plan.status) && plan.status !== "finalized") {
+          return plan;
+        }
+        const sameProgram = !plan.programId || !programId || plan.programId === programId;
+        if (!sameProgram) return plan;
+        const preservesRecoveryIntent = Boolean(
+          isUnfinishedProgramDeploymentStatus(plan.status) &&
+            plan.programId === programId &&
+            plan.programSha256 === programSha256 &&
+            plan.programBytes === programBytes,
+        );
+        return {
+          ...plan,
+          programId: programId || plan.programId,
+          programSha256: programSha256 || plan.programSha256,
+          programBytes: programBytes || plan.programBytes,
+          maxDataLen: preservesRecoveryIntent ? plan.maxDataLen : (programBytes || plan.maxDataLen),
+          upgradeAuthority: upgradeAuthority || plan.upgradeAuthority,
+          updatedAt,
+        };
+      });
       const project: ProgramProject = {
         ...existing,
         id: projectId,
         name: existing?.name || sourceDirProjectName(sourceDir),
         sourceDir,
+        ownerWallet: effectiveWalletActor.createdBy,
+        ownerWalletLabel: effectiveWalletActor.createdByLabel,
         network,
+        // Prefer keypair-derived Program ID from the imported source over any
+        // previously cached project address (stale local workspace history).
         programId: programId || existing?.programId,
         programSha256: programSha256 || existing?.programSha256,
         programBytes: programBytes || existing?.programBytes,
@@ -2566,7 +3234,7 @@ export default function Home() {
   ) => {
     const sourceDir = String(plan.sourceDir || sourceDirValue || "").trim();
     if (!sourceDir) return;
-    const projectId = programProjectId(sourceDir);
+    const projectId = scopedProgramProjectId(sourceDir);
     const updatedAt = Date.now();
     const id = programPlanId(projectId, plan.kind, plan.network, plan.programId, plan.multisig);
     updateWorkspace((prev) => {
@@ -2586,6 +3254,8 @@ export default function Home() {
         id: projectId,
         name: existingProject?.name || sourceDirProjectName(sourceDir),
         sourceDir,
+        ownerWallet: effectiveWalletActor.createdBy,
+        ownerWalletLabel: effectiveWalletActor.createdByLabel,
         network: plan.network,
         programId: plan.programId || existingProject?.programId,
         programSha256: plan.programSha256 || existingProject?.programSha256,
@@ -2620,7 +3290,7 @@ export default function Home() {
   ): string | null => {
     const sourceDir = String(entry.sourceDir || sourceDirValue || "").trim();
     if (!sourceDir) return null;
-    const projectId = programProjectId(sourceDir);
+    const projectId = scopedProgramProjectId(sourceDir);
     const createdAt = entry.createdAt || Date.now();
     const signature =
       entry.deploySignature || entry.signature || entry.createBufferSignature || entry.authoritySignature || null;
@@ -2657,6 +3327,8 @@ export default function Home() {
         id: projectId,
         name: existingProject?.name || sourceDirProjectName(sourceDir),
         sourceDir,
+        ownerWallet: effectiveWalletActor.createdBy,
+        ownerWalletLabel: effectiveWalletActor.createdByLabel,
         network: entry.network,
         programId: entry.programId || existingProject?.programId,
         programSha256: entry.programSha256 || existingProject?.programSha256,
@@ -2677,6 +3349,69 @@ export default function Home() {
       };
     });
     return id;
+  };
+
+  const removeProgramDeploymentHistoryRecord = (projectId: string, recordId: string) => {
+    if (recordId.startsWith("journal-card:")) {
+      setDismissedHistoryCardIds((prev) =>
+        prev.includes(recordId) ? prev : [...prev, recordId],
+      );
+      toast.success(t("features.program-projects.historyRemoveJournalHidden"));
+      return;
+    }
+
+    const project = workspace.programProjects.find((item) => item.id === projectId);
+    if (!project) {
+      toast.error(t("features.program-projects.historyRemoveMissing"));
+      return;
+    }
+
+    if (recordId.startsWith("plan-card:")) {
+      const planId = recordId.slice("plan-card:".length);
+      const plan = (project.plans || []).find((item) => item.id === planId);
+      if (!plan) {
+        toast.error(t("features.program-projects.historyRemoveMissing"));
+        return;
+      }
+      updateWorkspace((prev) => ({
+        ...prev,
+        programProjects: prev.programProjects.map((item) => {
+          if (item.id !== projectId) return item;
+          return {
+            ...item,
+            plans: (item.plans || []).filter((candidate) => candidate.id !== planId),
+            history: (item.history || []).filter((candidate) => !planMatchesHistoryRecord(plan, candidate)),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+      toast.success(t("features.program-projects.historyRemoveSuccess"));
+      return;
+    }
+
+    const historyItem = (project.history || []).find((item) => item.id === recordId);
+    if (!historyItem) {
+      toast.error(t("features.program-projects.historyRemoveMissing"));
+      return;
+    }
+
+    updateWorkspace((prev) => ({
+      ...prev,
+      programProjects: prev.programProjects.map((item) => {
+        if (item.id !== projectId) return item;
+        return {
+          ...item,
+          history: (item.history || []).filter((candidate) => candidate.id !== recordId),
+          plans: (item.plans || []).filter((plan) => !planMatchesHistoryRecord(plan, historyItem)),
+          updatedAt: Date.now(),
+        };
+      }),
+    }));
+    toast.success(t("features.program-projects.historyRemoveSuccess"));
+  };
+
+  const requestRemoveProgramDeploymentHistoryRecord = (projectId: string, recordId: string) => {
+    setHistoryDeletePrompt({ projectId, recordId });
   };
 
   const markProgramUpgradeHistoryExecuted = (
@@ -2788,7 +3523,13 @@ export default function Home() {
   ) => {
     updateWorkspace((prev) => ({
       ...prev,
-      [kind]: prev[kind].filter((item) => item.address !== address || item.network !== network),
+      [kind]: prev[kind].filter((item) => {
+        if (item.address !== address || item.network !== network) return true;
+        if (kind === "programs") {
+          return item.createdBy !== effectiveWalletActor.createdBy;
+        }
+        return false;
+      }),
     }));
   };
 
@@ -3166,6 +3907,11 @@ export default function Home() {
   };
 
   const openParentMenuForForm = (formId: string) => {
+    const menu = menuItems.find((item) => item.id === formId && item.children?.length);
+    if (menu) {
+      setActiveMenu(menu.id);
+      return;
+    }
     const parentMenu = menuItems.find((item) => item.children?.some((child) => child.id === formId));
     if (parentMenu) {
       setActiveMenu(parentMenu.id);
@@ -3391,9 +4137,12 @@ export default function Home() {
     }
   }, [effectiveNetwork, effectiveRpcRequest, formData, loadWalletAssets, loadWalletTransactions, selectedForm, walletOverviewTab]);
 
-  const openSolanaFaucet = async (wallet: SavedWallet) => {
-    if (effectiveNetwork !== "devnet" && effectiveNetwork !== "testnet") return;
+  const openWalletFaucet = async (wallet: SavedWallet, faucet: "solana" | "circle") => {
+    if (faucet === "solana" && effectiveNetwork !== "devnet" && effectiveNetwork !== "testnet") return;
+    if (faucet === "circle" && effectiveNetwork !== "devnet") return;
+    setWalletFaucetMenuOpen(false);
     const address = wallet.public_key.trim();
+    const faucetUrl = faucet === "circle" ? CIRCLE_FAUCET_URL : SOLANA_FAUCET_URL;
     try {
       if (address) {
         if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -3411,13 +4160,13 @@ export default function Home() {
           document.execCommand("copy");
           document.body.removeChild(textarea);
         }
-        setCopied("wallet-faucet-address");
+        setCopied(`wallet-${faucet}-faucet-address`);
         setTimeout(() => setCopied(null), 2000);
       }
-      await openExternalUrl(SOLANA_FAUCET_URL);
-      toast.success(t("features.wallet-list.faucetAirdropOpened"));
+      await openExternalUrl(faucetUrl);
+      toast.success(t(`features.wallet-list.${faucet === "circle" ? "circleFaucetOpened" : "faucetAirdropOpened"}`));
     } catch {
-      toast.error(t("features.wallet-list.faucetAirdropFailed"));
+      toast.error(t(`features.wallet-list.${faucet === "circle" ? "circleFaucetFailed" : "faucetAirdropFailed"}`));
     }
   };
 
@@ -3437,7 +4186,7 @@ export default function Home() {
     if (formId === "create-nonce") {
       return { count: 1 };
     }
-    if (formId === "program-invoke") {
+    if (isProgramInvokeForm(formId)) {
       return { programInvokeMode: "simulate" };
     }
     return {};
@@ -3447,11 +4196,30 @@ export default function Home() {
     ...(effectiveWalletId ? { wallet_id: effectiveWalletId } : {}),
     network: effectiveNetwork,
     ...(effectiveWallet ? { expectedUpgradeAuthority: effectiveWallet.public_key } : {}),
-    ...omitFormFields(
-      omitFormFields(preset, PROGRAM_DEPLOY_RESULT_FIELDS),
-      PROGRAM_DEPLOY_ARTIFACT_FIELDS,
-    ),
+    ...omitFormFields(preset, PROGRAM_DEPLOY_RESULT_FIELDS),
   });
+
+  const programDeployStateWithProgramSize = (state: FormState, programSize: number): FormState => {
+    if (!Number.isSafeInteger(programSize) || programSize <= 0) {
+      return state;
+    }
+    const currentMaxDataLenText = String(state.max_data_len ?? "").trim();
+    const currentMaxDataLen = currentMaxDataLenText ? Number(currentMaxDataLenText) : undefined;
+    if (
+      currentMaxDataLen !== undefined &&
+      Number.isSafeInteger(currentMaxDataLen) &&
+      currentMaxDataLen >= programSize
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      max_data_len: String(programSize),
+    };
+  };
+
+  const normalizedProgramDeployFormState = (state: FormState): FormState =>
+    programDeployStateWithProgramSize(state, Number(state.programSoSize || 0));
 
   const refreshCurrentWalletAssets = (wallet?: SavedWallet) => {
     const targetWallet = wallet ?? selectedSavedWallet() ?? effectiveWallet;
@@ -3497,6 +4265,19 @@ export default function Home() {
     openParentMenuForForm(formId);
     setSelectedForm(formId);
     setBackTarget(defaultBackTarget(formId));
+    if (formId === "program-invoke-standalone") {
+      if (programInvokeIdlFileInputRef.current) {
+        programInvokeIdlFileInputRef.current.value = "";
+      }
+      setProgramInvoke(emptyProgramInvokeState());
+      setFormData({
+        ...(effectiveWalletId ? { wallet_id: effectiveWalletId } : {}),
+        network: effectiveNetwork,
+        ...defaultFormPreset(formId),
+      });
+      setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
+      return;
+    }
     if (formId === "program-deploy") {
       setFormData(freshProgramDeployFormState());
       setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
@@ -3535,6 +4316,20 @@ export default function Home() {
     openParentMenuForForm(defaultBackTarget(formId) ?? formId);
     setBackTarget(sourceForm === undefined ? selectedForm ?? defaultBackTarget(formId) : sourceForm);
     setSelectedForm(formId);
+    if (formId === "program-invoke-standalone") {
+      if (programInvokeIdlFileInputRef.current) {
+        programInvokeIdlFileInputRef.current.value = "";
+      }
+      setProgramInvoke(emptyProgramInvokeState());
+      setFormData({
+        ...(effectiveWalletId ? { wallet_id: effectiveWalletId } : {}),
+        network: effectiveNetwork,
+        ...defaultFormPreset(formId),
+        ...preset,
+      });
+      setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
+      return;
+    }
     if (formId === "program-deploy") {
       setFormData(freshProgramDeployFormState(preset));
       setAuthMethod((prev) => ({ ...prev, [formId]: "keystore" }));
@@ -3554,10 +4349,366 @@ export default function Home() {
     }
   };
 
-  const selectProgramInvokeInstruction = (
+  const bytesToBrowserBase64 = useCallback((bytes: Uint8Array): string => {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }, []);
+
+  const bytesToBase58 = useCallback((bytes: Uint8Array): string => {
+    const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let zeroes = 0;
+    while (zeroes < bytes.length && bytes[zeroes] === 0) zeroes += 1;
+    const digits: number[] = [];
+    for (let i = zeroes; i < bytes.length; i += 1) {
+      let carry = bytes[i];
+      for (let j = 0; j < digits.length; j += 1) {
+        carry += digits[j] << 8;
+        digits[j] = carry % 58;
+        carry = Math.floor(carry / 58);
+      }
+      while (carry > 0) {
+        digits.push(carry % 58);
+        carry = Math.floor(carry / 58);
+      }
+    }
+    return `${alphabet[0].repeat(zeroes)}${digits.reverse().map((digit) => alphabet[digit]).join("")}`;
+  }, []);
+
+  const normalizeInvokeAccountName = useCallback((value: string): string =>
+    value.replace(/[_\s-]/g, "").toLowerCase(), []);
+
+  const isIdlPubkeyType = (type: unknown): boolean =>
+    type === "pubkey" || type === "publicKey";
+
+  const isWalletLikeInvokeAccount = (account: FlatAnchorAccount): boolean => {
+    if (account.address || account.pda || defaultAccountAddress(account.name, account)) return false;
+    const normalized = normalizeInvokeAccountName(account.name);
+    const walletHints = [
+      "authority",
+      "executor",
+      "owner",
+      "payer",
+      "recipient",
+      "receiver",
+      "user",
+      "wallet",
+    ];
+    const nonWalletHints = [
+      "associatedtoken",
+      "bridge",
+      "config",
+      "mint",
+      "program",
+      "receipt",
+      "sysvar",
+      "token",
+      "vault",
+    ];
+    return (
+      walletHints.some((hint) => normalized.includes(hint)) &&
+      !nonWalletHints.some((hint) => normalized.includes(hint))
+    );
+  };
+
+  const openProgramInvokeWalletPicker = (target: ProgramInvokeWalletPickerTarget) => {
+    setProgramInvokeWalletPickerTarget(target);
+  };
+
+  const selectProgramInvokeWalletAddress = (wallet: SavedWallet) => {
+    const target = programInvokeWalletPickerTarget;
+    if (!target) return;
+    const primaryWallet = savedWalletFromForm(formData) ?? effectiveWallet;
+    setProgramInvoke((prev) => {
+      if (target.kind === "arg") {
+        return {
+          ...prev,
+          argValues: { ...prev.argValues, [target.name]: wallet.public_key },
+          result: undefined,
+        };
+      }
+
+      const isPrimarySigner = target.signer && wallet.public_key === String(primaryWallet?.public_key || "").trim();
+      return {
+        ...prev,
+        accountValues: { ...prev.accountValues, [target.path]: wallet.public_key },
+        signerWalletIds: target.signer
+          ? { ...prev.signerWalletIds, [target.path]: isPrimarySigner ? "" : wallet.id }
+          : prev.signerWalletIds,
+        signerPasswords: target.signer
+          ? { ...prev.signerPasswords, [target.path]: "" }
+          : prev.signerPasswords,
+        result: undefined,
+      };
+    });
+    setProgramInvokeWalletPickerTarget(null);
+  };
+
+  const idlConstSeedToBase64 = useCallback((value: unknown): string | null => {
+    if (Array.isArray(value) && value.every((item) => Number.isInteger(item) && item >= 0 && item <= 255)) {
+      return bytesToBrowserBase64(Uint8Array.from(value as number[]));
+    }
+    if (typeof value === "string" && value.length > 0) {
+      return bytesToBrowserBase64(new TextEncoder().encode(value));
+    }
+    return null;
+  }, [bytesToBrowserBase64]);
+
+  const idlConstSeedToPubkey = useCallback((value: unknown): string => {
+    if (Array.isArray(value) && value.length === 32 && value.every((item) => Number.isInteger(item) && item >= 0 && item <= 255)) {
+      return bytesToBase58(Uint8Array.from(value as number[]));
+    }
+    if (typeof value === "string" && isLikelySolanaPublicKey(value.trim())) {
+      return value.trim();
+    }
+    return "";
+  }, [bytesToBase58]);
+
+  const seedAccountReference = useCallback((seed: { path?: string; account?: string }): string =>
+    String(seed.path || seed.account || "").trim(), []);
+
+  const seedArgReference = useCallback((seed: { path?: string; arg?: string }): string =>
+    String(seed.path || seed.arg || "").trim(), []);
+
+  const isProgramInvokeTokenAmountArg = useCallback((arg: AnchorIdlArg): boolean => {
+    if (arg.type !== "u64" && arg.type !== "u128") return false;
+    const normalized = normalizeInvokeAccountName(arg.name);
+    return normalized === "amount" || normalized.endsWith("amount") || normalized === "quantity" || normalized === "qty";
+  }, [normalizeInvokeAccountName]);
+
+  const programInvokeSingleMintAccount = useCallback((
+    instruction: AnchorIdlInstruction,
+    accountValues: Record<string, string>,
+  ): string => {
+    const mints = new Set<string>();
+    for (const account of flattenAnchorAccounts(instruction.accounts)) {
+      const normalized = normalizeInvokeAccountName(account.name);
+      if (normalized !== "mint" && !normalized.endsWith("mint")) continue;
+      const value = resolveAnchorAccountAddress(String(accountValues[account.path] || ""), account);
+      if (isValidAnchorAccountAddress(value)) {
+        mints.add(value);
+      }
+    }
+    return mints.size === 1 ? [...mints][0] : "";
+  }, [normalizeInvokeAccountName]);
+
+  const fetchProgramInvokeMintDecimals = useCallback(async (mint: string): Promise<number> => {
+    const response = await apiFetch("token/mint-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mint,
+        network: requestNetwork(formData.network),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || t("features.program-invoke.amountConversionFailed"));
+    }
+    const decimals = Number(data.decimals);
+    if (!Number.isInteger(decimals) || decimals < 0) {
+      throw new Error(t("features.program-invoke.amountConversionFailed"));
+    }
+    return decimals;
+  }, [formData.network, requestNetwork, t]);
+
+  const programInvokeDisplayArgsToRaw = useCallback(async (
+    instruction: AnchorIdlInstruction,
+    argValues: Record<string, string>,
+    accountValues: Record<string, string>,
+  ): Promise<Record<string, string>> => {
+    const amountArgs = instruction.args.filter(isProgramInvokeTokenAmountArg);
+    if (amountArgs.length === 0) return argValues;
+    const mint = programInvokeSingleMintAccount(instruction, accountValues);
+    const filledAmountArg = amountArgs.find((arg) => String(argValues[arg.name] || "").trim());
+    if (!mint) {
+      if (filledAmountArg) {
+        throw new Error(t("features.program-invoke.tokenAmountMintRequired", { arg: filledAmountArg.name }));
+      }
+      return argValues;
+    }
+    const decimals = await fetchProgramInvokeMintDecimals(mint);
+    const nextValues = { ...argValues };
+    for (const arg of amountArgs) {
+      const value = String(argValues[arg.name] || "").trim();
+      if (!value) continue;
+      const raw = uiTokenAmountToRaw(value, decimals);
+      if (raw === null) {
+        throw new Error(t("features.program-invoke.amountConversionFailedForArg", { arg: arg.name, decimals: String(decimals) }));
+      }
+      nextValues[arg.name] = raw;
+    }
+    return nextValues;
+  }, [
+    fetchProgramInvokeMintDecimals,
+    isProgramInvokeTokenAmountArg,
+    programInvokeSingleMintAccount,
+    t,
+  ]);
+
+  const deriveProgramAddress = useCallback(async (
+    programId: string,
+    seeds: Array<{ kind: "bytes_base64" | "pubkey"; value: string }>,
+  ): Promise<string> => {
+    const response = await apiFetch("program/derive-address", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ program_id: programId, seeds }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || t("features.program-invoke.accountAutofillFailed"));
+    }
+    return String(data.address || "").trim();
+  }, [t]);
+
+  const buildProgramInvokeAccountDefaults = useCallback(async (
     instruction: AnchorIdlInstruction | undefined,
-    walletAddress?: string,
-  ) => {
+    programId: string,
+    accountValues: Record<string, string> = {},
+    argValues: Record<string, string> = {},
+  ): Promise<Record<string, string>> => {
+    if (!instruction) return {};
+    const flatAccounts = flattenAnchorAccounts(instruction.accounts);
+    const nextAccounts: Record<string, string> = { ...accountValues };
+    const argByName = new Map(instruction.args.map((arg) => [arg.name, arg]));
+    const argByNormalizedName = new Map(
+      instruction.args.map((arg) => [normalizeInvokeAccountName(arg.name), arg]),
+    );
+
+    for (const account of flatAccounts) {
+      if (!nextAccounts[account.path]) {
+        nextAccounts[account.path] = defaultAccountAddress(account.name, account);
+      }
+    }
+
+    const trimmedProgramId = programId.trim();
+    if (!isLikelySolanaPublicKey(trimmedProgramId)) {
+      return nextAccounts;
+    }
+
+    const accountByName = new Map(flatAccounts.map((account) => [account.name, account.path]));
+    const accountByNormalizedName = new Map(
+      flatAccounts.map((account) => [normalizeInvokeAccountName(account.name), account.path]),
+    );
+    const resolveSeedAccount = (pathOrName: string): string => {
+      const direct = String(nextAccounts[pathOrName] || "").trim();
+      if (isValidAnchorAccountAddress(direct)) return direct;
+      const byName = accountByName.get(pathOrName);
+      const named = byName ? String(nextAccounts[byName] || "").trim() : "";
+      if (isValidAnchorAccountAddress(named)) return named;
+      const byNormalizedName = accountByNormalizedName.get(normalizeInvokeAccountName(pathOrName));
+      const normalized = byNormalizedName ? String(nextAccounts[byNormalizedName] || "").trim() : "";
+      return isValidAnchorAccountAddress(normalized) ? normalized : "";
+    };
+    const resolveSeedArg = (pathOrName: string): string => {
+      const directArg = argByName.get(pathOrName);
+      const normalizedArg = argByNormalizedName.get(normalizeInvokeAccountName(pathOrName));
+      const arg = directArg || normalizedArg;
+      if (!arg) return "";
+      const rawValue = String(argValues[arg.name] || "").trim();
+      if (!rawValue) return "";
+      try {
+        return encodeAnchorSeedArgToBase64(arg.type, rawValue);
+      } catch {
+        return "";
+      }
+    };
+    const pdaProgramId = (account: FlatAnchorAccount): string => {
+      const programSeed = account.pda?.program;
+      if (!programSeed) return trimmedProgramId;
+      if (programSeed.kind === "const") {
+        return idlConstSeedToPubkey(programSeed.value);
+      }
+      if (programSeed.kind === "account") {
+        return resolveSeedAccount(seedAccountReference(programSeed));
+      }
+      return "";
+    };
+
+    for (let pass = 0; pass < flatAccounts.length; pass += 1) {
+      let changed = false;
+      await Promise.all(flatAccounts.map(async (account: FlatAnchorAccount) => {
+      const normalizedName = normalizeInvokeAccountName(account.name);
+
+      if (!nextAccounts[account.path] && normalizedName === "programdata") {
+        nextAccounts[account.path] = await deriveProgramAddress(UPGRADEABLE_LOADER_ID, [
+          { kind: "pubkey", value: trimmedProgramId },
+        ]);
+        changed = true;
+        return;
+      }
+
+      const seeds = account.pda?.seeds;
+      if (!Array.isArray(seeds) || seeds.length === 0) return;
+      const seedPayload = [];
+      let seedPayloadComplete = true;
+      for (const seed of seeds) {
+        if (seed.kind === "const") {
+          const encoded = idlConstSeedToBase64(seed.value);
+          if (!encoded) {
+            seedPayloadComplete = false;
+            break;
+          }
+          seedPayload.push({ kind: "bytes_base64" as const, value: encoded });
+          continue;
+        }
+        if (seed.kind === "account") {
+          const pubkey = resolveSeedAccount(seedAccountReference(seed));
+          if (!pubkey) {
+            seedPayloadComplete = false;
+            break;
+          }
+          seedPayload.push({ kind: "pubkey" as const, value: pubkey });
+          continue;
+        }
+        if (seed.kind === "arg") {
+          const encoded = resolveSeedArg(seedArgReference(seed));
+          if (!encoded) {
+            seedPayloadComplete = false;
+            break;
+          }
+          seedPayload.push({ kind: "bytes_base64" as const, value: encoded });
+          continue;
+        }
+        seedPayloadComplete = false;
+        break;
+      }
+      if (!seedPayloadComplete) {
+        if (nextAccounts[account.path]) {
+          nextAccounts[account.path] = "";
+          changed = true;
+        }
+        return;
+      }
+      const programForPda = pdaProgramId(account);
+      if (!isLikelySolanaPublicKey(programForPda)) {
+        if (nextAccounts[account.path]) {
+          nextAccounts[account.path] = "";
+          changed = true;
+        }
+        return;
+      }
+      const derived = await deriveProgramAddress(programForPda, seedPayload);
+      if (derived && nextAccounts[account.path] !== derived) {
+        nextAccounts[account.path] = derived;
+        changed = true;
+      }
+      }));
+      if (!changed) break;
+    }
+
+    return nextAccounts;
+  }, [
+    deriveProgramAddress,
+    idlConstSeedToBase64,
+    idlConstSeedToPubkey,
+    normalizeInvokeAccountName,
+    seedArgReference,
+    seedAccountReference,
+  ]);
+
+  const selectProgramInvokeInstruction = async (instruction: AnchorIdlInstruction | undefined) => {
     if (!instruction) {
       setProgramInvoke((prev) => ({
         ...prev,
@@ -3569,19 +4720,28 @@ export default function Home() {
       }));
       return;
     }
-    const nextAccounts: Record<string, string> = {};
-    const signerAccounts = flattenAnchorAccounts(instruction.accounts).filter((account) => account.isSigner);
-    for (const account of flattenAnchorAccounts(instruction.accounts)) {
-      const byName = defaultAccountAddress(account.name, account);
-      nextAccounts[account.path] =
-        account.isSigner && walletAddress && signerAccounts[0]?.path === account.path
-          ? walletAddress
-          : byName;
+    let nextAccounts: Record<string, string> = {};
+    const nextArgValues = Object.fromEntries(instruction.args.map((arg) => [arg.name, ""]));
+    try {
+      nextAccounts = await buildProgramInvokeAccountDefaults(
+        instruction,
+        programInvoke.programId,
+        {},
+        nextArgValues,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("features.program-invoke.accountAutofillFailed"));
+      nextAccounts = Object.fromEntries(
+        flattenAnchorAccounts(instruction.accounts).map((account) => [
+          account.path,
+          defaultAccountAddress(account.name, account),
+        ]),
+      );
     }
     setProgramInvoke((prev) => ({
       ...prev,
       selectedInstruction: instruction.name,
-      argValues: Object.fromEntries(instruction.args.map((arg) => [arg.name, ""])),
+      argValues: nextArgValues,
       accountValues: nextAccounts,
       signerWalletIds: {},
       signerPasswords: {},
@@ -3589,6 +4749,44 @@ export default function Home() {
       error: undefined,
     }));
   };
+
+  useEffect(() => {
+    if (!programInvoke.idl || programInvoke.loading || !programInvoke.selectedInstruction) return;
+    const instruction = programInvoke.idl.instructions.find(
+      (item) => item.name === programInvoke.selectedInstruction,
+    );
+    if (!instruction) return;
+    let cancelled = false;
+    void buildProgramInvokeAccountDefaults(
+      instruction,
+      programInvoke.programId,
+      programInvoke.accountValues,
+      programInvoke.argValues,
+    )
+      .then((nextAccounts) => {
+        if (cancelled) return;
+        setProgramInvoke((prev) => {
+          if (prev.selectedInstruction !== instruction.name) return prev;
+          const prevSerialized = JSON.stringify(prev.accountValues);
+          const nextSerialized = JSON.stringify(nextAccounts);
+          return prevSerialized === nextSerialized
+            ? prev
+            : { ...prev, accountValues: nextAccounts, result: undefined };
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    buildProgramInvokeAccountDefaults,
+    programInvoke.accountValues,
+    programInvoke.argValues,
+    programInvoke.idl,
+    programInvoke.loading,
+    programInvoke.programId,
+    programInvoke.selectedInstruction,
+  ]);
 
   const loadProgramInvokeIdl = async (project: ProgramProject) => {
     setProgramInvoke((prev) => ({ ...prev, loading: true, error: undefined, result: undefined }));
@@ -3609,15 +4807,13 @@ export default function Home() {
       const idl = parseAnchorIdlJson(idlJsonText);
       const programId = project.programId || anchorIdlProgramId(idl);
       const firstInstruction = idl.instructions[0];
-      const firstAccounts: Record<string, string> = {};
-      const firstSignerAccounts = flattenAnchorAccounts(firstInstruction?.accounts || []).filter((account) => account.isSigner);
-      for (const account of flattenAnchorAccounts(firstInstruction?.accounts || [])) {
-        const byName = defaultAccountAddress(account.name, account);
-        firstAccounts[account.path] =
-          account.isSigner && effectiveWallet && firstSignerAccounts[0]?.path === account.path
-            ? effectiveWallet.public_key
-            : byName;
-      }
+      const firstArgValues = Object.fromEntries((firstInstruction?.args || []).map((arg) => [arg.name, ""]));
+      const firstAccounts = await buildProgramInvokeAccountDefaults(
+        firstInstruction,
+        programId,
+        {},
+        firstArgValues,
+      );
       setProgramInvoke({
         projectId: project.id,
         sourceDir: project.sourceDir,
@@ -3626,12 +4822,67 @@ export default function Home() {
         idl,
         programId,
         selectedInstruction: firstInstruction?.name || "",
-        argValues: Object.fromEntries((firstInstruction?.args || []).map((arg) => [arg.name, ""])),
+        argValues: firstArgValues,
         accountValues: firstAccounts,
         signerWalletIds: {},
         signerPasswords: {},
         loading: false,
       });
+    } catch (error) {
+      setProgramInvoke((prev) => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : t("features.program-invoke.idlLoadFailed"),
+      }));
+    }
+  };
+
+  const loadStandaloneProgramInvokeIdl = async (idlJsonText: string, idlFileName: string) => {
+    setProgramInvoke((prev) => ({ ...prev, loading: true, error: undefined, result: undefined }));
+    try {
+      const idl = parseAnchorIdlJson(idlJsonText);
+      const programId = anchorIdlProgramId(idl);
+      const firstInstruction = idl.instructions[0];
+      const firstArgValues = Object.fromEntries((firstInstruction?.args || []).map((arg) => [arg.name, ""]));
+      const firstAccounts = await buildProgramInvokeAccountDefaults(
+        firstInstruction,
+        programId,
+        {},
+        firstArgValues,
+      );
+      setProgramInvoke({
+        idlPath: idlFileName,
+        idlFileName,
+        idlJsonText,
+        idl,
+        programId,
+        selectedInstruction: firstInstruction?.name || "",
+        argValues: firstArgValues,
+        accountValues: firstAccounts,
+        signerWalletIds: {},
+        signerPasswords: {},
+        loading: false,
+      });
+    } catch (error) {
+      setProgramInvoke(
+        emptyProgramInvokeState({
+          idlPath: idlFileName,
+          idlFileName,
+          idlJsonText,
+          loading: false,
+          error: error instanceof Error ? error.message : t("features.program-invoke.idlLoadFailed"),
+        }),
+      );
+    }
+  };
+
+  const handleProgramInvokeIdlFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    try {
+      const text = await file.text();
+      await loadStandaloneProgramInvokeIdl(text, file.name);
     } catch (error) {
       setProgramInvoke((prev) => ({
         ...prev,
@@ -3834,9 +5085,15 @@ export default function Home() {
   }, [effectiveNetwork, effectiveRpcRequest, requestNetwork]);
 
   useEffect(() => {
-    if (!loading || selectedForm !== "program-deploy") return;
-    const intent = programDeploymentJournalIntentFor(formData);
+    if (selectedForm !== "program-deploy") return;
+    const intent = lastProgramDeploymentIntentRef.current || (loading ? programDeploymentJournalIntentFor(formData) : null);
     if (!intent) return;
+    const intentKey = programDeploymentIntentKey(intent);
+    const journalState = programDeploymentJournalRef.current;
+    const journalMatchesIntent = journalState.intentKey === intentKey;
+    if (!loading && journalMatchesIntent && journalState.journal?.status === "finalized") {
+      return;
+    }
 
     const refresh = () => {
       void loadProgramDeploymentJournal(intent, { preserveCurrent: true });
@@ -3877,7 +5134,11 @@ export default function Home() {
     }
     programDeploymentWatchdogTrippedRef.current = true;
     setLoading(false);
-    toast.error(t("features.program-deploy.journalStalledToast"));
+    const stalledMessage = t("features.program-deploy.journalStalledToast");
+    setProgramDeployInlineError({
+      friendly: t("features.program-deploy.friendlyJournalStalled"),
+      raw: stalledMessage,
+    });
   }, [
     loading,
     programDeploymentJournal.deploymentAttempts,
@@ -3887,19 +5148,59 @@ export default function Home() {
     t,
   ]);
 
+  useEffect(() => {
+    if (!loading || selectedForm !== "program-upgrade") {
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await apiFetch("program/upgrade/progress", { method: "GET" });
+        const data = await response.json();
+        if (cancelled || !response.ok) return;
+        setProgramUpgradeProgress({
+          active: Boolean(data.active),
+          program_id: String(data.program_id || ""),
+          network: String(data.network || ""),
+          stage: String(data.stage || "idle"),
+          message: String(data.message || ""),
+          write_completed: Number(data.write_completed || 0),
+          write_total: Number(data.write_total || 0),
+          program_bytes: Number(data.program_bytes || 0),
+          buffer_address: data.buffer_address ?? null,
+          last_signature: data.last_signature ?? null,
+          error: data.error ?? null,
+          updated_at_ms: Number(data.updated_at_ms || 0),
+        });
+        if (data.message) {
+          setFormData((prev) =>
+            prev.message === data.message ? prev : { ...prev, message: String(data.message) },
+          );
+        }
+      } catch {
+        // Keep the static upgrading UI if progress polling fails.
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => {
+      void poll();
+    }, 1_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [loading, selectedForm]);
+
   const programDeployValidationError = (state: FormState): string | null => {
+    const sourceValidationErrors = String(state.sourceValidationErrors || "").trim();
+    if (sourceValidationErrors) {
+      return t("features.program-deploy.sourceValidationBlocked");
+    }
     if (!state.programSoBase64) {
       return t("features.program-deploy.selectFileFirst");
     }
     if (!/^[a-f0-9]{64}$/.test(String(state.programSoSha256 ?? ""))) {
       return t("features.program-deploy.programHashUnavailable");
-    }
-    const approvedProgramSha256 = String(state.approvedProgramSha256 ?? "").trim().toLowerCase();
-    if (!/^[a-f0-9]{64}$/.test(approvedProgramSha256)) {
-      return t("features.program-deploy.approvedProgramHashRequired");
-    }
-    if (approvedProgramSha256 !== state.programSoSha256) {
-      return t("features.program-deploy.approvedProgramHashMismatch");
     }
     const programKeypairPath = String(state.programKeypairPath ?? "").trim();
     if (!programKeypairBytesRef.current && !programKeypairPath) {
@@ -3938,38 +5239,248 @@ export default function Home() {
     ) {
       return t("features.program-deploy.invalidMaxDataLen");
     }
-    if (maxDataLen !== undefined && maxDataLen < Number(state.programSoSize || 0)) {
-      return t("features.program-deploy.maxDataLenTooSmall");
-    }
     const resumeBufferAddress = String(state.resumeBufferAddress ?? "").trim();
     if (resumeBufferAddress && !isLikelySolanaPublicKey(resumeBufferAddress)) {
       return t("features.program-deploy.invalidResumeBufferAddress");
     }
-    const intent = programDeploymentJournalIntentFor(state);
-    if (!intent) {
-      return t("features.program-deploy.journalNotReady");
-    }
-    const intentKey = programDeploymentIntentKey(intent);
-    const deploymentJournal =
-      programDeploymentJournal.intentKey === intentKey
-        ? programDeploymentJournal.journal
-        : null;
-    const effectiveMaxDataLen = maxDataLen ?? Number(state.programSoSize || 0);
-    if (
-      deploymentJournal &&
-      (effectiveMaxDataLen !== deploymentJournal.max_data_len ||
-        (PROGRAM_BUFFER_RECOVERY_STATUSES.has(deploymentJournal.status)
-          ? resumeBufferAddress !== deploymentJournal.buffer_address
-          : resumeBufferAddress !== "" &&
-            resumeBufferAddress !== deploymentJournal.buffer_address))
-    ) {
-      return t("features.program-deploy.journalIntentMismatch");
-    }
     return null;
   };
 
+  const formatLamportsAsSol = (lamports: string | number): string => {
+    const value = typeof lamports === "number" ? lamports : Number(lamports);
+    if (!Number.isFinite(value)) return String(lamports);
+    return (value / 1_000_000_000).toFixed(4);
+  };
+
+  const programDeployFriendlyError = useCallback((rawMessage: unknown): string => {
+    const raw = String(rawMessage || "").trim();
+    if (!raw) return t("features.program-deploy.error");
+    const normalized = raw.toLowerCase();
+
+    const backendSolMatch = raw.match(
+      /当前\s*([0-9.]+)\s*SOL[\s\S]*至少需要约\s*([0-9.]+)\s*SOL/i,
+    );
+    if (backendSolMatch) {
+      const currentSol = backendSolMatch[1];
+      const neededSol = backendSolMatch[2];
+      const shortfall = Math.max(0, Number(neededSol) - Number(currentSol));
+      return t("features.program-deploy.friendlyInsufficientBalance", {
+        currentSol,
+        neededSol,
+        shortfallSol: Number.isFinite(shortfall) ? shortfall.toFixed(4) : neededSol,
+      });
+    }
+
+    const backendLamportsMatch = raw.match(
+      /当前\s*(\d+)\s*lamports[\s\S]*至少需要\s*(\d+)\s*lamports/i,
+    );
+    if (backendLamportsMatch) {
+      const current = Number(backendLamportsMatch[1]);
+      const needed = Number(backendLamportsMatch[2]);
+      return t("features.program-deploy.friendlyInsufficientBalance", {
+        currentSol: formatLamportsAsSol(current),
+        neededSol: formatLamportsAsSol(needed),
+        shortfallSol: formatLamportsAsSol(Math.max(0, needed - current)),
+      });
+    }
+
+    const lamportsMatch = raw.match(/insufficient lamports\s+(\d+),\s*need\s+(\d+)/i);
+    if (lamportsMatch) {
+      const current = Number(lamportsMatch[1]);
+      const needed = Number(lamportsMatch[2]);
+      return t("features.program-deploy.friendlyInsufficientBalance", {
+        currentSol: formatLamportsAsSol(current),
+        neededSol: formatLamportsAsSol(needed),
+        shortfallSol: formatLamportsAsSol(Math.max(0, needed - current)),
+      });
+    }
+    if (
+      normalized.includes("insufficient funds")
+      || normalized.includes("insufficient lamports")
+      || raw.includes("余额不足")
+    ) {
+      return t("features.program-deploy.friendlyInsufficientFunds");
+    }
+    if (normalized.includes("attempt to debit an account but found no record of a prior credit")) {
+      return t("features.program-deploy.friendlyMissingPayerAccount");
+    }
+    if (normalized.includes("genesis hash") || raw.includes("创世哈希")) {
+      return t("features.program-deploy.friendlyGenesisMismatch");
+    }
+    if (normalized.includes("busy") || raw.includes("正在进行")) {
+      return t("features.program-deploy.friendlyBusy");
+    }
+    if (normalized.includes("sha-256") || normalized.includes("sha256") || raw.includes("SHA-256")) {
+      return t("features.program-deploy.friendlySha256Mismatch");
+    }
+    if (
+      normalized.includes("already in use")
+      || normalized.includes("account already exists")
+      || raw.includes("已存在")
+    ) {
+      return t("features.program-deploy.friendlyAccountAlreadyInUse");
+    }
+    if (
+      normalized.includes("runtime loader rejected")
+      || normalized.includes("requisiteverifier")
+      || normalized.includes("sbf verifier")
+    ) {
+      return t("features.program-deploy.friendlySbfRejected");
+    }
+    if (normalized.includes("resume buffer") || raw.includes("恢复 Buffer")) {
+      return t("features.program-deploy.friendlyResumeBuffer");
+    }
+    if (raw.includes("长时间没有新进展") || normalized.includes("stalled")) {
+      return t("features.program-deploy.friendlyJournalStalled");
+    }
+    return raw;
+  }, [t]);
+
+  const showProgramDeployInlineError = (message: unknown) => {
+    const raw = String(message || t("features.program-deploy.error")).trim()
+      || t("features.program-deploy.error");
+    setProgramDeployInlineError({
+      friendly: programDeployFriendlyError(raw),
+      raw,
+    });
+  };
+
+  const programUpgradeFriendlyError = useCallback((rawMessage: unknown): string => {
+    const raw = String(rawMessage || "").trim();
+    if (!raw) return t("features.program-upgrade.error");
+    const normalized = raw.toLowerCase();
+
+    const backendBalanceMatch = raw.match(
+      /当前\s*([0-9.]+)\s*SOL[\s\S]*至少需要约\s*([0-9.]+)\s*SOL/i,
+    );
+    if (backendBalanceMatch) {
+      const currentSol = backendBalanceMatch[1];
+      const neededSol = backendBalanceMatch[2];
+      const shortfall = Math.max(0, Number(neededSol) - Number(currentSol));
+      return t("features.program-upgrade.friendlyInsufficientBalance", {
+        currentSol,
+        neededSol,
+        shortfallSol: Number.isFinite(shortfall) ? shortfall.toFixed(4) : neededSol,
+      });
+    }
+
+    const lamportsMatch = raw.match(/insufficient lamports\s+(\d+),\s*need\s+(\d+)/i);
+    if (lamportsMatch) {
+      const current = Number(lamportsMatch[1]);
+      const needed = Number(lamportsMatch[2]);
+      return t("features.program-upgrade.friendlyInsufficientBalance", {
+        currentSol: formatLamportsAsSol(current),
+        neededSol: formatLamportsAsSol(needed),
+        shortfallSol: formatLamportsAsSol(Math.max(0, needed - current)),
+      });
+    }
+    if (normalized.includes("insufficient funds") || normalized.includes("insufficient lamports") || raw.includes("余额不足")) {
+      return t("features.program-upgrade.friendlyInsufficientFunds");
+    }
+    if (raw.includes("超过 ProgramData 容量") || normalized.includes("max_data_len")) {
+      return t("features.program-upgrade.friendlyProgramDataTooSmall");
+    }
+    if (raw.includes("upgrade authority") || raw.includes("Upgrade Authority") || raw.includes("升级权限")) {
+      return t("features.program-upgrade.friendlyAuthorityMismatch");
+    }
+    if (normalized.includes("genesis hash") || raw.includes("创世哈希")) {
+      return t("features.program-upgrade.friendlyGenesisMismatch");
+    }
+    if (
+      normalized.includes("未能在超时前确认") ||
+      normalized.includes("timeout") ||
+      normalized.includes("timed out")
+    ) {
+      return t("features.program-upgrade.friendlyTimeout");
+    }
+    if (normalized.includes("busy") || raw.includes("正在进行")) {
+      return t("features.program-upgrade.friendlyBusy");
+    }
+    return raw;
+  }, [t]);
+
+  const showProgramUpgradeInlineError = (message: unknown) => {
+    const raw = String(message || t("features.program-upgrade.error")).trim()
+      || t("features.program-upgrade.error");
+    setProgramUpgradeInlineError({
+      friendly: programUpgradeFriendlyError(raw),
+      raw,
+    });
+  };
+
+  const programInvokeFriendlyError = useCallback((
+    rawMessage: unknown,
+    logs: string[] = [],
+  ): string => {
+    const raw = String(rawMessage || "").trim();
+    const combined = [raw, ...logs].filter(Boolean).join("\n");
+    const normalized = combined.toLowerCase();
+    if (!combined.trim()) return t("features.program-invoke.error");
+
+    const anchorMatch = combined.match(
+      /Error Code:\s*([A-Za-z0-9_]+)\.?\s*Error Number:\s*(\d+)\.?\s*Error Message:\s*([^\n]+)/,
+    );
+    if (anchorMatch) {
+      const [, code, number, message] = anchorMatch;
+      const hintKey = `features.program-invoke.anchorErrorHints.${code}`;
+      const hintValue = t(hintKey);
+      const hint = hintValue === hintKey ? "" : hintValue;
+      return hint
+        ? t("features.program-invoke.friendlyAnchorErrorWithHint", { code, number, message: message.trim(), hint })
+        : t("features.program-invoke.friendlyAnchorError", { code, number, message: message.trim() });
+    }
+
+    if (normalized.includes("declaredprogramidmismatch")) {
+      return t("features.program-invoke.friendlyDeclaredProgramIdMismatch");
+    }
+    if (normalized.includes("attempt to debit an account but found no record of a prior credit")) {
+      return t("features.program-invoke.friendlyMissingPayerAccount");
+    }
+    const lamportsMatch = combined.match(/insufficient lamports\s+(\d+),\s*need\s+(\d+)/i);
+    if (lamportsMatch) {
+      return t("features.program-invoke.friendlyInsufficientLamports", {
+        current: lamportsMatch[1],
+        needed: lamportsMatch[2],
+      });
+    }
+    if (normalized.includes("insufficient funds") || normalized.includes("insufficient lamports")) {
+      return t("features.program-invoke.friendlyInsufficientFunds");
+    }
+    const accountNotFoundMatch = combined.match(/AccountNotFound:\s*pubkey=([1-9A-HJ-NP-Za-km-z]+)/i);
+    if (accountNotFoundMatch) {
+      return t("features.program-invoke.friendlyAccountNotFound", { account: accountNotFoundMatch[1] });
+    }
+    if (normalized.includes("blockhash not found")) {
+      return t("features.program-invoke.friendlyBlockhashNotFound");
+    }
+    if (normalized.includes("signature verification failed")) {
+      return t("features.program-invoke.friendlySignatureVerificationFailed");
+    }
+    if (normalized.includes("unauthorized signer") || normalized.includes("privilege escalation")) {
+      return t("features.program-invoke.friendlyAccountPrivilege");
+    }
+    if (normalized.includes("invalid account data") || normalized.includes("account did not deserialize")) {
+      return t("features.program-invoke.friendlyInvalidAccountData");
+    }
+    if (normalized.includes("already in use")) {
+      return t("features.program-invoke.friendlyAccountAlreadyInUse");
+    }
+    if (normalized.includes("computational budget exceeded") || normalized.includes("exceeded maximum number of instructions")) {
+      return t("features.program-invoke.friendlyComputeBudgetExceeded");
+    }
+    const customProgramErrorMatch = combined.match(/custom program error:\s*(0x[0-9a-f]+)/i);
+    if (customProgramErrorMatch) {
+      return t("features.program-invoke.friendlyCustomProgramError", { code: customProgramErrorMatch[1] });
+    }
+    return raw || t("features.program-invoke.error");
+  }, [t]);
+
   const validateBeforePasswordPrompt = (formId: string, nextFormData: FormState): boolean => {
     const fail = (message: string) => {
+      if (formId === "program-upgrade") {
+        showProgramUpgradeInlineError(message);
+        return false;
+      }
       toast.error(message);
       return false;
     };
@@ -3988,36 +5499,73 @@ export default function Home() {
         return amount !== null ? true : fail(t("features.wrap-sol.fillAllFields"));
       case "program-deploy": {
         const error = programDeployValidationError(nextFormData);
-        return error ? fail(error) : true;
+        if (error) {
+          showProgramDeployInlineError(error);
+          return false;
+        }
+        return true;
       }
-      case "program-invoke": {
-        if (programInvoke.loading) return fail(t("features.program-invoke.idlLoading"));
-        if (!programInvoke.idl || programInvoke.error) return fail(programInvoke.error || t("features.program-invoke.noIdl"));
+      case "program-upgrade": {
+        setProgramUpgradeInlineError(null);
+        const programId = String(nextFormData.programId || nextFormData.expectedProgramId || "").trim();
+        if (!programId) return fail(t("features.program-upgrade.programIdRequired"));
+        if (!isLikelySolanaPublicKey(programId)) return fail(t("features.program-upgrade.invalidProgramId"));
+        if (!nextFormData.programSoBase64) return fail(t("features.program-upgrade.fillAllFields"));
+        const sourceDir = String(nextFormData.programSourceDir || "").trim();
+        const projectForUpgrade = sourceDir
+          ? workspace.programProjects.find((item) => item.id === scopedProgramProjectId(sourceDir))
+          : workspace.programProjects.find((item) => String(item.programId || "").trim() === programId);
+        if (isStaleProgramUpgradeArtifact(projectForUpgrade, programId, nextFormData.programSoSha256)) {
+          return fail(t("features.program-upgrade.staleArtifactBlocked"));
+        }
+        return true;
+      }
+      case "program-invoke":
+      case "program-invoke-standalone": {
+        const failProgramInvoke = (message: string) => {
+          const displayMessage = programInvokeFriendlyError(message);
+          setProgramInvoke((prev) => ({
+            ...prev,
+            result: {
+              status: "validation_failed",
+              errorMessage: displayMessage,
+              rawErrorMessage: displayMessage === message ? undefined : message,
+              logs: [],
+            },
+          }));
+          return false;
+        };
+        if (programInvoke.loading) return failProgramInvoke(t("features.program-invoke.idlLoading"));
+        if (!programInvoke.idl || programInvoke.error) {
+          return failProgramInvoke(programInvoke.error || (formId === "program-invoke-standalone"
+            ? tf("features.program-invoke.noStandaloneIdl", "请先选择一个 Anchor IDL JSON 文件。")
+            : t("features.program-invoke.noIdl")));
+        }
         if (!isLikelySolanaPublicKey(programInvoke.programId)) {
-          return fail(t("features.program-invoke.invalidProgramId"));
+          return failProgramInvoke(t("features.program-invoke.invalidProgramId"));
         }
         const instruction = programInvoke.idl.instructions.find(
           (item) => item.name === programInvoke.selectedInstruction,
         );
-        if (!instruction) return fail(t("features.program-invoke.noInstruction"));
+        if (!instruction) return failProgramInvoke(t("features.program-invoke.noInstruction"));
         if (instruction.args.some((arg) => isUnsupportedIdlType(arg.type))) {
-          return fail(t("features.program-invoke.unsupportedType"));
+          return failProgramInvoke(t("features.program-invoke.unsupportedType"));
         }
         const primaryInvokeWallet = savedWalletFromForm(nextFormData) ?? effectiveWallet;
         for (const account of flattenAnchorAccounts(instruction.accounts)) {
-          const value = String(programInvoke.accountValues[account.path] || "").trim();
-          if (!isLikelySolanaPublicKey(value)) {
-            return fail(t("features.program-invoke.accountInvalid", { account: account.path }));
+          const value = resolveAnchorAccountAddress(String(programInvoke.accountValues[account.path] || ""), account);
+          if (!isValidAnchorAccountAddress(value)) {
+            return failProgramInvoke(t("features.program-invoke.accountInvalid", { account: account.path }));
           }
           if (account.isSigner && value !== String(primaryInvokeWallet?.public_key || "").trim()) {
             const walletId = String(programInvoke.signerWalletIds[account.path] || "").trim();
             const password = String(programInvoke.signerPasswords[account.path] || "");
             const wallet = wallets.find((item) => item.id === walletId);
             if (!walletId || !password) {
-              return fail(t("features.program-invoke.signerWalletRequired", { account: account.path }));
+              return failProgramInvoke(t("features.program-invoke.signerWalletRequired", { account: account.path }));
             }
             if (wallet && wallet.public_key !== value) {
-              return fail(t("features.program-invoke.signerWalletMismatch", { account: account.path }));
+              return failProgramInvoke(t("features.program-invoke.signerWalletMismatch", { account: account.path }));
             }
           }
         }
@@ -4163,22 +5711,37 @@ export default function Home() {
   };
 
   const requestPasswordSubmit = (formId: string, formOverride?: FormState) => {
+    if (formId === "program-deploy") {
+      setProgramDeployInlineError(null);
+    }
+    if (formId === "program-upgrade") {
+      setProgramUpgradeInlineError(null);
+    }
     const needsWalletPassword = shouldPromptForWalletPassword(formId);
     const needsMasterPassword = shouldPromptForMasterPassword(formId);
 
     if (!needsWalletPassword && !needsMasterPassword) {
-      void handleSubmit(formId, formOverride ?? formData);
+      const nextFormData = formId === "program-deploy"
+        ? normalizedProgramDeployFormState(formOverride ?? formData)
+        : formOverride ?? formData;
+      void handleSubmit(formId, nextFormData);
       return;
     }
 
-    const nextFormData = walletAuthFormData(formOverride ?? formData);
+    const nextFormData = formId === "program-deploy"
+      ? normalizedProgramDeployFormState(walletAuthFormData(formOverride ?? formData))
+      : walletAuthFormData(formOverride ?? formData);
     const method = walletAuth(formId);
     if (needsWalletPassword &&
       method === "keystore" &&
       !String(nextFormData.wallet_id ?? "").trim() &&
       !String(nextFormData.keystoreJson ?? "").trim()
     ) {
-      toast.error(t("features.walletContext.noWallet"));
+      if (formId === "program-deploy") {
+        showProgramDeployInlineError(t("features.walletContext.noWallet"));
+      } else {
+        toast.error(t("features.walletContext.noWallet"));
+      }
       return;
     }
     if (
@@ -4186,7 +5749,11 @@ export default function Home() {
       method === "encrypted" &&
       !String(nextFormData.encrypted_key ?? nextFormData.encryptedKey ?? "").trim()
     ) {
-      toast.error(t("features.decrypt.fillAllFields"));
+      if (formId === "program-deploy") {
+        showProgramDeployInlineError(t("features.decrypt.fillAllFields"));
+      } else {
+        toast.error(t("features.decrypt.fillAllFields"));
+      }
       return;
     }
     if (!validateBeforePasswordPrompt(formId, nextFormData)) {
@@ -4248,6 +5815,10 @@ export default function Home() {
   const passwordPromptIsBusy = loading || passwordConfirmationBusy;
   const isProgramDeploymentPasswordPrompt =
     passwordPrompt?.kind === "form" && passwordPrompt.formId === "program-deploy";
+  const isProgramUpgradePasswordPrompt =
+    passwordPrompt?.kind === "form" && passwordPrompt.formId === "program-upgrade";
+  const isLongRunningProgramPasswordPrompt =
+    isProgramDeploymentPasswordPrompt || isProgramUpgradePasswordPrompt;
 
   const passwordPromptTitle =
     passwordPrompt?.kind === "export-keystore"
@@ -4310,13 +5881,13 @@ export default function Home() {
     });
     const data = await response.json();
     if (!response.ok) {
-      toast.error(data.error || t("features.program-deploy.passwordInvalid"));
+      showProgramDeployInlineError(data.error || t("features.program-deploy.passwordInvalid"));
       return false;
     }
     const publicKey = String(data.public_key || "").trim();
     const expectedAuthority = String(state.expectedUpgradeAuthority || "").trim();
     if (expectedAuthority && publicKey && publicKey !== expectedAuthority) {
-      toast.error(t("features.program-deploy.passwordWalletMismatch", {
+      showProgramDeployInlineError(t("features.program-deploy.passwordWalletMismatch", {
         wallet: publicKey,
         authority: expectedAuthority,
       }));
@@ -4325,8 +5896,8 @@ export default function Home() {
     return true;
   };
 
-  const validateProgramInvokeWalletPassword = async (state: FormState): Promise<boolean> => {
-    const method = walletAuth("program-invoke");
+  const validateProgramUpgradeWalletPassword = async (state: FormState): Promise<boolean> => {
+    const method = walletAuth("program-upgrade");
     if (method !== "keystore" && method !== "encrypted") return true;
     const requestBody: ApiRequestBody = {};
     applyWalletAuth(requestBody, method, state, "private_key");
@@ -4337,7 +5908,49 @@ export default function Home() {
     });
     const data = await response.json();
     if (!response.ok) {
-      toast.error(data.error || t("features.program-invoke.passwordInvalid"));
+      showProgramUpgradeInlineError(data.error || t("features.program-upgrade.passwordInvalid"));
+      return false;
+    }
+    const publicKey = String(data.public_key || "").trim();
+    const expectedAuthority = String(
+      state.expectedUpgradeAuthority ||
+        savedWalletFromForm(state)?.public_key ||
+        effectiveWallet?.public_key ||
+        "",
+    ).trim();
+    if (expectedAuthority && publicKey && publicKey !== expectedAuthority) {
+      showProgramUpgradeInlineError(t("features.program-upgrade.passwordWalletMismatch", {
+        wallet: publicKey,
+        authority: expectedAuthority,
+      }));
+      return false;
+    }
+    return true;
+  };
+
+  const validateProgramInvokeWalletPassword = async (state: FormState, formId = "program-invoke"): Promise<boolean> => {
+    const method = walletAuth(formId);
+    if (method !== "keystore" && method !== "encrypted") return true;
+    const requestBody: ApiRequestBody = {};
+    applyWalletAuth(requestBody, method, state, "private_key");
+    const response = await apiFetch("wallet/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const rawMessage = data.error || t("features.program-invoke.passwordInvalid");
+      const displayMessage = programInvokeFriendlyError(rawMessage);
+      setProgramInvoke((prev) => ({
+        ...prev,
+        result: {
+          status: "password_failed",
+          errorMessage: displayMessage,
+          rawErrorMessage: displayMessage === rawMessage ? undefined : String(rawMessage),
+          logs: [],
+        },
+      }));
       return false;
     }
     return true;
@@ -4372,19 +5985,32 @@ export default function Home() {
     setPasswordConfirmationBusy(true);
     try {
       if (passwordPrompt.kind === "form") {
-        const nextFormData = walletAuthFormData({
+        let nextFormData = walletAuthFormData({
           ...passwordPrompt.formState,
           ...(showWalletPasswordPrompt ? { password } : {}),
           ...(showMasterPasswordPrompt ? { master_password: masterPassword } : {}),
         });
         if (passwordPrompt.formId === "program-deploy") {
+          nextFormData = normalizedProgramDeployFormState(nextFormData);
           const passwordOk = await validateProgramDeployWalletPassword(nextFormData);
-          if (!passwordOk) return;
+          if (!passwordOk) {
+            setPasswordPrompt(null);
+            clearPasswordPromptSecrets();
+            return;
+          }
           setPasswordPrompt(null);
           clearPasswordPromptSecrets();
-          toast.success(t("features.program-deploy.deployStarted"));
-        } else if (passwordPrompt.formId === "program-invoke") {
-          const passwordOk = await validateProgramInvokeWalletPassword(nextFormData);
+        } else if (passwordPrompt.formId === "program-upgrade") {
+          const passwordOk = await validateProgramUpgradeWalletPassword(nextFormData);
+          if (!passwordOk) {
+            setPasswordPrompt(null);
+            clearPasswordPromptSecrets();
+            return;
+          }
+          setPasswordPrompt(null);
+          clearPasswordPromptSecrets();
+        } else if (isProgramInvokeForm(passwordPrompt.formId)) {
+          const passwordOk = await validateProgramInvokeWalletPassword(nextFormData, passwordPrompt.formId);
           if (!passwordOk) return;
         }
         await handleSubmit(passwordPrompt.formId, nextFormData);
@@ -4550,20 +6176,102 @@ export default function Home() {
     }
   };
 
+  const autoLoadProgramKeypairArtifact = async (
+    sourceDir: string,
+    programSoName: string,
+    programSoReadVersion: number,
+  ) => {
+    const cleanSourceDir = sourceDir.trim();
+    const cleanProgramSoName = programSoName.trim();
+    if (!cleanSourceDir || !cleanProgramSoName) return;
+    const requestId = programKeypairArtifactRequestIdRef.current + 1;
+    programKeypairArtifactRequestIdRef.current = requestId;
+    try {
+      const response = await apiFetch("program/keypair-artifact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_dir: cleanSourceDir,
+          program_so_name: cleanProgramSoName,
+          artifact_stem: cleanProgramSoName.replace(/\.so$/i, ""),
+        }),
+      });
+      const data = (await response.json()) as ProgramKeypairArtifactResponse & { error?: string };
+      if (
+        requestId !== programKeypairArtifactRequestIdRef.current ||
+        programSoReadVersion !== programSoReadVersionRef.current ||
+        selectedForm !== "program-deploy"
+      ) {
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(data.error || t("features.program-deploy.programKeypairAutoLoadFailed"));
+      }
+      const programKeypairPath = String(data.program_keypair_path || "").trim();
+      const programId = String(data.expected_program_id || "").trim();
+      if (!programKeypairPath || !programId) {
+        return;
+      }
+      programKeypairReadVersionRef.current += 1;
+      programKeypairBytesRef.current?.fill(0);
+      programKeypairBytesRef.current = null;
+      if (programKeypairInputRef.current) {
+        programKeypairInputRef.current.value = "";
+      }
+      setProgramKeypairMetadata({
+        filename: programKeypairPath.split(/[\\/]/).pop() || programKeypairPath,
+        programId,
+      });
+      setFormData((prev) => {
+        const next: FormState = {
+          ...omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS),
+          programKeypairPath,
+          expectedProgramId: programId,
+          programId,
+        };
+        delete next.resumeBufferAddress;
+        return next;
+      });
+      saveWorkspaceProgram(programId);
+      toast.success(t("features.program-deploy.programKeypairAutoLoaded"));
+    } catch (error) {
+      if (
+        requestId === programKeypairArtifactRequestIdRef.current &&
+        programSoReadVersion === programSoReadVersionRef.current
+      ) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("features.program-deploy.programKeypairAutoLoadFailed"),
+        );
+      }
+    }
+  };
+
   const handleProgramFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) return;
     const readVersion = programSoReadVersionRef.current + 1;
     programSoReadVersionRef.current = readVersion;
+    programKeypairArtifactRequestIdRef.current += 1;
+    programKeypairReadVersionRef.current += 1;
+    programKeypairBytesRef.current?.fill(0);
+    programKeypairBytesRef.current = null;
+    if (programKeypairInputRef.current) {
+      programKeypairInputRef.current.value = "";
+    }
+    setProgramKeypairMetadata(null);
     clearProgramDeploymentProgress();
+    const sourceDirForArtifactLookup = String(formData.programSourceDir || "").trim();
     setFormData((prev) => {
       const next = omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS);
       delete next.programSoBase64;
       delete next.programSoName;
       delete next.programSoSize;
       delete next.programSoSha256;
-      delete next.approvedProgramSha256;
+      delete next.programKeypairPath;
+      delete next.expectedProgramId;
       delete next.resumeBufferAddress;
       return next;
     });
@@ -4594,15 +6302,21 @@ export default function Home() {
           binary += String.fromCharCode(byte);
         }
         const programSoBase64 = btoa(binary);
-        setFormData((prev) => ({
-          ...prev,
-          programSoBase64,
-          programSoName: file.name,
-          programSoSize: file.size,
-          programSoSha256,
-        }));
+        setFormData((prev) =>
+          programDeployStateWithProgramSize(
+            {
+              ...prev,
+              programSoBase64,
+              programSoName: file.name,
+              programSoSize: file.size,
+              programSoSha256,
+            },
+            file.size,
+          ),
+        );
         binary = "";
         toast.success(t("features.program-deploy.fileUploaded"));
+        void autoLoadProgramKeypairArtifact(sourceDirForArtifactLookup, file.name, readVersion);
       } catch {
         if (readVersion === programSoReadVersionRef.current) {
           input.value = "";
@@ -4682,6 +6396,7 @@ export default function Home() {
       return;
     }
     setProgramSourceLoading(true);
+    setProgramDeployInlineError(null);
     clearProgramDeploymentProgress();
     try {
       const response = await apiFetch("program/deploy-source", {
@@ -4701,12 +6416,10 @@ export default function Home() {
       const applySourceData = (nextData: ProgramDeploySourceResponse) => {
         const sourceProgramId = String(nextData.expected_program_id || "").trim();
         const sourceProgramKeypairPath = String(nextData.program_keypair_path || "").trim();
-        const importsProgramKeypair = selectedForm !== "program-deploy";
-        const programId = importsProgramKeypair ? sourceProgramId : "";
-        const programKeypairPath = importsProgramKeypair ? sourceProgramKeypairPath : "";
+        const programId = sourceProgramId;
+        const programKeypairPath = sourceProgramKeypairPath;
         const programSoBase64 = String(nextData.program_so_base64 || "").trim();
         const programSoSha256 = String(nextData.program_so_sha256 || "").trim().toLowerCase();
-        const approvedProgramSha256 = String(nextData.approved_program_sha256 || "").trim().toLowerCase();
         const programSoSize = Number(nextData.program_so_size || 0);
         const manifestNetwork =
           nextData.manifest_network === "mainnet" ||
@@ -4737,34 +6450,52 @@ export default function Home() {
         }
         setFormData((prev) => {
           const cleanPrevious = omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS);
-          return {
-            ...cleanPrevious,
-            programSourceDir: nextData.source_dir || sourceDir,
-            network,
-            programSoBase64: programSoBase64 || undefined,
-            programSoName: nextData.program_so_name || nextData.program_so_path || undefined,
-            programSoSize: programSoSize || undefined,
-            programSoSha256: programSoSha256 || undefined,
-            approvedProgramSha256: approvedProgramSha256 || undefined,
-            programKeypairPath: programKeypairPath ||
-              (programId && programId === String(prev.expectedProgramId || "").trim()
-                ? String(prev.programKeypairPath || "").trim()
-                : "") ||
-              undefined,
-            expectedProgramId: programId || undefined,
-            sourceBuildCommand: nextData.build_command || undefined,
-            sourceBuildTemplate: nextData.build_template || undefined,
-            sourceBuildStatus: nextData.build_status || undefined,
-            sourceBuildStdout: nextData.build_stdout || undefined,
-            sourceBuildStderr: nextData.build_stderr || undefined,
-            sourceBuildError: nextData.build_error || undefined,
-            sourceBuildBlockedReason: nextData.build_blocked_reason || undefined,
-            sourceImportWarnings: [
-              ...(Array.isArray(nextData.warnings) ? nextData.warnings : []),
-              ...(nextData.build_error ? [nextData.build_error] : []),
-            ].join("\n") || undefined,
-          };
+          return programDeployStateWithProgramSize(
+            {
+              ...cleanPrevious,
+              programSourceDir: nextData.source_dir || sourceDir,
+              network,
+              programSoBase64: programSoBase64 || undefined,
+              programSoName: nextData.program_so_name || nextData.program_so_path || undefined,
+              programSoSize: programSoSize || undefined,
+              programSoSha256: programSoSha256 || undefined,
+              programKeypairPath: programKeypairPath ||
+                (programId && programId === String(prev.expectedProgramId || "").trim()
+                  ? String(prev.programKeypairPath || "").trim()
+                  : "") ||
+                undefined,
+              // Keep upgrade "Program ID" / saved-contract picker in lockstep with
+              // target/deploy/<name>-keypair.json. Stale workspace entries (e.g. old
+              // EtKkk…) must not remain selected after a fresh source import.
+              ...(programId
+                ? {
+                    programId,
+                    expectedProgramId: programId,
+                  }
+                : {
+                    expectedProgramId: undefined,
+                  }),
+              sourceBuildCommand: nextData.build_command || undefined,
+              sourceBuildTemplate: nextData.build_template || undefined,
+              sourceBuildStatus: nextData.build_status || undefined,
+              sourceBuildStdout: nextData.build_stdout || undefined,
+              sourceBuildStderr: nextData.build_stderr || undefined,
+              sourceBuildError: nextData.build_error || undefined,
+              sourceBuildBlockedReason: nextData.build_blocked_reason || undefined,
+              sourceValidationErrors: [
+                ...(Array.isArray(nextData.source_validation_errors) ? nextData.source_validation_errors : []),
+              ].join("\n") || undefined,
+              sourceImportWarnings: [
+                ...(Array.isArray(nextData.warnings) ? nextData.warnings : []),
+                ...(nextData.build_error ? [nextData.build_error] : []),
+              ].join("\n") || undefined,
+            },
+            programSoSize,
+          );
         });
+        if (programId) {
+          saveWorkspaceProgram(programId, undefined, network);
+        }
         saveProgramProjectFromSource(nextData, {
           network,
           upgradeAuthority: String(formData.expectedUpgradeAuthority || "").trim() || undefined,
@@ -4797,7 +6528,9 @@ export default function Home() {
         }
       }
 
-      if (Array.isArray(finalData.warnings) && finalData.warnings.length > 0) {
+      if (Array.isArray(finalData.source_validation_errors) && finalData.source_validation_errors.length > 0) {
+        showProgramDeployInlineError(finalData.source_validation_errors.join("\n"));
+      } else if (Array.isArray(finalData.warnings) && finalData.warnings.length > 0) {
         toast.warning(finalData.warnings[0]);
       } else {
         toast.success(
@@ -4807,7 +6540,78 @@ export default function Home() {
         );
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("features.program-deploy.sourceImportError"));
+      showProgramDeployInlineError(error instanceof Error ? error.message : t("features.program-deploy.sourceImportError"));
+    } finally {
+      setProgramSourceLoading(false);
+    }
+  };
+
+  const handleGenerateProgramKeypair = async () => {
+    const sourceDir = String(formData.programSourceDir || "").trim();
+    if (!sourceDir) {
+      toast.error(t("features.program-deploy.sourceDirRequired"));
+      return;
+    }
+    setProgramSourceLoading(true);
+    setProgramDeployInlineError(null);
+    clearProgramDeploymentProgress();
+    try {
+      const programSoName = String(formData.programSoName || "").trim();
+      const response = await apiFetch("program/generate-keypair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_dir: sourceDir,
+          program_so_name: programSoName || undefined,
+          artifact_stem: programSoName ? programSoName.replace(/\.so$/i, "") : undefined,
+          update_source: true,
+        }),
+      });
+      const data = (await response.json()) as ProgramGenerateKeypairResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || t("features.program-deploy.generateProgramKeypairError"));
+      }
+      const programKeypairPath = String(data.program_keypair_path || "").trim();
+      const programId = String(data.expected_program_id || "").trim();
+      programKeypairReadVersionRef.current += 1;
+      programKeypairBytesRef.current?.fill(0);
+      programKeypairBytesRef.current = null;
+      if (programKeypairInputRef.current) {
+        programKeypairInputRef.current.value = "";
+      }
+      setProgramKeypairMetadata({
+        filename: programKeypairPath.split(/[\\/]/).pop() || programKeypairPath,
+        programId,
+      });
+      setFormData((prev) => {
+        const warnings = [
+          ...(Array.isArray(data.warnings) ? data.warnings : []),
+          ...(data.backup_program_keypair_path
+            ? [t("features.program-deploy.generateProgramKeypairBackup", { path: data.backup_program_keypair_path })]
+            : []),
+          ...(Array.isArray(data.updated_source_files) && data.updated_source_files.length > 0
+            ? [t("features.program-deploy.generateProgramKeypairUpdatedFiles", { count: data.updated_source_files.length })]
+            : []),
+        ];
+        return {
+          ...omitFormFields(prev, PROGRAM_DEPLOY_RESULT_FIELDS),
+          programSourceDir: data.source_dir || sourceDir,
+          programKeypairPath,
+          expectedProgramId: programId,
+          programId,
+          sourceImportWarnings: warnings.join("\n") || undefined,
+          sourceValidationErrors: undefined,
+        };
+      });
+      if (programId) {
+        saveWorkspaceProgram(programId);
+      }
+      toast.success(t("features.program-deploy.generateProgramKeypairSuccess"));
+      await handleProgramSourceImport(true, data.source_dir || sourceDir);
+    } catch (error) {
+      showProgramDeployInlineError(
+        error instanceof Error ? error.message : t("features.program-deploy.generateProgramKeypairError"),
+      );
     } finally {
       setProgramSourceLoading(false);
     }
@@ -4839,9 +6643,14 @@ export default function Home() {
   };
 
   const handleSubmit = async (formId: string, submitFormData: FormState = formData) => {
-    const formData = submitFormData;
+    const formData = formId === "program-deploy"
+      ? normalizedProgramDeployFormState(submitFormData)
+      : submitFormData;
     const submitNetwork = () => requestNetwork(formData.network);
     setLoading(true);
+    if (formId === "program-deploy") {
+      setProgramDeployInlineError(null);
+    }
 
     try {
       switch (formId) {
@@ -5384,18 +7193,18 @@ export default function Home() {
           const m = walletAuth("program-deploy");
           const validationError = programDeployValidationError(formData);
           if (validationError) {
-            toast.error(validationError);
+            showProgramDeployInlineError(validationError);
             setLoading(false);
             return;
           }
           if (!validateWalletAuth(m, formData, "private_key")) {
-            toast.error(t("features.program-deploy.fillAllFields"));
+            showProgramDeployInlineError(t("features.program-deploy.fillAllFields"));
             setLoading(false);
             return;
           }
           const deploymentIntent = programDeploymentJournalIntentFor(formData);
           if (!deploymentIntent) {
-            toast.error(t("features.program-deploy.journalNotReady"));
+            showProgramDeployInlineError(t("features.program-deploy.journalNotReady"));
             setLoading(false);
             return;
           }
@@ -5409,14 +7218,11 @@ export default function Home() {
           };
           const submittedWallet = savedWalletFromForm(formData) ?? effectiveWallet;
 
-          const maxDataLen =
-            formData.max_data_len === undefined || formData.max_data_len === ""
-              ? undefined
-              : Number(formData.max_data_len);
+          const maxDataLen = deploymentIntent.maxDataLen;
           const programKeypairBytes = programKeypairBytesRef.current;
           const programKeypairPath = String(formData.programKeypairPath || "").trim();
           if (!programKeypairBytes && !programKeypairPath) {
-            toast.error(t("features.program-deploy.selectProgramKeypairFirst"));
+            showProgramDeployInlineError(t("features.program-deploy.selectProgramKeypairFirst"));
             setLoading(false);
             return;
           }
@@ -5462,6 +7268,8 @@ export default function Home() {
                   writeChunkCount: 0,
                   journal: null,
                   deploymentAttempts: [],
+                  conflictingJournal: null,
+                  conflictingDeploymentAttempts: [],
                   loading: true,
                   error: undefined,
                 },
@@ -5496,6 +7304,7 @@ export default function Home() {
 
             if (response.ok) {
               deploymentSucceeded = true;
+              setProgramDeployInlineError(null);
               const deploymentReceiptJson = buildProgramDeploymentReceiptJson(
                 data,
                 receiptExpectations,
@@ -5629,9 +7438,12 @@ export default function Home() {
                     }
                   : previous,
               );
-              toast.error(data.error || t("features.program-deploy.error"));
+              showProgramDeployInlineError(data.error || t("features.program-deploy.error"));
             }
           } catch (error) {
+            const message = error instanceof Error
+              ? error.message
+              : t("features.program-deploy.error");
             if (formData.programSourceDir) {
               upsertProgramProjectPlan(formData.programSourceDir, {
                 kind: "direct-deploy",
@@ -5661,13 +7473,11 @@ export default function Home() {
                 ? {
                     ...previous,
                     loading: false,
-                    error: error instanceof Error
-                      ? error.message
-                      : t("features.program-deploy.error"),
+                    error: message,
                   }
                 : previous,
             );
-            throw error;
+            showProgramDeployInlineError(message);
           } finally {
             requestBody.program_keypair_json = "";
             requestBody.program_keypair_path = "";
@@ -5680,10 +7490,21 @@ export default function Home() {
           break;
         }
 
-        case "program-invoke": {
-          const m = walletAuth("program-invoke");
+        case "program-invoke":
+        case "program-invoke-standalone": {
+          const m = walletAuth(formId);
           if (!validateWalletAuth(m, formData, "private_key")) {
-            toast.error(t("features.program-invoke.fillAllFields"));
+            const rawMessage = t("features.program-invoke.fillAllFields");
+            const message = programInvokeFriendlyError(rawMessage);
+            setProgramInvoke((prev) => ({
+              ...prev,
+              result: {
+                status: "validation_failed",
+                errorMessage: message,
+                rawErrorMessage: message === rawMessage ? undefined : rawMessage,
+                logs: [],
+              },
+            }));
             setLoading(false);
             return;
           }
@@ -5691,26 +7512,49 @@ export default function Home() {
             (item) => item.name === programInvoke.selectedInstruction,
           );
           if (!instruction) {
-            toast.error(t("features.program-invoke.noInstruction"));
+            const rawMessage = t("features.program-invoke.noInstruction");
+            const message = programInvokeFriendlyError(rawMessage);
+            setProgramInvoke((prev) => ({
+              ...prev,
+              result: {
+                status: "validation_failed",
+                errorMessage: message,
+                rawErrorMessage: message === rawMessage ? undefined : rawMessage,
+                logs: [],
+              },
+            }));
             setLoading(false);
             return;
           }
 
           let encoded;
           try {
-            encoded = await encodeAnchorInstruction(
-              programInvoke.programId,
+            const encodedArgValues = await programInvokeDisplayArgsToRaw(
               instruction,
               programInvoke.argValues,
               programInvoke.accountValues,
             );
+            encoded = await encodeAnchorInstruction(
+              programInvoke.programId,
+              instruction,
+              encodedArgValues,
+              programInvoke.accountValues,
+            );
           } catch (error) {
             const message = error instanceof Error ? error.message : "";
-            toast.error(
-              message.startsWith("invalid-account:")
-                ? t("features.program-invoke.accountInvalid", { account: message.replace("invalid-account:", "") })
-                : t("features.program-invoke.encodeFailed"),
-            );
+            const rawDisplayMessage = message.startsWith("invalid-account:")
+              ? t("features.program-invoke.accountInvalid", { account: message.replace("invalid-account:", "") })
+              : message || t("features.program-invoke.encodeFailed");
+            const displayMessage = programInvokeFriendlyError(rawDisplayMessage);
+            setProgramInvoke((prev) => ({
+              ...prev,
+              result: {
+                status: "encode_failed",
+                errorMessage: displayMessage,
+                rawErrorMessage: displayMessage === rawDisplayMessage ? undefined : rawDisplayMessage,
+                logs: [],
+              },
+            }));
             setLoading(false);
             return;
           }
@@ -5718,11 +7562,11 @@ export default function Home() {
           const mode = String(formData.programInvokeMode || "simulate") === "send" ? "send" : "simulate";
           const additionalSigners = flattenAnchorAccounts(instruction.accounts)
             .filter((account) => {
-              const pubkey = String(programInvoke.accountValues[account.path] || "").trim();
+              const pubkey = resolveAnchorAccountAddress(String(programInvoke.accountValues[account.path] || ""), account);
               return account.isSigner && pubkey && pubkey !== String(savedWalletFromForm(formData)?.public_key || effectiveWallet?.public_key || "").trim();
             })
             .map((account) => ({
-              pubkey: String(programInvoke.accountValues[account.path] || "").trim(),
+              pubkey: resolveAnchorAccountAddress(String(programInvoke.accountValues[account.path] || ""), account),
               wallet_id: String(programInvoke.signerWalletIds[account.path] || "").trim(),
               password: String(programInvoke.signerPasswords[account.path] || ""),
             }));
@@ -5742,12 +7586,34 @@ export default function Home() {
             body: JSON.stringify(requestBody),
           });
           const data = await response.json();
+          const logs = Array.isArray(data.logs) ? data.logs.map((line: unknown) => String(line)) : [];
+          const rawErrorMessage = response.ok
+            ? undefined
+            : typeof data.error === "string" && data.error.trim()
+              ? data.error.trim()
+              : t("features.program-invoke.error");
+          const rawSimulationError =
+            typeof data.simulation_error === "string" && data.simulation_error.trim()
+              ? data.simulation_error.trim()
+              : undefined;
+          const errorMessage = rawErrorMessage
+            ? programInvokeFriendlyError(rawErrorMessage, logs)
+            : undefined;
+          const simulationError = rawSimulationError
+            ? programInvokeFriendlyError(rawSimulationError, logs)
+            : undefined;
           const result = {
             status: String(data.status || ""),
             signature: typeof data.signature === "string" ? data.signature : undefined,
-            simulationError:
-              typeof data.simulation_error === "string" ? data.simulation_error : undefined,
-            logs: Array.isArray(data.logs) ? data.logs.map((line: unknown) => String(line)) : [],
+            simulationError,
+            rawSimulationError: rawSimulationError && rawSimulationError !== simulationError
+              ? rawSimulationError
+              : undefined,
+            errorMessage,
+            rawErrorMessage: rawErrorMessage && rawErrorMessage !== errorMessage
+              ? rawErrorMessage
+              : undefined,
+            logs,
           };
           setProgramInvoke((prev) => ({ ...prev, result }));
           if (response.ok) {
@@ -5755,12 +7621,10 @@ export default function Home() {
               toast.success(t("features.program-invoke.sendSucceeded"));
               refreshWalletAfterMutation(savedWalletFromForm(formData) ?? effectiveWallet);
             } else if (result.simulationError) {
-              toast.error(t("features.program-invoke.simulationFailed"));
+              // The inline warning panel and terminal log carry the details.
             } else {
               toast.success(t("features.program-invoke.simulationSucceeded"));
             }
-          } else {
-            toast.error(data.error || t("features.program-invoke.error"));
           }
           setProgramInvoke((prev) => ({ ...prev, signerPasswords: {} }));
           break;
@@ -6029,6 +7893,219 @@ export default function Home() {
           break;
         }
 
+        case "program-upgrade": {
+          const m = walletAuth("program-upgrade");
+          const programId = String(formData.programId || formData.expectedProgramId || "").trim();
+          const programSha256 = String(formData.programSoSha256 || "").trim().toLowerCase();
+          const upgradeAuthority =
+            String(
+              savedWalletFromForm(formData)?.public_key ||
+                formData.expectedUpgradeAuthority ||
+                effectiveWallet?.public_key ||
+                "",
+            ).trim();
+          if (
+            !validateWalletAuth(m, formData, "private_key") ||
+            !programId ||
+            !isLikelySolanaPublicKey(programId) ||
+            !formData.programSoBase64 ||
+            !programSha256 ||
+            !upgradeAuthority
+          ) {
+            showProgramUpgradeInlineError(t("features.program-upgrade.fillAllFields"));
+            setLoading(false);
+            return;
+          }
+          const upgradeSourceDir = String(formData.programSourceDir || "").trim();
+          const projectForUpgrade = upgradeSourceDir
+            ? workspace.programProjects.find((item) => item.id === scopedProgramProjectId(upgradeSourceDir))
+            : workspace.programProjects.find((item) => String(item.programId || "").trim() === programId);
+          if (isStaleProgramUpgradeArtifact(projectForUpgrade, programId, programSha256)) {
+            showProgramUpgradeInlineError(t("features.program-upgrade.staleArtifactBlocked"));
+            setLoading(false);
+            return;
+          }
+          const requestNetwork = submitNetwork();
+          const network = currentNetwork(requestNetwork);
+          const expectedGenesisHash = expectedGenesisHashFor({
+            ...formData,
+            network,
+          });
+          const requestBody: ApiRequestBody = {
+            program_id: programId,
+            expected_upgrade_authority: upgradeAuthority,
+            expected_genesis_hash: expectedGenesisHash,
+            expected_program_sha256: programSha256,
+            program_so_base64: formData.programSoBase64,
+            network: requestNetwork,
+            spill_address: String(formData.spillAddress || "").trim() || undefined,
+          };
+          applyWalletAuth(requestBody, m, formData, "private_key");
+          setProgramUpgradeInlineError(null);
+          const estimatedWriteChunks = Math.max(
+            1,
+            Math.ceil((Number(formData.programSoSize || 0) || 0) / FALLBACK_PROGRAM_WRITE_CHUNK_BYTES),
+          );
+          setProgramUpgradeProgress({
+            active: true,
+            program_id: programId,
+            network,
+            stage: "preparing",
+            message: t("features.program-upgrade.upgradeStarted", {
+              writes: estimatedWriteChunks,
+              bytes: Number(formData.programSoSize || 0) || 0,
+            }),
+            write_completed: 0,
+            write_total: estimatedWriteChunks,
+            program_bytes: Number(formData.programSoSize || 0) || 0,
+            buffer_address: null,
+            last_signature: null,
+            error: null,
+            updated_at_ms: Date.now(),
+          });
+          setFormData((prev) => ({
+            ...prev,
+            message: t("features.program-upgrade.upgradeStarted", {
+              writes: estimatedWriteChunks,
+              bytes: Number(formData.programSoSize || 0) || 0,
+            }),
+            signature: undefined,
+          }));
+          if (formData.programSourceDir) {
+            upsertProgramProjectPlan(formData.programSourceDir, {
+              kind: "direct-upgrade",
+              network,
+              programId,
+              programSha256,
+              programBytes: Number(formData.programSoSize || 0) || undefined,
+              upgradeAuthority,
+              status: "running",
+            });
+            upsertProgramDeploymentHistory(formData.programSourceDir, {
+              kind: "direct-upgrade",
+              network,
+              programId,
+              programSha256,
+              programBytes: Number(formData.programSoSize || 0) || undefined,
+              upgradeAuthority,
+              status: "running",
+            });
+          }
+          const response = await apiFetch("program/upgrade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          });
+          const data = await response.json();
+          if (response.ok) {
+            setProgramUpgradeInlineError(null);
+            setProgramUpgradeProgress({
+              active: false,
+              program_id: data.program_id || programId,
+              network: currentNetwork(data.network || network),
+              stage: "finalized",
+              message: t("features.program-upgrade.success"),
+              write_completed: Array.isArray(data.write_signatures) ? data.write_signatures.length : 0,
+              write_total: Array.isArray(data.write_signatures) ? data.write_signatures.length : 0,
+              program_bytes: Number(data.program_bytes || formData.programSoSize || 0) || 0,
+              buffer_address: data.buffer_address ?? null,
+              last_signature: data.upgrade_signature ?? null,
+              error: null,
+              updated_at_ms: Date.now(),
+            });
+            toast.success(t("features.program-upgrade.success"));
+            refreshWalletAfterMutation(savedWalletFromForm(formData) ?? effectiveWallet);
+            if (formData.programSourceDir) {
+              upsertProgramProjectPlan(formData.programSourceDir, {
+                kind: "direct-upgrade",
+                network: currentNetwork(data.network || network),
+                programId: data.program_id || programId,
+                programSha256: data.program_sha256 || programSha256,
+                programBytes: Number(data.program_bytes || formData.programSoSize || 0) || undefined,
+                upgradeAuthority: data.authority || upgradeAuthority,
+                bufferAddress: data.buffer_address,
+                status: "finalized",
+                result: {
+                  programId: data.program_id || programId,
+                  programdataAddress: data.programdata_address,
+                  bufferAddress: data.buffer_address,
+                  authority: data.authority,
+                  deploySignature: data.upgrade_signature,
+                  createBufferSignature: data.create_buffer_signature,
+                  writeCount: Array.isArray(data.write_signatures) ? data.write_signatures.length : undefined,
+                  rentLamports: Number(data.rent_lamports || 0) || undefined,
+                  programBytes: Number(data.program_bytes || 0) || undefined,
+                  programSha256: data.program_sha256 || programSha256,
+                  genesisHash: data.genesis_hash,
+                  deployedSlot: Number(data.deployed_slot || 0) || undefined,
+                  readbackVerified: Boolean(data.readback_verified),
+                  network: currentNetwork(data.network || network),
+                  completedAt: Date.now(),
+                },
+              });
+              upsertProgramDeploymentHistory(formData.programSourceDir, {
+                kind: "direct-upgrade",
+                network: currentNetwork(data.network || network),
+                programId: data.program_id || programId,
+                programdataAddress: data.programdata_address,
+                programSha256: data.program_sha256 || programSha256,
+                programBytes: Number(data.program_bytes || formData.programSoSize || 0) || undefined,
+                upgradeAuthority: data.authority || upgradeAuthority,
+                bufferAddress: data.buffer_address,
+                createBufferSignature: data.create_buffer_signature,
+                deploySignature: data.upgrade_signature,
+                signature: data.upgrade_signature,
+                deployedSlot: Number(data.deployed_slot || 0) || undefined,
+                readbackVerified: Boolean(data.readback_verified),
+                status: "finalized",
+                completedAt: Date.now(),
+              });
+            }
+            setFormData((prev) => ({
+              ...prev,
+              signature: data.upgrade_signature,
+              programId: data.program_id || programId,
+              bufferAddress: data.buffer_address,
+              message: t("features.program-upgrade.stats", {
+                writes: Array.isArray(data.write_signatures) ? data.write_signatures.length : 0,
+                bytes: data.program_bytes || 0,
+                rent: data.rent_lamports || 0,
+              }),
+            }));
+          } else {
+            if (formData.programSourceDir) {
+              upsertProgramDeploymentHistory(formData.programSourceDir, {
+                kind: "direct-upgrade",
+                network,
+                programId,
+                programSha256,
+                programBytes: Number(formData.programSoSize || 0) || undefined,
+                upgradeAuthority,
+                status: "failed",
+              });
+            }
+            setFormData((prev) => ({
+              ...prev,
+              message: undefined,
+              signature: undefined,
+            }));
+            setProgramUpgradeProgress((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    active: false,
+                    stage: "failed",
+                    message: String(data.error || t("features.program-upgrade.error")),
+                    error: String(data.error || t("features.program-upgrade.error")),
+                    updated_at_ms: Date.now(),
+                  }
+                : prev,
+            );
+            showProgramUpgradeInlineError(data.error || t("features.program-upgrade.error"));
+          }
+          break;
+        }
+
         case "squads-prepare-upgrade-buffer": {
           const m = walletAuth("squads-prepare-upgrade-buffer");
           if (!validateWalletAuth(m, formData, "private_key") || !formData.multisig || !formData.programSoBase64) {
@@ -6039,6 +8116,7 @@ export default function Home() {
           const requestBody: ApiRequestBody = {
             multisig: formData.multisig,
             program_so_base64: formData.programSoBase64,
+            expected_program_id: formData.programId,
             network: submitNetwork(),
           };
           applyWalletAuth(requestBody, m, formData, "private_key");
@@ -6655,6 +8733,40 @@ export default function Home() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : typeof err === "string" ? err : t("errors.unknownError");
+      if (formId === "program-deploy") {
+        showProgramDeployInlineError(
+          t("errors.requestFailedWithHint", {
+            message,
+            port: String(DEFAULT_API_PORT),
+          }),
+        );
+        return;
+      }
+      if (formId === "program-upgrade") {
+        showProgramUpgradeInlineError(
+          t("errors.requestFailedWithHint", {
+            message,
+            port: String(DEFAULT_API_PORT),
+          }),
+        );
+        return;
+      }
+      if (isProgramInvokeForm(formId)) {
+        const displayMessage = t("errors.requestFailedWithHint", {
+          message,
+          port: String(DEFAULT_API_PORT),
+        });
+        setProgramInvoke((prev) => ({
+          ...prev,
+          result: {
+            status: "request_failed",
+            errorMessage: displayMessage,
+            logs: [],
+          },
+        }));
+        toast.error(displayMessage);
+        return;
+      }
       toast.error(
         t("errors.requestFailedWithHint", {
           message,
@@ -6737,19 +8849,21 @@ export default function Home() {
         </div>
         {wallets.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-gray-400">
-            {t("features.wallet-list.empty")}
+            {walletsLoading
+              ? t("features.wallet-list.loading")
+              : walletsLoadError || t("features.walletContext.empty")}
           </div>
         ) : (
           <div className="space-y-3">
             {wallets.map((wallet) => {
               const isCurrent = wallet.id === effectiveWalletId;
-              const walletSolBalance =
-                isCurrent &&
+              const liveSolBalance =
                 walletAssets?.address === wallet.public_key &&
                 walletAssets.network === effectiveNetwork &&
                 walletAssets.solBalance !== "--"
                   ? walletAssets.solBalance
-                  : "--";
+                  : undefined;
+              const walletSolBalance = liveSolBalance ?? walletSolBalanceCache[wallet.public_key] ?? "--";
               const copyId = `settings-wallet:${wallet.id}`;
               return (
                 <div
@@ -6779,7 +8893,13 @@ export default function Home() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="max-w-full truncate text-base font-semibold text-white">{wallet.name}</p>
+                          <p
+                            className="max-w-full cursor-text truncate text-base font-semibold text-white select-text"
+                            onClick={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            {wallet.name}
+                          </p>
                           {isCurrent && (
                             <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs text-emerald-200">
                               {t("features.walletContext.current")}
@@ -6982,25 +9102,41 @@ export default function Home() {
       const transactionsLoading = Boolean(currentTransactions?.loading);
 
       if (!effectiveWallet) {
+        const emptyTitle = walletsLoading
+          ? t("features.wallet-list.loadingTitle")
+          : walletsLoadError
+            ? t("features.wallet-list.loadFailedTitle")
+            : t("features.wallet-list.emptyTitle");
+        const emptyDescription = walletsLoading
+          ? t("features.wallet-list.loading")
+          : walletsLoadError || t("features.wallet-list.empty");
         return (
           <div className="space-y-6">
             <div className="rounded-2xl border border-white/10 bg-black/40 p-6 text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
-                <Wallet className="h-8 w-8 text-gray-300" />
+                <Wallet className={`h-8 w-8 text-gray-300 ${walletsLoading ? "animate-pulse" : ""}`} />
               </div>
-              <h3 className="mt-5 text-xl font-semibold">{t("features.wallet-list.emptyTitle")}</h3>
-              <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">{t("features.wallet-list.empty")}</p>
+              <h3 className="mt-5 text-xl font-semibold">{emptyTitle}</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">{emptyDescription}</p>
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={() => handleOpenForm("create-keystore", {}, "wallet-list")}
+                  onClick={() => {
+                    if (walletsLoadError) {
+                      void loadWallets();
+                      return;
+                    }
+                    handleOpenForm("create-keystore", {}, "wallet-list");
+                  }}
+                  disabled={walletsLoading}
                   className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black hover:bg-gray-200"
                 >
-                  {t("features.walletContext.createWallet")}
+                  {walletsLoadError ? t("formUi.refreshWallets") : t("features.walletContext.createWallet")}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleOpenForm("import-keystore", {}, "wallet-list")}
+                  disabled={walletsLoading || Boolean(walletsLoadError)}
                   className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold hover:bg-white/20"
                 >
                   {t("features.walletContext.importWallet")}
@@ -7098,17 +9234,62 @@ export default function Home() {
                   )}
                   {(effectiveNetwork === "devnet" || effectiveNetwork === "testnet") && (
                     <div className="mt-3 flex min-w-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void openSolanaFaucet(effectiveWallet)}
-                        className="inline-flex h-9 min-w-0 items-center justify-center gap-2 rounded-lg bg-emerald-300 px-3 text-xs font-semibold text-emerald-950 transition-colors hover:bg-emerald-200"
-                      >
-                        <ExternalLink aria-hidden="true" className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{t("features.wallet-list.faucetAirdrop")}</span>
-                      </button>
+                      <div className="relative" data-wallet-faucet-menu>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setWalletFaucetMenuOpen((open) => !open);
+                          }}
+                          className="inline-flex h-9 min-w-0 items-center justify-center gap-2 rounded-lg bg-emerald-300 px-3 text-xs font-semibold text-emerald-950 transition-colors hover:bg-emerald-200"
+                          aria-expanded={walletFaucetMenuOpen}
+                          aria-haspopup="menu"
+                        >
+                          <ExternalLink aria-hidden="true" className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{t("features.wallet-list.faucetMenu")}</span>
+                          <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        </button>
+                        {walletFaucetMenuOpen && (
+                          <div
+                            role="menu"
+                            className="absolute left-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-zinc-950 p-1 shadow-2xl"
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void openWalletFaucet(effectiveWallet, "solana");
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-gray-200 hover:bg-white/10"
+                            >
+                              <Coins className="h-3.5 w-3.5 text-emerald-300" />
+                              {t("features.wallet-list.faucetAirdrop")}
+                            </button>
+                            {effectiveNetwork === "devnet" && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void openWalletFaucet(effectiveWallet, "circle");
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-gray-200 hover:bg-white/10"
+                              >
+                                <Coins className="h-3.5 w-3.5 text-sky-300" />
+                                {t("features.wallet-list.circleFaucet")}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <FieldHelp
-                        description={t("features.wallet-list.faucetAirdropTooltip")}
-                        label={t("features.wallet-list.faucetAirdropHelpAriaLabel")}
+                        description={
+                          effectiveNetwork === "devnet"
+                            ? t("features.wallet-list.faucetMenuTooltip")
+                            : t("features.wallet-list.faucetAirdropTooltip")
+                        }
+                        label={t("features.wallet-list.faucetMenuHelpAriaLabel")}
                       />
                     </div>
                   )}
@@ -7336,17 +9517,40 @@ export default function Home() {
               currentProgramProjects.find((item) => item.id === selectedProgramProjectId) ||
               currentProgramProjects[0];
             const latestDirectPlan = project.plans.find((plan) => plan.kind === "direct-deploy");
+            const latestDirectUpgradePlan = project.plans.find((plan) => plan.kind === "direct-upgrade");
             const latestUpgradePlan = project.plans.find((plan) => plan.kind === "squads-upgrade");
-            const deploymentHistory = [...(project.history || [])].sort((a, b) => b.createdAt - a.createdAt);
-            const fallbackDeploymentCards = [latestDirectPlan, latestUpgradePlan]
+            const journalRecord =
+              programDeploymentJournal.journal || programDeploymentJournal.conflictingJournal;
+            const journalAttempts =
+              programDeploymentJournal.journal
+                ? programDeploymentJournal.deploymentAttempts
+                : programDeploymentJournal.conflictingDeploymentAttempts;
+            const journalDeploymentCard = journalRecord
+              ? programDeploymentJournalToHistoryItem(
+                  project,
+                  journalRecord,
+                  journalAttempts,
+                  currentNetwork(project.network || effectiveNetwork),
+                  journalRecord.status === "finalized" ? "finalized" : "running",
+                )
+              : null;
+            const deploymentHistory = dedupeProgramDeploymentHistory(
+              [...(project.history || [])].map((record) =>
+                mergeProgramDeploymentHistoryWithJournal(record, journalDeploymentCard),
+              ),
+            ).sort((a, b) => b.createdAt - a.createdAt);
+            const fallbackDeploymentCards = [latestDirectPlan, latestDirectUpgradePlan, latestUpgradePlan]
               .filter((plan): plan is ProgramDeploymentPlan => Boolean(plan))
+              .filter((plan) => plan.status !== "draft" && plan.status !== "ready")
               .filter((plan) => {
                 const planProgramId = plan.result?.programId || plan.programId || "";
                 return !deploymentHistory.some((record) => {
                   const sameProgram = !planProgramId || !record.programId || record.programId === planProgramId;
                   const sameKind = plan.kind === "direct-deploy"
                     ? record.kind === "direct-deploy"
-                    : record.kind.startsWith("squads-upgrade");
+                    : plan.kind === "direct-upgrade"
+                      ? record.kind === "direct-upgrade"
+                      : record.kind.startsWith("squads-upgrade");
                   return sameProgram && sameKind;
                 });
               })
@@ -7355,6 +9559,8 @@ export default function Home() {
                 projectId: project.id,
                 kind: plan.kind === "direct-deploy"
                   ? "direct-deploy"
+                  : plan.kind === "direct-upgrade"
+                    ? "direct-upgrade"
                   : plan.proposal
                     ? "squads-upgrade-proposal"
                     : "squads-upgrade-buffer",
@@ -7382,7 +9588,15 @@ export default function Home() {
                 createdAt: plan.createdAt,
                 completedAt: plan.result?.completedAt,
               }));
-            const deploymentCards = [...deploymentHistory, ...fallbackDeploymentCards].sort(
+            const journalFallbackCards =
+              journalDeploymentCard &&
+              !deploymentHistory.some((record) => record.id === journalDeploymentCard.id) &&
+              !fallbackDeploymentCards.some((record) => record.id === journalDeploymentCard.id)
+                ? [journalDeploymentCard]
+                : [];
+            const deploymentCards = [...deploymentHistory, ...fallbackDeploymentCards, ...journalFallbackCards]
+              .filter((record) => !dismissedHistoryCardIds.includes(record.id))
+              .sort(
               (a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt),
             );
             const projectJournalMatches = Boolean(
@@ -7486,6 +9700,12 @@ export default function Home() {
                                 onClick: () => openProgramProjectDeploy(project),
                               },
                               {
+                                id: "direct-upgrade",
+                                icon: <Upload className="h-3.5 w-3.5" />,
+                                label: t("features.program-projects.openDirectUpgrade"),
+                                onClick: () => openProgramProjectDirectUpgrade(project),
+                              },
+                              {
                                 id: "invoke",
                                 icon: <Send className="h-3.5 w-3.5" />,
                                 label: t("features.program-projects.invokeProgram"),
@@ -7493,7 +9713,7 @@ export default function Home() {
                               },
                               {
                                 id: "prepare-upgrade",
-                                icon: <Upload className="h-3.5 w-3.5" />,
+                                icon: <ShieldCheck className="h-3.5 w-3.5" />,
                                 label: t("features.program-projects.prepareUpgradePlan"),
                                 onClick: () => openProgramProjectPrepareUpgrade(project),
                               },
@@ -7814,6 +10034,18 @@ export default function Home() {
                                     {t("features.program-projects.copyProgramId")}
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    requestRemoveProgramDeploymentHistoryRecord(project.id, record.id);
+                                  }}
+                                  className="inline-flex h-8 items-center gap-1 rounded-lg bg-red-500/10 px-2 text-xs font-semibold text-red-200 hover:bg-red-500/20"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  {t("features.program-projects.removeHistoryRecord")}
+                                </button>
                               </div>
                             </details>
                           );
@@ -8157,13 +10389,13 @@ export default function Home() {
       (item) => item.network === currentNetwork(effectiveNetwork),
     );
     const currentPrograms = workspace.programs.filter(
-      (item) => item.network === currentNetwork(effectiveNetwork),
+      (item) => item.network === currentNetwork(effectiveNetwork) && isActiveProgramWorkspaceActor(item),
     );
     const currentProposals = workspace.proposals.filter(
       (item) => item.network === currentNetwork(effectiveNetwork),
     );
     const currentProgramProjects = workspace.programProjects.filter(
-      (item) => item.network === currentNetwork(effectiveNetwork),
+      (item) => item.network === currentNetwork(effectiveNetwork) && isActiveProgramWorkspaceActor(item),
     );
 
     const activeProgramArtifactForProject = (project: ProgramProject): FormState =>
@@ -8173,7 +10405,6 @@ export default function Home() {
             programSoName: formData.programSoName,
             programSoSize: formData.programSoSize,
             programSoSha256: formData.programSoSha256,
-            approvedProgramSha256: formData.approvedProgramSha256,
           }
         : {};
 
@@ -8187,6 +10418,25 @@ export default function Home() {
         programSourceDir: project.sourceDir,
         expectedUpgradeAuthority: plannedUpgradeAuthority,
       });
+      autoReadProgramProjectSource(project.sourceDir);
+    };
+
+    const openProgramProjectDirectUpgrade = (project: ProgramProject) => {
+      const plannedUpgradeAuthority = project.upgradeAuthority || effectiveWallet?.public_key;
+      const upgradeWalletId =
+        wallets.find((wallet) => wallet.public_key === plannedUpgradeAuthority)?.id || effectiveWalletId;
+      // Do not seed the previous deploy/upgrade artifact into the form.
+      // Re-read from disk, then warn/block if SHA still matches the last finalized build.
+      handleOpenForm("program-upgrade", {
+        wallet_id: upgradeWalletId,
+        network: project.network,
+        programSourceDir: project.sourceDir,
+        // Do not seed a cached project.programId here — it may be a stale
+        // workspace address (e.g. old EtKkk…). Source import fills programId
+        // from target/deploy/<name>-keypair.json.
+        expectedUpgradeAuthority: plannedUpgradeAuthority,
+      });
+      autoReadProgramProjectSource(project.sourceDir);
     };
 
     const openProgramDeploymentRecord = (
@@ -8205,12 +10455,12 @@ export default function Home() {
         programSoName: project.programSoName,
         programSoSize: record.programBytes || project.programBytes,
         programSoSha256: record.programSha256 || project.programSha256,
-        approvedProgramSha256: record.programSha256 || project.programSha256,
         expectedProgramId: record.programId,
         max_data_len: record.maxDataLen ? String(record.maxDataLen) : undefined,
         resumeBufferAddress: record.bufferAddress,
         ...activeProgramArtifactForProject(project),
       });
+      autoReadProgramProjectSource(record.sourceDir || project.sourceDir);
     };
 
     const openProgramProjectPrepareUpgrade = (project: ProgramProject) => {
@@ -8225,20 +10475,9 @@ export default function Home() {
         programSoName: project.programSoName,
         programSoSize: project.programBytes,
         programSoSha256: project.programSha256,
-        approvedProgramSha256: project.programSha256,
         ...activeProgramArtifactForProject(project),
       });
       autoReadProgramProjectSource(project.sourceDir);
-      upsertProgramProjectPlan(project.sourceDir, {
-        kind: "squads-upgrade",
-        network: project.network,
-        programId: project.programId,
-        programSha256: project.programSha256,
-        programBytes: project.programBytes,
-        multisig: multisig || undefined,
-        vault: project.vault || currentMultisigs[0]?.vault,
-        status: "draft",
-      });
     };
 
     const openProgramProjectUpgradeProposal = (project: ProgramProject, plan?: ProgramDeploymentPlan) => {
@@ -8252,17 +10491,6 @@ export default function Home() {
         bufferAddress: plan?.bufferAddress,
         programSoSha256: plan?.programSha256 || project.programSha256,
         programSoSize: plan?.programBytes || project.programBytes,
-      });
-      upsertProgramProjectPlan(project.sourceDir, {
-        kind: "squads-upgrade",
-        network: project.network,
-        programId: plan?.programId || project.programId,
-        programSha256: plan?.programSha256 || project.programSha256,
-        programBytes: plan?.programBytes || project.programBytes,
-        multisig: multisig || undefined,
-        vault: plan?.vault || project.vault || currentMultisigs[0]?.vault,
-        bufferAddress: plan?.bufferAddress,
-        status: plan?.bufferAddress ? "buffer-ready" : "draft",
       });
     };
 
@@ -8499,7 +10727,7 @@ export default function Home() {
             {t("features.program-deploy.sourceBuildButton")}
           </button>
         </div>
-        {(formData.sourceBuildCommand || formData.sourceBuildTemplate || formData.sourceBuildBlockedReason || formData.sourceImportWarnings) && (
+        {(formData.sourceBuildCommand || formData.sourceBuildTemplate || formData.sourceBuildBlockedReason || formData.sourceValidationErrors || formData.sourceImportWarnings) && (
           <div className="space-y-2 rounded-lg bg-black/30 p-3 text-xs text-gray-300">
             {formData.sourceBuildTemplate && (
               <p>
@@ -8515,6 +10743,27 @@ export default function Home() {
             )}
             {formData.sourceBuildBlockedReason && (
               <p className="text-yellow-300">{formData.sourceBuildBlockedReason}</p>
+            )}
+            {formData.sourceValidationErrors && (
+              <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-red-100">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-200" />
+                    <p className="font-semibold">{t("features.program-deploy.sourceValidationTitle")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(String(formData.sourceValidationErrors || ""), "program-source-validation-errors")}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md bg-red-400/15 px-2 py-1 text-[11px] font-medium text-red-50 hover:bg-red-400/25"
+                  >
+                    {copied === "program-source-validation-errors" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {t("features.program-deploy.sourceValidationCopy")}
+                  </button>
+                </div>
+                <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/40 p-2 font-mono text-[11px] leading-5 text-red-100">
+                  {String(formData.sourceValidationErrors)}
+                </pre>
+              </div>
             )}
             {formData.sourceImportWarnings && (
               <p className="whitespace-pre-wrap text-yellow-300">{formData.sourceImportWarnings}</p>
@@ -8533,19 +10782,39 @@ export default function Home() {
         )}
         <input
           id="program-so-file"
+          ref={programSoInputRef}
           type="file"
           accept=".so,application/octet-stream"
           onChange={handleProgramFileUpload}
-          className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-white/10 file:text-white hover:file:bg-white/20"
+          className="hidden"
         />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => programSoInputRef.current?.click()}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/20"
+          >
+            <Upload className="h-4 w-4" />
+            {t("features.program-deploy.chooseProgramFile")}
+          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm">
+            {formData.programSoName ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-400" />
+            ) : (
+              <Upload className="h-4 w-4 shrink-0 text-gray-500" />
+            )}
+            <span className={formData.programSoName ? "min-w-0 truncate text-green-300" : "min-w-0 truncate text-gray-500"}>
+              {formData.programSoName
+                ? t("features.program-deploy.fileReady", {
+                    filename: String(formData.programSoName),
+                    size: String(formData.programSoSize || 0),
+                  })
+                : t("features.program-deploy.noProgramFileSelected")}
+            </span>
+          </div>
+        </div>
         {formData.programSoName && (
           <div className="mt-2 space-y-2">
-            <p className="text-xs text-green-400">
-              {t("features.program-deploy.fileReady", {
-                filename: String(formData.programSoName),
-                size: String(formData.programSoSize || 0),
-              })}
-            </p>
             {formData.programSoSha256 && (
               <div>
                 {renderProgramDeployHelpLabel(
@@ -8586,16 +10855,31 @@ export default function Home() {
           type="file"
           accept=".json,application/json"
           onChange={handleProgramKeypairFileUpload}
-          className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-white/10 file:text-white hover:file:bg-white/20"
+          className="hidden"
         />
-        {programKeypairMetadata && (
-          <div className="mt-2 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-xs text-green-400">
-                {t("features.program-deploy.programKeypairReady", {
-                  filename: programKeypairMetadata.filename,
-                })}
-              </p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => programKeypairInputRef.current?.click()}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/20"
+          >
+            <Key className="h-4 w-4" />
+            {t("features.program-deploy.chooseProgramKeypair")}
+          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm">
+            {programKeypairMetadata ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-400" />
+            ) : (
+              <Key className="h-4 w-4 shrink-0 text-gray-500" />
+            )}
+            <span className={programKeypairMetadata ? "min-w-0 flex-1 truncate text-green-300" : "min-w-0 flex-1 truncate text-gray-500"}>
+              {programKeypairMetadata
+                ? t("features.program-deploy.programKeypairReady", {
+                    filename: programKeypairMetadata.filename,
+                  })
+                : t("features.program-deploy.noProgramKeypairSelected")}
+            </span>
+            {programKeypairMetadata && (
               <button
                 type="button"
                 onClick={clearProgramKeypairMaterial}
@@ -8605,7 +10889,23 @@ export default function Home() {
               >
                 <X className="h-4 w-4" />
               </button>
-            </div>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleGenerateProgramKeypair()}
+          disabled={programSourceLoading || loading || !String(formData.programSourceDir || "").trim()}
+          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/20 disabled:opacity-50"
+        >
+          {programSourceLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
+          {t("features.program-deploy.generateProgramKeypairButton")}
+        </button>
+        <p className="mt-2 text-xs text-gray-500">
+          {t("features.program-deploy.generateProgramKeypairHint")}
+        </p>
+        {programKeypairMetadata && (
+          <div className="mt-2 space-y-2">
             {formData.programKeypairPath && (
               <code className="block break-all rounded bg-black/30 px-3 py-2 text-xs text-gray-300">
                 {formData.programKeypairPath}
@@ -9322,6 +11622,26 @@ export default function Home() {
               { id: "pumpswap-sell", title: t("features.pumpswap-sell.title"), icon: <Coins className="w-4 h-4" />, preset: { wallet_id: effectiveWalletId, network: effectiveNetwork } },
               { id: "pumpfun-cashback", title: t("features.pumpfun-cashback.title"), icon: <Download className="w-4 h-4" />, preset: { wallet_id: effectiveWalletId, network: effectiveNetwork } },
               { id: "pumpswap-cashback", title: t("features.pumpswap-cashback.title"), icon: <Download className="w-4 h-4" />, preset: { wallet_id: effectiveWalletId, network: effectiveNetwork } },
+            ])}
+          </div>
+        );
+
+      case "contract-tools":
+        return (
+          <div className="space-y-4">
+            {renderActionGrid([
+              {
+                id: "program-workbench",
+                title: t("features.program-workbench.title"),
+                icon: <Hash className="w-4 h-4" />,
+                preset: { network: effectiveNetwork },
+              },
+              {
+                id: "program-invoke-standalone",
+                title: t("features.program-invoke.title"),
+                icon: <Send className="w-4 h-4" />,
+                preset: { wallet_id: effectiveWalletId, network: effectiveNetwork },
+              },
             ])}
           </div>
         );
@@ -10855,6 +13175,22 @@ export default function Home() {
         const deploymentJournal = deploymentJournalMatchesIntent
           ? programDeploymentJournal.journal
           : null;
+        const conflictingJournal = deploymentJournalMatchesIntent
+          ? programDeploymentJournal.conflictingJournal
+          : null;
+        const conflictingJournalMessage = conflictingJournal
+          ? conflictingJournal.status === "finalized"
+            ? t("features.program-deploy.journalConflictingFinalized", {
+                programId: conflictingJournal.program_id,
+                recordedArtifact: conflictingJournal.program_sha256,
+                currentArtifact: String(formData.programSoSha256 || "").trim().toLowerCase() || "-",
+              })
+            : t("features.program-deploy.journalConflictingActive", {
+                programId: conflictingJournal.program_id,
+                recordedArtifact: conflictingJournal.program_sha256,
+                currentArtifact: String(formData.programSoSha256 || "").trim().toLowerCase() || "-",
+              })
+          : null;
         const journalIsFinalized = deploymentJournal
           ? deploymentJournal.status === "finalized"
           : false;
@@ -10870,14 +13206,25 @@ export default function Home() {
         const selectedResumeBuffer = String(
           formData.resumeBufferAddress || "",
         ).trim();
+        const deployValidationMessage = loading ? null : programDeployValidationError(formData);
         const deploymentJournalIntentMatches = Boolean(
           !deploymentJournal ||
             (selectedMaxDataLen === deploymentJournal.max_data_len &&
               (PROGRAM_BUFFER_RECOVERY_STATUSES.has(deploymentJournal.status)
-                ? selectedResumeBuffer === deploymentJournal.buffer_address
+                ? selectedResumeBuffer === "" || selectedResumeBuffer === deploymentJournal.buffer_address
                 : selectedResumeBuffer === "" ||
                   selectedResumeBuffer === deploymentJournal.buffer_address)),
         );
+        const deployBlockedMessage =
+          deployValidationMessage ||
+          conflictingJournalMessage ||
+          (!deploymentJournalIntentMatches
+            ? programDeploymentJournal.loading
+              ? t("features.program-deploy.journalLoading")
+              : programDeploymentJournal.error
+                ? programDeploymentJournal.error
+                : t("features.program-deploy.journalIntentMismatch")
+            : null);
         const journalRecoveryIntentSelected = Boolean(
           deploymentJournal &&
             selectedResumeBuffer === deploymentJournal.buffer_address &&
@@ -10897,7 +13244,6 @@ export default function Home() {
         const sourceNeedsProgramKeypair = Boolean(
           programSourceDir && sourceHasCompiledProgram && !sourceHasProgramKeypair,
         );
-        const deployValidationMessage = loading ? null : programDeployValidationError(formData);
         const writeAttempts = deploymentAttempts.filter((attempt) => attempt.stage === "write");
         const writeChunkCount = programDeploymentJournal.writeChunkCount;
         const submittedWriteChunks = new Set(
@@ -11025,6 +13371,9 @@ export default function Home() {
         if (formData.sourceImportWarnings) {
           appendLimitedLogText(deploymentLogLines, "warnings", formData.sourceImportWarnings);
         }
+        if (formData.sourceValidationErrors) {
+          appendLimitedLogText(deploymentLogLines, "source validation errors", formData.sourceValidationErrors);
+        }
         if (formData.sourceBuildError) {
           appendLimitedLogText(deploymentLogLines, "build error", formData.sourceBuildError);
         }
@@ -11108,6 +13457,12 @@ export default function Home() {
           if (programDeploymentJournal.error) {
             deploymentLogLines.push(`[${new Date().toLocaleTimeString()}] ${programDeploymentJournal.error}`);
             deploymentLogLines.push(`[${new Date().toLocaleTimeString()}] ${t("features.program-deploy.journalRpcUnavailableHint")}`);
+          }
+        } else if (conflictingJournalMessage) {
+          deploymentLogLines.push(`[${formatDeploymentLogTime(conflictingJournal?.updated_at)}] ${conflictingJournalMessage}`);
+          if (conflictingJournal) {
+            deploymentLogLines.push(`[${formatDeploymentLogTime(conflictingJournal.updated_at)}] recorded artifact: ${conflictingJournal.program_sha256}`);
+            deploymentLogLines.push(`[${formatDeploymentLogTime(conflictingJournal.updated_at)}] recorded status: ${conflictingJournal.status}`);
           }
         } else if (programDeploymentJournal.error) {
           deploymentLogLines.push(`[${new Date().toLocaleTimeString()}] ${programDeploymentJournal.error}`);
@@ -11262,29 +13617,6 @@ export default function Home() {
             </p>
             {renderProgramSourceImport()}
             {renderProgramFileInput()}
-            <div>
-              {renderProgramDeployHelpLabel(
-                t("features.program-deploy.approvedProgramSha256"),
-                t("features.program-deploy.approvedProgramSha256Tooltip"),
-                { inputId: "approved-program-sha256" },
-              )}
-              <input
-                id="approved-program-sha256"
-                value={formData.approvedProgramSha256 || ""}
-                onChange={(e) =>
-                  handleFormChange(
-                    "approvedProgramSha256",
-                    e.target.value.trim().toLowerCase(),
-                  )
-                }
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
-                placeholder={t("features.program-deploy.approvedProgramSha256Placeholder")}
-              />
-            </div>
             {renderProgramKeypairFileInput()}
             <div>
               {renderProgramDeployHelpLabel(
@@ -11595,14 +13927,51 @@ export default function Home() {
                 )}
               </div>
             )}
-            {!loading && !programSourceLoading && deployValidationMessage && !sourceNeedsBuild && !sourceNeedsProgramKeypair && (
+            {!loading && !programSourceLoading && deployBlockedMessage && !sourceNeedsBuild && !sourceNeedsProgramKeypair && (
               <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300">
-                {deployValidationMessage}
+                {deployBlockedMessage}
               </p>
+            )}
+            {programDeployInlineError && (
+              <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-red-100">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-200" />
+                    <p className="font-semibold">{t("features.program-deploy.deployErrorTitle")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(
+                      [
+                        programDeployInlineError.friendly,
+                        programDeployInlineError.raw !== programDeployInlineError.friendly
+                          ? programDeployInlineError.raw
+                          : "",
+                      ].filter(Boolean).join("\n\n"),
+                      "program-deploy-inline-error",
+                    )}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md bg-red-400/15 px-2 py-1 text-[11px] font-medium text-red-50 hover:bg-red-400/25"
+                  >
+                    {copied === "program-deploy-inline-error" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {t("features.program-deploy.sourceValidationCopy")}
+                  </button>
+                </div>
+                <p className="text-sm leading-6 text-red-50">{programDeployInlineError.friendly}</p>
+                {programDeployInlineError.raw !== programDeployInlineError.friendly && (
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-red-200/80">
+                      {t("features.program-deploy.rawErrorLabel")}
+                    </p>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/40 p-2 font-mono text-[11px] leading-5 text-red-100">
+                      {programDeployInlineError.raw}
+                    </pre>
+                  </div>
+                )}
+              </div>
             )}
             <button type="button"
               onClick={() => requestPasswordSubmit("program-deploy")}
-              disabled={loading || Boolean(deployValidationMessage) || !deploymentJournalIntentMatches}
+              disabled={loading || programSourceLoading || Boolean(deployBlockedMessage)}
               className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50"
             >
               {loading ? t("features.program-deploy.deploying") : t("features.program-deploy.deployButton")}
@@ -11692,7 +14061,9 @@ export default function Home() {
         );
       }
 
-      case "program-invoke": {
+      case "program-invoke":
+      case "program-invoke-standalone": {
+        const isStandaloneProgramInvoke = formId === "program-invoke-standalone";
         const invokeProject = currentProgramProjects.find((project) => project.id === programInvoke.projectId);
         const invokeWallet = savedWalletFromForm(formData) ?? effectiveWallet;
         const selectedInstruction = programInvoke.idl?.instructions.find(
@@ -11701,19 +14072,32 @@ export default function Home() {
         const selectedAccounts = selectedInstruction ? flattenAnchorAccounts(selectedInstruction.accounts) : [];
         const selectedSignerAccounts = selectedAccounts.filter((account) => account.isSigner);
         const invokeMode = String(formData.programInvokeMode || "simulate") === "send" ? "send" : "simulate";
+        const invokeNoticeMessage = programInvoke.result?.errorMessage || programInvoke.result?.simulationError || "";
+        const invokeNoticeKind = programInvoke.result?.simulationError && !programInvoke.result?.errorMessage
+          ? "warning"
+          : "error";
         const invokeLogs = [
+          ...(programInvoke.result?.errorMessage
+            ? [t("features.program-invoke.errorLog", { error: programInvoke.result.errorMessage })]
+            : []),
+          ...(programInvoke.result?.rawErrorMessage
+            ? [t("features.program-invoke.rawErrorLog", { error: programInvoke.result.rawErrorMessage })]
+            : []),
           ...(programInvoke.result?.signature
             ? [t("features.program-invoke.signatureLog", { signature: programInvoke.result.signature })]
             : []),
           ...(programInvoke.result?.simulationError
             ? [t("features.program-invoke.simulationErrorLog", { error: programInvoke.result.simulationError })]
             : []),
+          ...(programInvoke.result?.rawSimulationError
+            ? [t("features.program-invoke.rawSimulationErrorLog", { error: programInvoke.result.rawSimulationError })]
+            : []),
           ...(programInvoke.result?.logs || []),
         ];
         const runProgramInvoke = (mode: "simulate" | "send") => {
           const nextFormData = { ...formData, programInvokeMode: mode };
           setFormData(nextFormData);
-          requestPasswordSubmit("program-invoke", nextFormData);
+          requestPasswordSubmit(formId, nextFormData);
         };
 
         return (
@@ -11722,13 +14106,15 @@ export default function Home() {
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-semibold text-gray-100">
-                    {invokeProject?.name || t("features.program-invoke.project")}
+                    {invokeProject?.name || (isStandaloneProgramInvoke
+                      ? tf("features.program-invoke.standaloneProject", "自选 IDL 调用")
+                      : t("features.program-invoke.project"))}
                   </p>
                   {programInvoke.sourceDir && (
                     <code className="block break-all text-xs text-gray-500">{programInvoke.sourceDir}</code>
                   )}
                   {programInvoke.idlPath && (
-                    <p className="break-all text-xs text-gray-400">
+                    <p className="break-all text-xs text-gray-400 select-text">
                       {t("features.program-invoke.idlPath")}: {programInvoke.idlPath}
                     </p>
                   )}
@@ -11744,7 +14130,34 @@ export default function Home() {
                     {t("features.program-invoke.reloadIdl")}
                   </button>
                 )}
+                {isStandaloneProgramInvoke && (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <input
+                      ref={programInvokeIdlFileInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(event) => void handleProgramInvokeIdlFileChange(event)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => programInvokeIdlFileInputRef.current?.click()}
+                      disabled={programInvoke.loading}
+                      className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20 disabled:opacity-50"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      {tf("features.program-invoke.chooseIdlFile", "选择 IDL JSON")}
+                    </button>
+                  </div>
+                )}
               </div>
+              {isStandaloneProgramInvoke && (
+                <p className="text-xs text-gray-500">
+                  {programInvoke.idlFileName
+                    ? tf("features.program-invoke.idlFileReady", "已读取 IDL：{file}", { file: programInvoke.idlFileName })
+                    : tf("features.program-invoke.idlFileHint", "可选择任意 Anchor IDL JSON 文件；如果 IDL 里没有 address，请手动填写 Program ID。")}
+                </p>
+              )}
               {programInvoke.loading && (
                 <p className="text-xs text-cyan-200">{t("features.program-invoke.idlLoading")}</p>
               )}
@@ -11761,24 +14174,47 @@ export default function Home() {
                 {programInvoke.idl?.instructions.length ? (
                   <div className="max-h-96 space-y-1 overflow-y-auto pr-1">
                     {programInvoke.idl.instructions.map((instruction) => (
-                      <button
+                      <div
                         key={instruction.name}
-                        type="button"
-                        onClick={() => selectProgramInvokeInstruction(instruction, invokeWallet?.public_key)}
-                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => void selectProgramInvokeInstruction(instruction)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void selectProgramInvokeInstruction(instruction);
+                          }
+                        }}
+                        className={`group relative w-full cursor-pointer rounded-lg px-3 py-2 pr-11 text-left text-sm transition-colors ${
                           instruction.name === programInvoke.selectedInstruction
                             ? "bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/30"
                             : "bg-white/5 text-gray-300 hover:bg-white/10"
                         }`}
                       >
-                        <span className="block truncate font-medium">{instruction.name}</span>
+                        <span className="block truncate font-medium select-text">{instruction.name}</span>
                         <span className="mt-1 block text-xs text-gray-500">
                           {t("features.program-invoke.functionMeta", {
                             args: instruction.args.length,
                             accounts: flattenAnchorAccounts(instruction.accounts).length,
                           })}
                         </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void copyToClipboard(instruction.name, `program-invoke-instruction:${instruction.name}`);
+                          }}
+                          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white"
+                          aria-label={t("common.copy")}
+                          title={t("common.copy")}
+                        >
+                          {copied === `program-invoke-instruction:${instruction.name}` ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -11788,7 +14224,7 @@ export default function Home() {
 
               <section className="min-w-0 space-y-4 rounded-lg border border-white/10 bg-white/[0.03] p-3">
                 <div>
-                  <label className="block text-sm font-medium mb-2">{t("features.program-invoke.programId")}</label>
+                  <label className="block text-sm font-medium mb-2 select-text">{t("features.program-invoke.programId")}</label>
                   <input
                     value={programInvoke.programId}
                     onChange={(event) =>
@@ -11798,7 +14234,7 @@ export default function Home() {
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full select-text rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
                     placeholder={t("features.program-invoke.programIdPlaceholder")}
                   />
                 </div>
@@ -11812,55 +14248,106 @@ export default function Home() {
                           <p className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-gray-500">
                             {t("features.program-invoke.noParameters")}
                           </p>
-                        ) : selectedInstruction.args.map((arg) => {
-                          const unsupported = isUnsupportedIdlType(arg.type);
-                          return (
-                            <div key={arg.name}>
+	                        ) : selectedInstruction.args.map((arg) => {
+	                          const unsupported = isUnsupportedIdlType(arg.type);
+	                          const supportsWalletPicker = !unsupported && isIdlPubkeyType(arg.type);
+	                          const tokenAmountArg = !unsupported && isProgramInvokeTokenAmountArg(arg);
+	                          const tokenAmountMint = tokenAmountArg
+	                            ? programInvokeSingleMintAccount(selectedInstruction, programInvoke.accountValues)
+	                            : "";
+	                          const argValue = String(programInvoke.argValues[arg.name] || "");
+	                          const typeLabel = tokenAmountArg
+	                            ? t("features.program-invoke.tokenAmountType", { type: idlTypeLabel(arg.type) })
+	                            : idlTypeLabel(arg.type);
+	                          return (
+	                            <div key={arg.name}>
                               <div className="mb-2 flex items-center justify-between gap-2">
-                                <label className="min-w-0 truncate text-sm font-medium">{arg.name}</label>
+                                <span className="min-w-0 truncate text-sm font-medium select-text">{arg.name}</span>
                                 <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${
                                   unsupported ? "bg-amber-400/15 text-amber-100" : "bg-white/10 text-gray-300"
                                 }`}>
-                                  {idlTypeLabel(arg.type)}
+                                  {typeLabel}
                                 </span>
                               </div>
-                              <input
-                                value={programInvoke.argValues[arg.name] || ""}
-                                onChange={(event) =>
-                                  setProgramInvoke((prev) => ({
-                                    ...prev,
-                                    argValues: { ...prev.argValues, [arg.name]: event.target.value },
-                                    result: undefined,
-                                  }))
-                                }
-                                disabled={unsupported}
-                                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
-                                placeholder={
-                                  unsupported
-                                    ? t("features.program-invoke.unsupportedType")
-                                    : t("features.program-invoke.argPlaceholder", { type: idlTypeLabel(arg.type) })
-                                }
-                              />
-                            </div>
-                          );
-                        })}
+                              <div className="flex gap-2">
+                                <input
+                                  value={argValue}
+                                  onChange={(event) =>
+                                    setProgramInvoke((prev) => ({
+                                      ...prev,
+                                      argValues: { ...prev.argValues, [arg.name]: event.target.value },
+                                      result: undefined,
+                                    }))
+                                  }
+	                                  disabled={unsupported}
+	                                  inputMode={tokenAmountArg ? "decimal" : undefined}
+	                                  className="min-w-0 flex-1 select-text rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+	                                  placeholder={
+	                                    unsupported
+	                                      ? t("features.program-invoke.unsupportedType")
+	                                      : tokenAmountArg
+	                                        ? t("features.program-invoke.tokenAmountPlaceholder")
+	                                        : t("features.program-invoke.argPlaceholder", { type: idlTypeLabel(arg.type) })
+	                                  }
+	                                />
+                                {supportsWalletPicker && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openProgramInvokeWalletPicker({ kind: "arg", name: arg.name })}
+                                    className="shrink-0 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20"
+                                  >
+                                    {tf("features.program-invoke.chooseWallet", "选择钱包")}
+	                                  </button>
+	                                )}
+	                              </div>
+	                              {tokenAmountArg && (
+	                                <p className="mt-1 text-xs text-gray-500">
+	                                  {tokenAmountMint
+	                                    ? t("features.program-invoke.tokenAmountHint")
+	                                    : t("features.program-invoke.tokenAmountPendingHint")}
+	                                </p>
+	                              )}
+	                            </div>
+	                          );
+	                        })}
                       </div>
 
                       <div className="space-y-3">
                         <h3 className="text-sm font-semibold text-gray-200">{t("features.program-invoke.accounts")}</h3>
                         {selectedAccounts.map((account) => {
                           const accountValue = String(programInvoke.accountValues[account.path] || "").trim();
-                          const selectedSignerWallet = wallets.find(
-                            (wallet) => wallet.id === programInvoke.signerWalletIds[account.path],
-                          );
-                          const isPrimarySigner =
-                            account.isSigner &&
-                            Boolean(invokeWallet) &&
-                            accountValue === invokeWallet?.public_key;
-                          return (
-                          <div key={account.path} className="space-y-2">
-                            <div className="mb-2 flex flex-wrap items-center gap-2">
-                              <label className="min-w-0 flex-1 truncate text-sm font-medium">{account.path}</label>
+                          const resolvedAccountValue = resolveAnchorAccountAddress(accountValue, account);
+	                          const selectedSignerWallet = wallets.find(
+	                            (wallet) => wallet.id === programInvoke.signerWalletIds[account.path],
+	                          );
+	                          const defaultAddress = defaultAccountAddress(account.name, account);
+	                          const isAutoAccount = Boolean(account.address || account.pda || defaultAddress);
+	                          const walletLikeAccount = isWalletLikeInvokeAccount(account);
+	                          const isPrimarySigner =
+	                            account.isSigner &&
+	                            Boolean(invokeWallet) &&
+	                            resolvedAccountValue === invokeWallet?.public_key;
+	                          const requiresManualAccountInput = !isAutoAccount && !accountValue;
+	                          const waitsForAutoAccount = isAutoAccount && !accountValue;
+	                          return (
+	                          <div key={account.path} className="space-y-2">
+	                            <div className="mb-2 flex flex-wrap items-center gap-2">
+	                              <span className="min-w-0 flex-1 truncate text-sm font-medium select-text">{account.path}</span>
+	                              {isAutoAccount && (
+	                                <span className="rounded bg-blue-400/15 px-2 py-0.5 text-xs text-blue-100">
+	                                  {t("features.program-invoke.autoGeneratedAccount")}
+	                                </span>
+	                              )}
+	                              {waitsForAutoAccount && (
+	                                <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs text-amber-100">
+	                                  {t("features.program-invoke.autoAccountPending")}
+	                                </span>
+	                              )}
+	                              {requiresManualAccountInput && (
+	                                <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs text-amber-100">
+	                                  {t("features.program-invoke.manualRequired")}
+                                </span>
+                              )}
                               {account.isSigner && (
                                 <span className="rounded bg-cyan-400/15 px-2 py-0.5 text-xs text-cyan-100">
                                   {t("features.program-invoke.signer")}
@@ -11873,49 +14360,50 @@ export default function Home() {
                               )}
                             </div>
                             <div className="flex gap-2">
-                              <input
-                                value={accountValue}
-                                onChange={(event) =>
-                                  setProgramInvoke((prev) => ({
-                                    ...prev,
-                                    accountValues: { ...prev.accountValues, [account.path]: event.target.value.trim() },
-                                    signerWalletIds: { ...prev.signerWalletIds, [account.path]: "" },
-                                    signerPasswords: { ...prev.signerPasswords, [account.path]: "" },
-                                    result: undefined,
-                                  }))
-                                }
-                                autoComplete="off"
-                                autoCapitalize="none"
-                                autoCorrect="off"
-                                spellCheck={false}
-                                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
-                                placeholder={t("features.program-invoke.accountPlaceholder")}
-                              />
-                              {account.isSigner && invokeWallet && (
+	                              <input
+	                                value={accountValue}
+	                                onChange={(event) => {
+	                                  if (isAutoAccount) return;
+	                                  setProgramInvoke((prev) => ({
+	                                    ...prev,
+	                                    accountValues: { ...prev.accountValues, [account.path]: event.target.value.trim() },
+	                                    signerWalletIds: { ...prev.signerWalletIds, [account.path]: "" },
+	                                    signerPasswords: { ...prev.signerPasswords, [account.path]: "" },
+	                                    result: undefined,
+	                                  }));
+	                                }}
+	                                readOnly={isAutoAccount}
+	                                autoComplete="off"
+	                                autoCapitalize="none"
+	                                autoCorrect="off"
+	                                spellCheck={false}
+	                                className={`min-w-0 flex-1 select-text rounded-lg border border-white/10 px-4 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20 ${
+	                                  isAutoAccount ? "bg-black/30 text-gray-300" : "bg-white/5"
+	                                }`}
+	                                placeholder={
+	                                  waitsForAutoAccount
+	                                    ? t("features.program-invoke.autoAccountPendingPlaceholder")
+	                                    : t("features.program-invoke.accountPlaceholder")
+	                                }
+	                              />
+	                              {!isAutoAccount && (account.isSigner || walletLikeAccount) && (
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setProgramInvoke((prev) => ({
-                                      ...prev,
-                                      accountValues: {
-                                        ...prev.accountValues,
-                                        [account.path]: invokeWallet.public_key,
-                                      },
-                                      signerWalletIds: { ...prev.signerWalletIds, [account.path]: "" },
-                                      signerPasswords: { ...prev.signerPasswords, [account.path]: "" },
-                                      result: undefined,
-                                    }))
-                                  }
+                                  onClick={() => openProgramInvokeWalletPicker({
+                                    kind: "account",
+                                    path: account.path,
+                                    signer: account.isSigner,
+                                  })}
                                   className="shrink-0 rounded-lg bg-white/10 px-3 text-xs font-semibold text-gray-200 hover:bg-white/20"
                                 >
-                                  {t("features.program-invoke.currentWallet")}
+                                  {tf("features.program-invoke.chooseWallet", "选择钱包")}
                                 </button>
                               )}
                             </div>
                             {account.isSigner && !isPrimarySigner && (
                               <div className="grid gap-2 rounded-lg border border-cyan-300/15 bg-cyan-400/5 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                                 <div>
-                                  <label className="mb-1 block text-xs font-medium text-cyan-100">
+                                  <label className="mb-1 block text-xs font-medium text-cyan-100 select-text">
                                     {t("features.program-invoke.signerWallet")}
                                   </label>
                                   <select
@@ -11932,7 +14420,7 @@ export default function Home() {
                                         result: undefined,
                                       }));
                                     }}
-                                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                                    className="w-full select-text rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
                                   >
                                     <option value="">{t("features.program-invoke.selectSignerWallet")}</option>
                                     {wallets.map((wallet) => (
@@ -11941,14 +14429,14 @@ export default function Home() {
                                       </option>
                                     ))}
                                   </select>
-                                  {selectedSignerWallet && selectedSignerWallet.public_key !== accountValue && (
+                                  {selectedSignerWallet && selectedSignerWallet.public_key !== resolvedAccountValue && (
                                     <p className="mt-1 text-xs text-amber-100">
                                       {t("features.program-invoke.signerWalletMismatch", { account: account.path })}
                                     </p>
                                   )}
                                 </div>
                                 <div>
-                                  <label className="mb-1 block text-xs font-medium text-cyan-100">
+                                  <label className="mb-1 block text-xs font-medium text-cyan-100 select-text">
                                     {t("features.program-invoke.signerPassword")}
                                   </label>
                                   <input
@@ -11979,6 +14467,42 @@ export default function Home() {
                     </div>
 
                     <section className="space-y-3 border-t border-white/10 pt-4">
+                      {invokeNoticeMessage && (
+                        <div
+                          className={`rounded-lg border px-3 py-3 ${
+                            invokeNoticeKind === "warning"
+                              ? "border-amber-300/25 bg-amber-400/10 text-amber-50"
+                              : "border-red-300/25 bg-red-500/10 text-red-50"
+                          }`}
+                          role="alert"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-start gap-2">
+                              <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${
+                                invokeNoticeKind === "warning" ? "text-amber-200" : "text-red-200"
+                              }`} />
+                              <div className="min-w-0 space-y-1">
+                                <p className="text-sm font-semibold">
+                                  {invokeNoticeKind === "warning"
+                                    ? t("features.program-invoke.warningTitle")
+                                    : t("features.program-invoke.errorTitle")}
+                                </p>
+                                <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs leading-5">
+                                  {invokeNoticeMessage}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(invokeNoticeMessage, "program-invoke-notice")}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[11px] font-medium text-white hover:bg-white/20"
+                            >
+                              {copied === "program-invoke-notice" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                              {t("common.copy")}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="inline-grid grid-cols-2 overflow-hidden rounded-lg border border-white/10 bg-black/20 p-1">
                           {(["simulate", "send"] as const).map((mode) => (
@@ -12046,7 +14570,9 @@ export default function Home() {
                           <div
                             key={`${index}:${line}`}
                             className={`whitespace-pre-wrap break-words ${
-                              programInvoke.result?.simulationError && index === 0 ? "text-red-300" : "text-emerald-100"
+                              (programInvoke.result?.errorMessage || programInvoke.result?.simulationError) && index === 0
+                                ? "text-red-300"
+                                : "text-emerald-100"
                             }`}
                           >
                             <span className="select-none text-emerald-500">$ </span>
@@ -12058,7 +14584,11 @@ export default function Home() {
                   </>
                 ) : (
                   <p className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-gray-400">
-                    {programInvoke.idl ? t("features.program-invoke.noInstruction") : t("features.program-invoke.noIdl")}
+                    {programInvoke.idl
+                      ? t("features.program-invoke.noInstruction")
+                      : isStandaloneProgramInvoke
+                        ? tf("features.program-invoke.noStandaloneIdl", "请先选择一个 Anchor IDL JSON 文件。")
+                        : t("features.program-invoke.noIdl")}
                   </p>
                 )}
               </section>
@@ -12380,6 +14910,274 @@ export default function Home() {
             },
           ])
         );
+
+      case "program-upgrade": {
+        const upgradeProgramId = String(formData.programId || formData.expectedProgramId || "").trim();
+        const upgradeSourceDir = String(formData.programSourceDir || "").trim();
+        const upgradeProject = upgradeSourceDir
+          ? workspace.programProjects.find((item) => item.id === scopedProgramProjectId(upgradeSourceDir))
+          : workspace.programProjects.find((item) => String(item.programId || "").trim() === upgradeProgramId);
+        const lastFinalizedSha = lastFinalizedProgramArtifactSha(upgradeProject, upgradeProgramId);
+        const currentArtifactSha = String(formData.programSoSha256 || "").trim().toLowerCase();
+        const upgradeArtifactIsStale = isStaleProgramUpgradeArtifact(
+          upgradeProject,
+          upgradeProgramId,
+          currentArtifactSha,
+        );
+        const upgradeNeedsCompile = Boolean(upgradeSourceDir && !formData.programSoBase64);
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-400">{t("features.program-upgrade.hint")}</p>
+            {upgradeSourceDir ? renderProgramSourceImport() : null}
+            {renderProgramIdInput()}
+            {renderProgramFileInput()}
+            {(programSourceLoading || upgradeNeedsCompile || upgradeArtifactIsStale) && (
+              <div className={`space-y-3 rounded-lg border p-3 ${
+                upgradeArtifactIsStale
+                  ? "border-amber-300/25 bg-amber-400/10 text-amber-50"
+                  : "border-cyan-300/20 bg-cyan-400/10 text-cyan-50"
+              }`}>
+                <div className="flex items-start gap-3">
+                  {programSourceLoading ? (
+                    <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  )}
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold">
+                      {programSourceLoading
+                        ? t("features.program-deploy.sourceAutoReadingTitle")
+                        : upgradeNeedsCompile
+                          ? t("features.program-upgrade.compileRequiredTitle")
+                          : t("features.program-upgrade.staleArtifactTitle")}
+                    </p>
+                    <p className="text-xs leading-5 opacity-85">
+                      {programSourceLoading
+                        ? t("features.program-deploy.sourceAutoReadingHint")
+                        : upgradeNeedsCompile
+                          ? t("features.program-upgrade.compileRequiredHint")
+                          : t("features.program-upgrade.staleArtifactHint", {
+                              current: shortSignature(currentArtifactSha),
+                              previous: shortSignature(lastFinalizedSha || ""),
+                            })}
+                    </p>
+                  </div>
+                </div>
+                {!programSourceLoading && upgradeSourceDir && (
+                  <button
+                    type="button"
+                    onClick={() => void handleProgramSourceImport(true)}
+                    disabled={loading}
+                    className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-amber-300/30 bg-amber-400/15 px-4 py-2 text-sm font-semibold text-amber-50 hover:bg-amber-400/25 disabled:opacity-50"
+                  >
+                    <RefreshCw className="h-4 w-4 shrink-0" />
+                    {t("features.program-deploy.compileRequiredAction")}
+                  </button>
+                )}
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium mb-2">{t("features.squads.spill")}</label>
+              <input
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={formData.spillAddress || ""}
+                onChange={(e) => handleFormChange("spillAddress", e.target.value.trim())}
+                disabled={loading}
+                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white font-mono text-sm disabled:opacity-50"
+                placeholder={t("features.squads.spillPlaceholder")}
+              />
+            </div>
+            {loading && (
+              <div className="space-y-3 rounded-lg border border-cyan-300/20 bg-cyan-400/10 p-3 text-cyan-50">
+                <div className="flex items-start gap-3">
+                  <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-cyan-200" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-cyan-50">
+                        {t("features.program-upgrade.progressTitle")}
+                      </p>
+                      {programUpgradeProgress && programUpgradeProgress.write_total > 0 && (
+                        <p className="font-mono text-xs text-cyan-100/90">
+                          {t("features.program-upgrade.progressWriteCount", {
+                            completed: programUpgradeProgress.write_completed,
+                            total: programUpgradeProgress.write_total,
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-xs leading-5 text-cyan-100/80">
+                      {programUpgradeProgress?.message ||
+                        formData.message ||
+                        t("features.program-upgrade.upgradeStarted")}
+                    </p>
+                    {programUpgradeProgress?.stage && (
+                      <p className="text-[11px] text-cyan-100/70">
+                        {t("features.program-upgrade.progressStageLabel", {
+                          stage: ({
+                            idle: t("features.program-upgrade.stage.idle"),
+                            preparing: t("features.program-upgrade.stage.preparing"),
+                            verifying: t("features.program-upgrade.stage.verifying"),
+                            creating_buffer: t("features.program-upgrade.stage.creating_buffer"),
+                            writing: t("features.program-upgrade.stage.writing"),
+                            upgrading: t("features.program-upgrade.stage.upgrading"),
+                            verifying_readback: t("features.program-upgrade.stage.verifying_readback"),
+                            finalized: t("features.program-upgrade.stage.finalized"),
+                            failed: t("features.program-upgrade.stage.failed"),
+                          } as Record<string, string>)[programUpgradeProgress.stage] ||
+                            programUpgradeProgress.stage,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {(() => {
+                  const total = Math.max(0, Number(programUpgradeProgress?.write_total || 0));
+                  const completed = Math.max(0, Number(programUpgradeProgress?.write_completed || 0));
+                  const stage = String(programUpgradeProgress?.stage || "");
+                  const percent =
+                    stage === "finalized"
+                      ? 100
+                      : stage === "upgrading" || stage === "verifying_readback"
+                        ? 100
+                        : total > 0
+                          ? Math.min(99, Math.round((completed / total) * 100))
+                          : stage === "creating_buffer"
+                            ? 2
+                            : stage === "writing"
+                              ? Math.min(99, Math.round((completed / Math.max(total, 1)) * 100))
+                              : 0;
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="h-2 overflow-hidden rounded-full bg-black/30">
+                        <div
+                          className="h-full rounded-full bg-cyan-300/80 transition-[width] duration-300"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-cyan-100/70">
+                        {t("features.program-upgrade.progressPercent", { percent })}
+                      </p>
+                    </div>
+                  );
+                })()}
+                <ol className="space-y-1.5 border-t border-cyan-300/15 pt-3 text-xs text-cyan-100/85">
+                  {[
+                    { id: "creating_buffer", label: t("features.program-upgrade.progressStepBuffer") },
+                    { id: "writing", label: t("features.program-upgrade.progressStepWrite") },
+                    { id: "upgrading", label: t("features.program-upgrade.progressStepUpgrade") },
+                    { id: "verifying_readback", label: t("features.program-upgrade.progressStepVerify") },
+                  ].map((step, index) => {
+                    const stage = String(programUpgradeProgress?.stage || "");
+                    const order = ["preparing", "verifying", "creating_buffer", "writing", "upgrading", "verifying_readback", "finalized"];
+                    const currentIdx = order.indexOf(stage);
+                    const stepIdx = order.indexOf(step.id);
+                    const done =
+                      stage === "finalized" ||
+                      (currentIdx >= 0 && stepIdx >= 0 && currentIdx > stepIdx);
+                    const active =
+                      stage === step.id ||
+                      (step.id === "creating_buffer" && (stage === "preparing" || stage === "verifying")) ||
+                      (step.id === "writing" && stage === "writing");
+                    return (
+                      <li
+                        key={step.id}
+                        className={
+                          done
+                            ? "text-emerald-200"
+                            : active
+                              ? "font-semibold text-cyan-50"
+                              : "text-cyan-100/55"
+                        }
+                      >
+                        {index + 1}. {step.label}
+                        {step.id === "writing" &&
+                          programUpgradeProgress &&
+                          programUpgradeProgress.write_total > 0 &&
+                          stage === "writing" && (
+                            <span className="ml-2 font-mono text-[11px] text-cyan-100/80">
+                              ({programUpgradeProgress.write_completed}/{programUpgradeProgress.write_total})
+                            </span>
+                          )}
+                      </li>
+                    );
+                  })}
+                </ol>
+                {programUpgradeProgress?.last_signature && (
+                  <p className="truncate font-mono text-[11px] text-cyan-100/60" title={programUpgradeProgress.last_signature}>
+                    {t("features.program-upgrade.progressLastSignature", {
+                      signature: shortSignature(programUpgradeProgress.last_signature),
+                    })}
+                  </p>
+                )}
+                <p className="text-[11px] leading-5 text-cyan-100/65">
+                  {t("features.program-upgrade.progressWaitHint")}
+                </p>
+              </div>
+            )}
+            {programUpgradeInlineError && (
+              <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-red-100">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-200" />
+                    <p className="font-semibold">{t("features.program-upgrade.upgradeErrorTitle")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(
+                      [
+                        programUpgradeInlineError.friendly,
+                        programUpgradeInlineError.raw !== programUpgradeInlineError.friendly
+                          ? programUpgradeInlineError.raw
+                          : "",
+                      ].filter(Boolean).join("\n\n"),
+                      "program-upgrade-inline-error",
+                    )}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md bg-red-400/15 px-2 py-1 text-[11px] font-medium text-red-50 hover:bg-red-400/25"
+                  >
+                    {copied === "program-upgrade-inline-error" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {t("features.program-deploy.sourceValidationCopy")}
+                  </button>
+                </div>
+                <p className="text-sm leading-6 text-red-50">{programUpgradeInlineError.friendly}</p>
+                {programUpgradeInlineError.raw !== programUpgradeInlineError.friendly && (
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-red-200/80">
+                      {t("features.program-upgrade.rawErrorLabel")}
+                    </p>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/40 p-2 font-mono text-[11px] leading-5 text-red-100">
+                      {programUpgradeInlineError.raw}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => requestPasswordSubmit("program-upgrade")}
+              disabled={loading || programSourceLoading || upgradeNeedsCompile || upgradeArtifactIsStale}
+              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:from-emerald-600 hover:to-cyan-600 transition-all disabled:opacity-50"
+            >
+              {loading ? t("features.program-upgrade.upgrading") : t("features.program-upgrade.upgradeButton")}
+            </button>
+            {formData.message && !loading && (
+              <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">
+                {formData.message}
+                {formData.signature && (
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(String(formData.signature), "program-upgrade-signature")}
+                    className="mt-2 block max-w-full truncate text-left font-mono text-xs text-emerald-200 hover:text-white"
+                  >
+                    {formData.signature}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      }
 
       case "squads-program-upgrade":
         return (
@@ -13605,6 +16403,7 @@ export default function Home() {
         "wallet-list": t("features.wallet-list.title"),
         "wsol-workbench": t("features.wsol-workbench.title"),
         "pump-workbench": t("features.pump-workbench.title"),
+        "contract-tools": tf("features.contract-tools.title", "合约工具"),
         "program-workbench": t("features.program-workbench.title"),
         "nonce-workbench": t("features.nonce-workbench.title"),
         "settings": t("features.settings.title"),
@@ -13630,7 +16429,9 @@ export default function Home() {
         "pumpswap-cashback": t("features.pumpswap-cashback.title"),
         "create-nonce": t("features.create-nonce.title"),
         "program-deploy": t("features.program-deploy.title"),
+        "program-upgrade": t("features.program-upgrade.title"),
         "program-invoke": t("features.program-invoke.title"),
+        "program-invoke-standalone": t("features.program-invoke.title"),
         "program-info": t("features.program-info.title"),
         "squads-workspace": t("features.workspace.title"),
         "squads-proposals": t("features.workspace.savedProposals"),
@@ -13647,9 +16448,12 @@ export default function Home() {
     : t("app.welcome");
   const showFormHeader = selectedForm !== "wallet-list";
   const isWideWorkspaceForm = [
+    "contract-tools",
     "program-workbench",
     "program-deploy",
+    "program-upgrade",
     "program-invoke",
+    "program-invoke-standalone",
     "squads-prepare-upgrade-buffer",
     "squads-program-upgrade",
   ].includes(selectedForm || "");
@@ -13840,6 +16644,125 @@ export default function Home() {
           </div>
         </div>
       </div>
+      {programInvokeWalletPickerTarget &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[195] flex items-end bg-black/60"
+            onClick={() => setProgramInvokeWalletPickerTarget(null)}
+          >
+            <div
+              className="relative max-h-[85vh] w-full overflow-y-auto border-t border-white/10 bg-zinc-950 px-4 py-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mx-auto max-w-xl space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold">{tf("features.program-invoke.walletPickerTitle", "选择钱包")}</h3>
+                    <p className="mt-1 text-sm text-gray-400">
+                      {tf("features.program-invoke.walletPickerHint", "选择客户端里已保存的钱包地址，选中后会自动填入当前输入框。")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setProgramInvokeWalletPickerTarget(null)}
+                    className="rounded-lg bg-white/10 p-2 text-gray-300 hover:bg-white/20"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {wallets.length === 0 ? (
+                  <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400">
+                    {tf("features.program-invoke.noSavedWallets", "当前客户端还没有已保存钱包。")}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {wallets.map((wallet) => (
+                      <button
+                        key={wallet.id}
+                        type="button"
+                        onClick={() => selectProgramInvokeWalletAddress(wallet)}
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-left hover:bg-white/10"
+                      >
+                        <span className="flex items-center justify-between gap-3">
+                          <span
+                            className="min-w-0 cursor-text truncate text-sm font-semibold text-gray-100 select-text"
+                            onClick={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            {walletLabel(wallet)}
+                          </span>
+                          {wallet.id === effectiveWalletId && (
+                            <span className="shrink-0 rounded bg-cyan-400/15 px-2 py-0.5 text-[11px] text-cyan-100">
+                              {t("features.program-invoke.currentWallet")}
+                            </span>
+                          )}
+                        </span>
+                        <code className="mt-1 block break-all text-xs text-gray-500">
+                          {wallet.public_key}
+                        </code>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+      {historyDeletePrompt && (
+        <div className="fixed inset-0 z-[200] flex items-end bg-black/60 sm:items-center sm:justify-center">
+          <button
+            type="button"
+            aria-label={t("common.cancel")}
+            className="absolute inset-0 cursor-default"
+            onClick={() => setHistoryDeletePrompt(null)}
+          />
+          <div className="relative w-full border-t border-white/10 bg-zinc-950 px-4 py-5 shadow-2xl sm:mx-4 sm:max-w-md sm:rounded-2xl sm:border">
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold">{t("features.program-projects.removeHistoryRecord")}</h3>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {historyDeletePrompt.recordId.startsWith("journal-card:")
+                      ? t("features.program-projects.historyRemoveJournalConfirm")
+                      : t("features.program-projects.historyRemoveConfirm")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHistoryDeletePrompt(null)}
+                  className="rounded-lg bg-white/10 p-2 text-gray-300 hover:bg-white/20"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryDeletePrompt(null)}
+                  className="flex-1 rounded-lg bg-white/10 px-4 py-2.5 text-sm font-semibold text-gray-200 hover:bg-white/20"
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prompt = historyDeletePrompt;
+                    setHistoryDeletePrompt(null);
+                    if (prompt) {
+                      removeProgramDeploymentHistoryRecord(prompt.projectId, prompt.recordId);
+                    }
+                  }}
+                  className="flex-1 rounded-lg bg-red-500/20 px-4 py-2.5 text-sm font-semibold text-red-100 hover:bg-red-500/30"
+                >
+                  {t("features.program-projects.removeHistoryRecord")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {passwordPrompt && (
         <div className="fixed inset-0 z-[200] flex items-end bg-black/60">
           <button
@@ -13873,9 +16796,13 @@ export default function Home() {
                           ? t("features.settings.migrateCurrentPassword")
                           : t("formUi.walletPassword")}
                       </label>
-                      {isProgramDeploymentPasswordPrompt && (
+                      {isLongRunningProgramPasswordPrompt && (
                         <FieldHelp
-                          description={t("features.program-deploy.walletPasswordTooltip")}
+                          description={
+                            isProgramUpgradePasswordPrompt
+                              ? t("features.program-upgrade.walletPasswordTooltip")
+                              : t("features.program-deploy.walletPasswordTooltip")
+                          }
                           label={t("features.program-deploy.helpAriaLabel", {
                             field: t("formUi.walletPassword"),
                           })}

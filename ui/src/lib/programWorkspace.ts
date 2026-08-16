@@ -28,8 +28,12 @@ export function sourceDirProjectName(sourceDir: string): string {
   return normalized.split(/[\\/]/).pop() || normalized || "program";
 }
 
-export function programProjectId(sourceDir: string): string {
-  return `project:${stableLocalId(sourceDir.trim().toLowerCase())}`;
+export function programProjectId(sourceDir: string, ownerWallet?: string): string {
+  const normalizedSource = sourceDir.trim().toLowerCase();
+  const normalizedOwner = String(ownerWallet || "").trim().toLowerCase();
+  return normalizedOwner
+    ? `project:${stableLocalId(normalizedOwner)}:${stableLocalId(normalizedSource)}`
+    : `project:${stableLocalId(normalizedSource)}`;
 }
 
 export function programPlanId(
@@ -69,7 +73,7 @@ export function programDeploymentHistoryId(
 }
 
 export function isUnfinishedProgramDeploymentStatus(status: ProgramDeploymentPlanStatus | undefined): boolean {
-  return status === "running" || status === "buffer-ready" || status === "failed";
+  return status === "ready" || status === "running" || status === "buffer-ready" || status === "failed";
 }
 
 export function deploymentReceiptFilename(programId: unknown): string {
@@ -81,14 +85,45 @@ export function deploymentReceiptFilename(programId: unknown): string {
   return `deploy-${safeFilename(shortId)}.json`;
 }
 
+function compactDeploymentKind(kind: ProgramDeploymentHistoryKind): string {
+  switch (kind) {
+    case "direct-deploy":
+      return "deploy";
+    case "direct-upgrade":
+      return "upgrade";
+    case "squads-upgrade-buffer":
+      return "buffer";
+    case "squads-upgrade-proposal":
+      return "proposal";
+    case "squads-upgrade-execute":
+      return "execute";
+    default:
+      return safeFilename(kind);
+  }
+}
+
+function compactTimestamp(value: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown-time";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return [
+    date.getUTCFullYear(),
+    pad(date.getUTCMonth() + 1),
+    pad(date.getUTCDate()),
+    "-",
+    pad(date.getUTCHours()),
+    pad(date.getUTCMinutes()),
+    pad(date.getUTCSeconds()),
+  ].join("");
+}
+
 export function programDeploymentHistoryFilename(item: Pick<ProgramDeploymentHistoryItem, "kind" | "programId" | "createdAt">): string {
   const normalized = String(item.programId || "program").trim();
   const shortId =
     normalized.length > 12
       ? `${normalized.slice(0, 8)}-${normalized.slice(-4)}`
       : normalized || "program";
-  const timestamp = new Date(item.createdAt).toISOString().replace(/[:.]/g, "-");
-  return `program-${safeFilename(item.kind)}-${safeFilename(shortId)}-${timestamp}.json`;
+  return `${compactDeploymentKind(item.kind)}-${safeFilename(shortId)}-${compactTimestamp(item.createdAt)}.json`;
 }
 
 export function programDeploymentHistoryToJson(item: ProgramDeploymentHistoryItem): string {

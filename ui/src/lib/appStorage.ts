@@ -68,14 +68,14 @@ export interface WorkspaceMultisig extends WorkspaceActor {
   updatedAt: number;
 }
 
-export interface WorkspaceProgram {
+export interface WorkspaceProgram extends WorkspaceActor {
   address: string;
   label?: string;
   network: AppNetwork;
   updatedAt: number;
 }
 
-export type ProgramDeploymentPlanKind = "direct-deploy" | "squads-upgrade";
+export type ProgramDeploymentPlanKind = "direct-deploy" | "direct-upgrade" | "squads-upgrade";
 export type ProgramDeploymentPlanStatus =
   | "draft"
   | "ready"
@@ -136,6 +136,7 @@ export interface ProgramDeploymentPlan {
 
 export type ProgramDeploymentHistoryKind =
   | "direct-deploy"
+  | "direct-upgrade"
   | "squads-upgrade-buffer"
   | "squads-upgrade-proposal"
   | "squads-upgrade-execute";
@@ -175,6 +176,8 @@ export interface ProgramProject {
   id: string;
   name: string;
   sourceDir: string;
+  ownerWallet?: string;
+  ownerWalletLabel?: string;
   network: AppNetwork;
   programId?: string;
   programSha256?: string;

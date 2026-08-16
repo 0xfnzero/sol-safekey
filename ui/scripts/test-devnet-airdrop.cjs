@@ -22,14 +22,20 @@ const capabilities = fs.readFileSync(
 );
 
 assert.match(page, /const SOLANA_FAUCET_URL = "https:\/\/faucet\.solana\.com\/";/);
-assert.match(page, /const openSolanaFaucet = async/);
-assert.match(page, /await openExternalUrl\(SOLANA_FAUCET_URL\)/);
+assert.match(page, /const CIRCLE_FAUCET_URL = "https:\/\/faucet\.circle\.com\/";/);
+assert.match(page, /const openWalletFaucet = async/);
+assert.match(page, /const faucetUrl = faucet === "circle" \? CIRCLE_FAUCET_URL : SOLANA_FAUCET_URL/);
+assert.match(page, /await openExternalUrl\(faucetUrl\)/);
 assert.match(page, /from "@\/lib\/openExternal"/);
 assert.match(
   page,
   /\(effectiveNetwork === "devnet" \|\| effectiveNetwork === "testnet"\)/,
 );
-assert.match(page, /onClick=\{\(\) => void openSolanaFaucet\(effectiveWallet\)\}/);
+assert.match(page, /data-wallet-faucet-menu/);
+assert.match(page, /role="menu"/);
+assert.match(page, /role="menuitem"/);
+assert.match(page, /void openWalletFaucet\(effectiveWallet, "solana"\)/);
+assert.match(page, /void openWalletFaucet\(effectiveWallet, "circle"\)/);
 assert.doesNotMatch(page, /window\.open\(SOLANA_FAUCET_URL/);
 assert.doesNotMatch(page, /apiFetch\("wallet\/airdrop"/);
 
@@ -40,7 +46,7 @@ assert.match(openExternal, /window\.open\(target, "_blank", "noopener,noreferrer
 assert.match(tauriLib, /fn open_external_url\(url: String\)/);
 assert.match(tauriLib, /fn spawn_system_browser\(url: &str\)/);
 assert.match(tauriLib, /Command::new\("open"\)/);
-assert.match(tauriLib, /generate_handler!\[proxy_api_request, open_external_url\]/);
+assert.match(tauriLib, /generate_handler!\[[\s\S]*proxy_api_request[\s\S]*open_external_url[\s\S]*\]/);
 assert.match(capabilities, /allow-open-external-url/);
 
 assert.doesNotMatch(backend, /\/api\/wallet\/airdrop/);
@@ -48,11 +54,19 @@ assert.doesNotMatch(backend, /request_airdrop\(/);
 assert.match(backend, /"features": \[.*"faucet".*\]/);
 
 const translationKeys = [
+  "faucetMenu",
+  "faucetMenuTooltip",
+  "faucetMenuHelpAriaLabel",
   "faucetAirdrop",
   "faucetAirdropTooltip",
   "faucetAirdropHelpAriaLabel",
   "faucetAirdropOpened",
   "faucetAirdropFailed",
+  "circleFaucet",
+  "circleFaucetTooltip",
+  "circleFaucetHelpAriaLabel",
+  "circleFaucetOpened",
+  "circleFaucetFailed",
 ];
 for (const locale of ["en", "zh"]) {
   const messages = JSON.parse(
@@ -67,6 +81,11 @@ for (const locale of ["en", "zh"]) {
     walletMessages.faucetAirdropTooltip,
     /faucet\.solana\.com/,
     `${locale}.faucetAirdropTooltip must mention faucet.solana.com`,
+  );
+  assert.match(
+    walletMessages.circleFaucetTooltip,
+    /faucet\.circle\.com/,
+    `${locale}.circleFaucetTooltip must mention faucet.circle.com`,
   );
 }
 

@@ -75,14 +75,17 @@ use std::path::{Path as FsPath, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::process::Command;
-use tokio::time::timeout;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use zeroize::{Zeroize, Zeroizing};
 
 mod program_deploy;
+mod program_source_build;
 mod squads_v4;
 mod wallet_store;
+use program_source_build::{
+    display_program_source_build_command, execute_program_source_build, program_source_build_plans,
+    program_source_keys_build_warning, ProgramSourceBuildPlan,
+};
 use squads_v4::{
     Member as SquadsMember, Multisig as SquadsMultisig, Permissions as SquadsPermissions,
     ProgramConfig as SquadsProgramConfig, Proposal as SquadsProposal,
@@ -104,13 +107,12 @@ const MAX_GENERIC_PROGRAM_INSTRUCTION_DATA_BYTES: usize = 8 * 1024;
 const MAX_GENERIC_PROGRAM_INSTRUCTION_ACCOUNTS: usize = 64;
 const MAX_GENERIC_PROGRAM_ADDITIONAL_SIGNERS: usize = 8;
 const PROGRAM_WRITE_CHUNK_BYTES: usize = 800;
+const SOLANA_TRANSACTION_PACKET_DATA_BYTES: usize = 1232;
 const UPGRADEABLE_LOADER_ID: Pubkey =
     Pubkey::from_str_const("BPFLoaderUpgradeab1e11111111111111111111111");
 const SBF_VERIFY_BUSY_MESSAGE: &str = "SBF 验证容量已满，请等待当前验证结束后重试";
 const PROGRAM_DEPLOY_BUSY_MESSAGE: &str =
     "已有 Program 部署正在进行；为避免重复部署，请等待其完成或进入恢复流程";
-const PROGRAM_SOURCE_BUILD_TIMEOUT_SECS: u64 = 30 * 60;
-const PROGRAM_SOURCE_BUILD_LOG_BYTES: usize = 24 * 1024;
 const PROGRAM_DEPLOY_RPC_TIMEOUT_SECS: u64 = 20;
 const MAX_LABEL_CHARS: usize = 80;
 const MAX_TEXT_FIELD_CHARS: usize = 512;
@@ -138,6 +140,12 @@ const LOCAL_TOKEN_METADATA: &[LocalTokenMetadata] = &[
     },
     LocalTokenMetadata {
         mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        name: "USD Coin",
+        symbol: "USDC",
+        logo_uri: "/token-icons/usdc.png",
+    },
+    LocalTokenMetadata {
+        mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
         name: "USD Coin",
         symbol: "USDC",
         logo_uri: "/token-icons/usdc.png",
@@ -217,11 +225,128 @@ const DEFAULT_SWQOS_TIP_SOL: f64 = 0.0001;
 
 static SECURE_BODY_KEYPAIR: OnceLock<SecureBodyKeyPair> = OnceLock::new();
 static PROGRAM_DEPLOY_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static PROGRAM_UPGRADE_PROGRESS: OnceLock<Arc<tokio::sync::Mutex<ProgramUpgradeProgress>>> =
+    OnceLock::new();
 static PROGRAM_SOURCE_BUILD_JOBS: OnceLock<
     Arc<tokio::sync::Mutex<HashMap<String, ProgramSourceBuildJob>>>,
 > = OnceLock::new();
 static SBF_VERIFY_LIMIT: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static KEYSTORE_TASK_LIMIT: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+
+#[derive(Clone, Debug, Serialize)]
+struct ProgramUpgradeProgress {
+    active: bool,
+    program_id: String,
+    network: String,
+    stage: String,
+    message: String,
+    write_completed: usize,
+    write_total: usize,
+    program_bytes: usize,
+    buffer_address: Option<String>,
+    last_signature: Option<String>,
+    error: Option<String>,
+    updated_at_ms: u64,
+}
+
+impl Default for ProgramUpgradeProgress {
+    fn default() -> Self {
+        Self {
+            active: false,
+            program_id: String::new(),
+            network: String::new(),
+            stage: "idle".to_string(),
+            message: String::new(),
+            write_completed: 0,
+            write_total: 0,
+            program_bytes: 0,
+            buffer_address: None,
+            last_signature: None,
+            error: None,
+            updated_at_ms: 0,
+        }
+    }
+}
+
+fn program_upgrade_progress_store() -> Arc<tokio::sync::Mutex<ProgramUpgradeProgress>> {
+    PROGRAM_UPGRADE_PROGRESS
+        .get_or_init(|| Arc::new(tokio::sync::Mutex::new(ProgramUpgradeProgress::default())))
+        .clone()
+}
+
+fn now_unix_ms_lossy() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+async fn publish_program_upgrade_progress(
+    update: impl FnOnce(&mut ProgramUpgradeProgress),
+) {
+    let store = program_upgrade_progress_store();
+    let mut progress = store.lock().await;
+    update(&mut progress);
+    progress.updated_at_ms = now_unix_ms_lossy();
+}
+
+async fn begin_program_upgrade_progress(
+    program_id: &str,
+    network: &str,
+    program_bytes: usize,
+    write_total: usize,
+) {
+    publish_program_upgrade_progress(|progress| {
+        *progress = ProgramUpgradeProgress {
+            active: true,
+            program_id: program_id.to_string(),
+            network: network.to_string(),
+            stage: "preparing".to_string(),
+            message: "正在校验升级参数与程序制品".to_string(),
+            write_completed: 0,
+            write_total,
+            program_bytes,
+            buffer_address: None,
+            last_signature: None,
+            error: None,
+            updated_at_ms: 0,
+        };
+    })
+    .await;
+}
+
+async fn finish_program_upgrade_progress(result: &Result<Json<UpgradeProgramResponse>, ApiError>) {
+    match result {
+        Ok(Json(response)) => {
+            publish_program_upgrade_progress(|progress| {
+                progress.active = false;
+                progress.stage = "finalized".to_string();
+                progress.message = "升级已完成并通过链上回读校验".to_string();
+                progress.program_id = response.program_id.clone();
+                progress.network = response.network.clone();
+                progress.buffer_address = Some(response.buffer_address.clone());
+                progress.last_signature = Some(response.upgrade_signature.clone());
+                progress.write_completed = response.write_signatures.len();
+                progress.write_total = response.write_signatures.len().max(progress.write_total);
+                progress.program_bytes = response.program_bytes;
+                progress.error = None;
+            })
+            .await;
+        }
+        Err(error) => {
+            publish_program_upgrade_progress(|progress| {
+                if !progress.active && progress.stage == "idle" {
+                    return;
+                }
+                progress.active = false;
+                progress.stage = "failed".to_string();
+                progress.message = error.message.clone();
+                progress.error = Some(error.message.clone());
+            })
+            .await;
+        }
+    }
+}
 
 fn official_swqos_configs() -> Vec<SwqosConfig> {
     let region = SwqosRegion::Frankfurt;
@@ -1629,6 +1754,37 @@ async fn submit_signed_transaction_once(
             })
         }
     }
+}
+
+async fn sign_and_send_with_commitment(
+    client: &RpcClient,
+    instructions: Vec<solana_sdk::instruction::Instruction>,
+    signers: &[&Keypair],
+    payer: &Pubkey,
+    action: &str,
+    commitment: CommitmentConfig,
+    commitment_label: &str,
+    timeout: Duration,
+) -> Result<(String, u64), ApiError> {
+    let (blockhash, _) = client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .map_err(|error| ApiError {
+            message: format!("获取 {action} blockhash 失败: {error}"),
+        })?;
+    let transaction =
+        Transaction::new_signed_with_payer(&instructions, Some(payer), signers, blockhash);
+    let context = format!("{action}；payer={payer}");
+    let (signature, slot) = submit_signed_transaction_once(
+        client,
+        &transaction,
+        action,
+        &context,
+        commitment,
+        commitment_label,
+        timeout,
+    )
+    .await?;
+    Ok((signature.to_string(), slot))
 }
 
 fn estimate_instruction_fee(
@@ -3057,8 +3213,34 @@ async fn main() -> anyhow::Result<()> {
         // Program Deployment
         .route("/api/program/deploy", post(deploy_generic_program))
         .route("/api/program/deploy/", post(deploy_generic_program))
+        .route("/api/program/upgrade", post(upgrade_generic_program))
+        .route("/api/program/upgrade/", post(upgrade_generic_program))
+        .route(
+            "/api/program/upgrade/progress",
+            get(program_upgrade_progress),
+        )
+        .route(
+            "/api/program/upgrade/progress/",
+            get(program_upgrade_progress),
+        )
         .route("/api/program/deploy-source", post(program_deploy_source))
         .route("/api/program/deploy-source/", post(program_deploy_source))
+        .route(
+            "/api/program/keypair-artifact",
+            post(program_keypair_artifact),
+        )
+        .route(
+            "/api/program/keypair-artifact/",
+            post(program_keypair_artifact),
+        )
+        .route(
+            "/api/program/generate-keypair",
+            post(program_generate_keypair),
+        )
+        .route(
+            "/api/program/generate-keypair/",
+            post(program_generate_keypair),
+        )
         .route(
             "/api/program/deploy-source/build/{job_id}",
             get(program_deploy_source_build_status),
@@ -3075,12 +3257,22 @@ async fn main() -> anyhow::Result<()> {
             "/api/program/deployment-journal/",
             post(program_deployment_journal),
         )
+        .route(
+            "/api/program/deployment-journal/by-program",
+            post(program_deployment_journal_by_program),
+        )
+        .route(
+            "/api/program/deployment-journal/by-program/",
+            post(program_deployment_journal_by_program),
+        )
         .route("/api/program/idl", post(program_idl))
         .route("/api/program/idl/", post(program_idl))
         .route("/api/program/invoke", post(program_invoke))
         .route("/api/program/invoke/", post(program_invoke))
         .route("/api/program/info", post(program_info))
         .route("/api/program/info/", post(program_info))
+        .route("/api/program/derive-address", post(program_derive_address))
+        .route("/api/program/derive-address/", post(program_derive_address))
         // Squads v4 multisig
         .route("/api/squads/create", post(squads_create))
         .route("/api/squads/create/", post(squads_create))
@@ -6050,7 +6242,6 @@ struct ProgramDeploySourceResponse {
     program_so_name: Option<String>,
     program_so_base64: Option<String>,
     program_so_sha256: Option<String>,
-    approved_program_sha256: Option<String>,
     program_so_size: Option<usize>,
     program_keypair_path: Option<String>,
     expected_program_id: Option<String>,
@@ -6062,6 +6253,7 @@ struct ProgramDeploySourceResponse {
     manifest_operational_admin: Option<String>,
     build_available: bool,
     build_blocked_reason: Option<String>,
+    source_validation_errors: Vec<String>,
     warnings: Vec<String>,
 }
 
@@ -6070,7 +6262,6 @@ struct ProgramSourceArtifacts {
     program_so_name: Option<String>,
     program_so_base64: Option<String>,
     program_so_sha256: Option<String>,
-    approved_program_sha256: Option<String>,
     program_so_size: Option<usize>,
     program_keypair_path: Option<PathBuf>,
     expected_program_id: Option<String>,
@@ -6080,7 +6271,13 @@ struct ProgramSourceArtifacts {
     manifest_upgrade_authority: Option<String>,
     manifest_owner_admin: Option<String>,
     manifest_operational_admin: Option<String>,
+    source_validation_errors: Vec<String>,
     warnings: Vec<String>,
+}
+
+struct ProgramIdDeclaration {
+    label: String,
+    program_id: String,
 }
 
 #[derive(Clone)]
@@ -6092,14 +6289,6 @@ struct ProgramSourceBuildJob {
     build_stdout: Option<String>,
     build_stderr: Option<String>,
     build_error: Option<String>,
-    warnings: Vec<String>,
-}
-
-struct ProgramSourceBuildOutcome {
-    command: String,
-    template: String,
-    stdout: String,
-    stderr: String,
     warnings: Vec<String>,
 }
 
@@ -6188,13 +6377,11 @@ fn file_modified_time_key(path: &FsPath) -> SystemTime {
 }
 
 fn newest_file(paths: Vec<PathBuf>) -> Option<PathBuf> {
-    paths
-        .into_iter()
-        .max_by(|left, right| {
-            file_modified_time_key(left)
-                .cmp(&file_modified_time_key(right))
-                .then_with(|| left.cmp(right))
-        })
+    paths.into_iter().max_by(|left, right| {
+        file_modified_time_key(left)
+            .cmp(&file_modified_time_key(right))
+            .then_with(|| left.cmp(right))
+    })
 }
 
 fn so_file_paths(root: &FsPath, directory: &FsPath) -> Vec<PathBuf> {
@@ -6253,6 +6440,24 @@ fn safe_artifact_stem(value: &str) -> Option<String> {
         return None;
     }
     Some(stem)
+}
+
+fn artifact_stem_from_so_name(value: &str) -> Option<String> {
+    let name = value.trim();
+    let stem = name
+        .strip_suffix(".so")
+        .or_else(|| name.strip_suffix(".SO"))
+        .or_else(|| {
+            name.rsplit_once('.').and_then(|(stem, ext)| {
+                if ext.eq_ignore_ascii_case("so") {
+                    Some(stem)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or(name);
+    safe_artifact_stem(stem)
 }
 
 fn parse_quoted_toml_value(value: &str) -> Option<String> {
@@ -6327,29 +6532,38 @@ fn detect_program_artifact_stem(root: &FsPath) -> Option<String> {
 }
 
 fn find_program_so_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
+    // Anchor's canonical deploy artifacts live under target/deploy/:
+    //   target/deploy/<program_name>.so
+    //   target/deploy/<program_name>-keypair.json
+    // Prefer that pair so the .so and keypair stay in lockstep. Verifiable
+    // builds are only a fallback when deploy output is missing.
+    let mut deploy_candidates = Vec::new();
+    let mut verifiable_candidates = Vec::new();
     if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
-        candidates.push(format!("target/verifiable/{stem}.so"));
-        candidates.push(format!("target/deploy/{stem}.so"));
+        deploy_candidates.push(format!("target/deploy/{stem}.so"));
+        verifiable_candidates.push(format!("target/verifiable/{stem}.so"));
     }
-    newest_existing_path_owned(root, &candidates)
-        .or_else(|| {
-            let mut all_candidates = so_file_paths(root, &root.join("target/verifiable"));
-            all_candidates.extend(so_file_paths(root, &root.join("target/deploy")));
-            newest_file(all_candidates)
-        })
+    newest_existing_path_owned(root, &deploy_candidates)
+        .or_else(|| newest_file(so_file_paths(root, &root.join("target/deploy"))))
+        .or_else(|| newest_existing_path_owned(root, &verifiable_candidates))
+        .or_else(|| newest_file(so_file_paths(root, &root.join("target/verifiable"))))
 }
 
 fn find_program_keypair_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
+    // Prefer Anchor's build output under target/deploy/. Historical copies under
+    // .keys/ are often stale and must not override the keypair that matches the
+    // just-built .so / declare_id!.
+    let mut deploy_candidates = Vec::new();
+    let mut keys_candidates = Vec::new();
     if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
-        candidates.push(format!(".keys/{stem}-program-keypair.json"));
-        candidates.push(format!(".keys/{stem}-keypair.json"));
-        candidates.push(format!("target/deploy/{stem}-keypair.json"));
+        deploy_candidates.push(format!("target/deploy/{stem}-keypair.json"));
+        keys_candidates.push(format!(".keys/{stem}-program-keypair.json"));
+        keys_candidates.push(format!(".keys/{stem}-keypair.json"));
     }
-    first_existing_path_owned(root, &candidates)
-        .or_else(|| first_json_file(root, &root.join(".keys")))
+    newest_existing_path_owned(root, &deploy_candidates)
         .or_else(|| first_json_file(root, &root.join("target/deploy")))
+        .or_else(|| newest_existing_path_owned(root, &keys_candidates))
+        .or_else(|| first_json_file(root, &root.join(".keys")))
 }
 
 fn find_program_idl_path(root: &FsPath, artifact_stem: Option<&str>) -> Option<PathBuf> {
@@ -6379,24 +6593,6 @@ fn find_release_manifest_path(root: &FsPath) -> Option<PathBuf> {
         .min()
 }
 
-fn parse_anchor_program_id(root: &FsPath) -> Option<String> {
-    let anchor = fs::read_to_string(root.join("Anchor.toml")).ok()?;
-    for line in anchor.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || !trimmed.contains('=') {
-            continue;
-        }
-        let Some((_, value)) = trimmed.split_once('=') else {
-            continue;
-        };
-        let value = value.trim().trim_matches('"');
-        if Pubkey::from_str(value).is_ok() {
-            return Some(value.to_string());
-        }
-    }
-    None
-}
-
 fn path_string(path: &FsPath) -> String {
     path.to_string_lossy().to_string()
 }
@@ -6408,6 +6604,418 @@ fn json_pointer_string(value: &Value, pointer: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty() && !value.starts_with("REPLACE_WITH_"))
         .map(ToOwned::to_owned)
+}
+
+fn anchor_program_id_declarations(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    network: Option<&str>,
+) -> Vec<ProgramIdDeclaration> {
+    let Ok(anchor) = fs::read_to_string(root.join("Anchor.toml")) else {
+        return Vec::new();
+    };
+    let wanted_stem = artifact_stem.and_then(safe_artifact_stem);
+    let wanted_network = network
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let mut current_programs_section: Option<String> = None;
+    let mut declarations = Vec::new();
+    for line in anchor.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let section = trimmed.trim_start_matches('[').trim_end_matches(']');
+            current_programs_section = section
+                .strip_prefix("programs.")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            continue;
+        }
+        let Some(section_network) = current_programs_section.as_ref() else {
+            continue;
+        };
+        if let Some(wanted_network) = wanted_network.as_ref() {
+            if section_network != wanted_network {
+                continue;
+            }
+        }
+        if trimmed.starts_with('#') || !trimmed.contains('=') {
+            continue;
+        }
+        let Some((name, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let Some(program_name) = safe_artifact_stem(name.trim()) else {
+            continue;
+        };
+        if let Some(wanted_stem) = wanted_stem.as_ref() {
+            if &program_name != wanted_stem {
+                continue;
+            }
+        }
+        let Some(value) = parse_quoted_toml_value(value) else {
+            continue;
+        };
+        declarations.push(ProgramIdDeclaration {
+            label: format!("Anchor.toml [programs.{section_network}] {program_name}"),
+            program_id: value,
+        });
+    }
+    if declarations.is_empty() && wanted_network.is_some() {
+        return anchor_program_id_declarations(root, artifact_stem, None);
+    }
+    declarations
+}
+
+fn parse_anchor_program_id(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    network: Option<&str>,
+) -> Option<String> {
+    anchor_program_id_declarations(root, artifact_stem, network)
+        .into_iter()
+        .next()
+        .map(|declaration| declaration.program_id)
+}
+
+fn parse_idl_program_id(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+) -> Result<Option<ProgramIdDeclaration>, ApiError> {
+    let Some(idl_path) = find_program_idl_path(root, artifact_stem) else {
+        return Ok(None);
+    };
+    let text = read_text_file_limited(&idl_path, MAX_PROGRAM_IDL_JSON_BYTES, "Anchor IDL")?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|_| program_source_error("Anchor IDL 不是有效 JSON"))?;
+    let Some(program_id) = json_pointer_string(&value, "/address")
+        .or_else(|| json_pointer_string(&value, "/metadata/address"))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(ProgramIdDeclaration {
+        label: format!("{} address", path_string(&idl_path)),
+        program_id,
+    }))
+}
+
+fn rust_declare_id_candidate_paths(root: &FsPath, artifact_stem: Option<&str>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(stem) = artifact_stem.and_then(safe_artifact_stem) {
+        candidates.push(root.join(format!("programs/{stem}/src/lib.rs")));
+    }
+    candidates.push(root.join("src/lib.rs"));
+    let exact_candidates: Vec<PathBuf> = candidates
+        .into_iter()
+        .filter_map(|path| canonical_child_path(root, &path, "Rust declare_id 源文件").ok())
+        .filter(|path| path.is_file())
+        .collect();
+    if !exact_candidates.is_empty() {
+        return exact_candidates;
+    }
+    newest_file(
+        fs::read_dir(root.join("programs"))
+            .ok()
+            .into_iter()
+            .flat_map(|entries| entries.filter_map(Result::ok))
+            .map(|entry| entry.path().join("src/lib.rs"))
+            .filter_map(|path| canonical_child_path(root, &path, "Rust declare_id 源文件").ok())
+            .filter(|path| path.is_file())
+            .collect(),
+    )
+    .into_iter()
+    .collect()
+}
+
+fn parse_rust_declare_id_values(text: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut rest = text;
+    while let Some(index) = rest.find("declare_id!") {
+        rest = &rest[index + "declare_id!".len()..];
+        let Some(open_quote) = rest.find('"') else {
+            break;
+        };
+        rest = &rest[open_quote + 1..];
+        let Some(close_quote) = rest.find('"') else {
+            break;
+        };
+        let value = rest[..close_quote].trim();
+        if !value.is_empty() {
+            values.push(value.to_string());
+        }
+        rest = &rest[close_quote + 1..];
+    }
+    values
+}
+
+fn replace_rust_declare_id_values(text: &str, program_id: &str) -> (String, usize) {
+    let mut output = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut replacements = 0usize;
+    while let Some(index) = rest.find("declare_id!") {
+        output.push_str(&rest[..index + "declare_id!".len()]);
+        rest = &rest[index + "declare_id!".len()..];
+        let Some(open_quote) = rest.find('"') else {
+            output.push_str(rest);
+            return (output, replacements);
+        };
+        output.push_str(&rest[..open_quote + 1]);
+        rest = &rest[open_quote + 1..];
+        let Some(close_quote) = rest.find('"') else {
+            output.push_str(rest);
+            return (output, replacements);
+        };
+        output.push_str(program_id);
+        rest = &rest[close_quote..];
+        replacements += 1;
+    }
+    output.push_str(rest);
+    (output, replacements)
+}
+
+fn rust_declare_id_declarations(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+) -> Result<Vec<ProgramIdDeclaration>, ApiError> {
+    let mut declarations = Vec::new();
+    for path in rust_declare_id_candidate_paths(root, artifact_stem) {
+        let text = read_text_file_limited(&path, 512 * 1024, "Rust declare_id 源文件")?;
+        for program_id in parse_rust_declare_id_values(&text) {
+            declarations.push(ProgramIdDeclaration {
+                label: format!("{} declare_id!", path_string(&path)),
+                program_id,
+            });
+        }
+    }
+    Ok(declarations)
+}
+
+fn update_rust_declare_id_files(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    program_id: &str,
+) -> Result<Vec<String>, ApiError> {
+    let mut updated = Vec::new();
+    for path in rust_declare_id_candidate_paths(root, artifact_stem) {
+        let text = read_text_file_limited(&path, 512 * 1024, "Rust declare_id 源文件")?;
+        let (next_text, replacements) = replace_rust_declare_id_values(&text, program_id);
+        if replacements == 0 || next_text == text {
+            continue;
+        }
+        fs::write(&path, next_text)
+            .map_err(|error| program_source_error(format!("更新 declare_id! 失败: {error}")))?;
+        updated.push(path_string(&path));
+    }
+    Ok(updated)
+}
+
+fn update_anchor_program_ids(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    program_id: &str,
+) -> Result<Vec<String>, ApiError> {
+    let anchor_path = root.join("Anchor.toml");
+    if !anchor_path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = read_text_file_limited(&anchor_path, 512 * 1024, "Anchor.toml")?;
+    let wanted_stem = artifact_stem.and_then(safe_artifact_stem);
+    let mut in_programs_section = false;
+    let mut replacements = 0usize;
+    let mut output = String::with_capacity(text.len());
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let section = trimmed.trim_start_matches('[').trim_end_matches(']');
+            in_programs_section = section.starts_with("programs.");
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+        if !in_programs_section || trimmed.starts_with('#') || !trimmed.contains('=') {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+        let Some((name, _value)) = trimmed.split_once('=') else {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        };
+        let Some(program_name) = safe_artifact_stem(name.trim()) else {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        };
+        if wanted_stem
+            .as_ref()
+            .is_some_and(|wanted_stem| wanted_stem != &program_name)
+        {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+        let indent = line
+            .chars()
+            .take_while(|character| character.is_whitespace())
+            .collect::<String>();
+        output.push_str(&format!("{indent}{program_name} = \"{program_id}\"\n"));
+        replacements += 1;
+    }
+    let output = if text.ends_with('\n') {
+        output
+    } else {
+        output.trim_end_matches('\n').to_string()
+    };
+    if replacements == 0 || output == text {
+        return Ok(Vec::new());
+    }
+    fs::write(&anchor_path, output)
+        .map_err(|error| program_source_error(format!("更新 Anchor.toml 失败: {error}")))?;
+    Ok(vec![path_string(&anchor_path)])
+}
+
+fn push_program_id_validation_error(
+    errors: &mut Vec<String>,
+    label: &str,
+    source_program_id: &str,
+    expected_program_id: &str,
+) {
+    if Pubkey::from_str(source_program_id).is_err() {
+        errors.push(format!(
+            "{label} 的 Program ID 不是有效 Solana 地址：{source_program_id}。请修正后重新编译。"
+        ));
+        return;
+    }
+    if source_program_id != expected_program_id {
+        errors.push(format!(
+            "源码/制品 Program ID 不一致：{label} 为 {source_program_id}，但当前 Program keypair 派生为 {expected_program_id}。请同步 declare_id!、Anchor.toml、IDL/编译产物后重新编译，或选择匹配的 Program keypair。"
+        ));
+    }
+}
+
+fn push_program_so_declared_id_validation_error(
+    errors: &mut Vec<String>,
+    label: &str,
+    program_bytes: &[u8],
+    expected_program_id: &str,
+) {
+    let Ok(expected_program_id) = Pubkey::from_str(expected_program_id) else {
+        return;
+    };
+    if let Err(error) =
+        program_deploy::require_anchor_declared_program_id(program_bytes, &expected_program_id)
+    {
+        errors.push(format!("{label}: {error}"));
+    }
+}
+
+fn collect_source_validation_errors(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    network: Option<&str>,
+    expected_program_id: Option<&str>,
+    program_so: Option<(&str, &[u8])>,
+) -> Result<Vec<String>, ApiError> {
+    let Some(expected_program_id) = expected_program_id else {
+        return Ok(Vec::new());
+    };
+    let mut errors = Vec::new();
+    for declaration in anchor_program_id_declarations(root, artifact_stem, network) {
+        push_program_id_validation_error(
+            &mut errors,
+            &declaration.label,
+            &declaration.program_id,
+            expected_program_id,
+        );
+    }
+    if let Some(declaration) = parse_idl_program_id(root, artifact_stem)? {
+        push_program_id_validation_error(
+            &mut errors,
+            &declaration.label,
+            &declaration.program_id,
+            expected_program_id,
+        );
+    }
+    for declaration in rust_declare_id_declarations(root, artifact_stem)? {
+        push_program_id_validation_error(
+            &mut errors,
+            &declaration.label,
+            &declaration.program_id,
+            expected_program_id,
+        );
+    }
+    if let Some((label, program_bytes)) = program_so {
+        push_program_so_declared_id_validation_error(
+            &mut errors,
+            label,
+            program_bytes,
+            expected_program_id,
+        );
+    }
+    errors.sort();
+    errors.dedup();
+    Ok(errors)
+}
+
+fn collect_prebuild_source_validation_errors(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+    network: Option<&str>,
+    expected_program_id: Option<&str>,
+) -> Result<Vec<String>, ApiError> {
+    let Some(expected_program_id) = expected_program_id else {
+        return Ok(Vec::new());
+    };
+    let mut errors = Vec::new();
+    for declaration in anchor_program_id_declarations(root, artifact_stem, network) {
+        push_program_id_validation_error(
+            &mut errors,
+            &declaration.label,
+            &declaration.program_id,
+            expected_program_id,
+        );
+    }
+    for declaration in rust_declare_id_declarations(root, artifact_stem)? {
+        push_program_id_validation_error(
+            &mut errors,
+            &declaration.label,
+            &declaration.program_id,
+            expected_program_id,
+        );
+    }
+    errors.sort();
+    errors.dedup();
+    Ok(errors)
+}
+
+fn expected_program_id_from_keypair_path(path: &FsPath) -> Result<String, ApiError> {
+    let mut json = read_text_file_limited(
+        path,
+        program_deploy::MAX_PROGRAM_KEYPAIR_JSON_BYTES,
+        "Program keypair",
+    )?;
+    let keypair =
+        program_deploy::parse_program_keypair_json(&json).map_err(program_source_error)?;
+    json.zeroize();
+    Ok(keypair.pubkey().to_string())
+}
+
+fn expected_program_id_from_source_keypair(
+    root: &FsPath,
+    artifact_stem: Option<&str>,
+) -> Result<Option<String>, ApiError> {
+    find_program_keypair_path(root, artifact_stem)
+        .as_deref()
+        .map(expected_program_id_from_keypair_path)
+        .transpose()
+}
+
+fn source_validation_blocked_warning(error_count: usize) -> String {
+    format!(
+        "部署前一致性校验发现 {error_count} 个阻断问题，已停止部署。请复制错误信息修复后重新编译。"
+    )
 }
 
 fn release_metadata_sha_and_len(
@@ -6482,49 +7090,13 @@ fn load_program_source_artifacts(
             .filter(|value| matches!(*value, "mainnet" | "devnet" | "testnet"))
             .map(ToOwned::to_owned);
     }
-    let manifest_program_id = parse_anchor_program_id(root);
+    let manifest_program_id = parse_anchor_program_id(
+        root,
+        artifact_stem,
+        manifest_network.as_deref().or(fallback_network),
+    );
 
     let mut warnings = Vec::new();
-    let mut program_so_base64 = None;
-    let mut program_so_sha256 = None;
-    let mut approved_program_sha256 = None;
-    let mut program_so_size = None;
-    let mut program_so_name = None;
-    if let Some(path) = program_so_path.as_ref() {
-        let bytes = read_bytes_file_limited(path, MAX_PROGRAM_SO_BYTES, ".so 文件")?;
-        let actual_sha = program_deploy::sha256_hex(&bytes);
-        let actual_len = bytes.len();
-        let mut metadata_matches_selected_so = true;
-        if let Some(expected_sha) = metadata_sha.as_ref() {
-            if expected_sha != &actual_sha {
-                metadata_matches_selected_so = false;
-                warnings.push(format!(
-                    "build metadata SHA-256 为 {expected_sha}，但 .so 实际为 {actual_sha}"
-                ));
-            }
-        }
-        if let Some(expected_len) = metadata_len {
-            if expected_len != actual_len {
-                metadata_matches_selected_so = false;
-                warnings.push(format!(
-                    "build metadata 长度为 {expected_len}，但 .so 实际为 {actual_len}"
-                ));
-            }
-        }
-        approved_program_sha256 = metadata_sha
-            .filter(|_| metadata_matches_selected_so)
-            .or_else(|| Some(actual_sha.clone()));
-        program_so_base64 = Some(BASE64.encode(&bytes));
-        program_so_sha256 = Some(actual_sha);
-        program_so_size = Some(actual_len);
-        program_so_name = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .map(ToOwned::to_owned);
-    } else if warn_missing_artifacts {
-        warnings.push("未找到 target/verifiable/*.so 或 target/deploy/*.so".to_string());
-    }
-
     let mut expected_program_id = None;
     if let Some(path) = program_keypair_path.as_ref() {
         let mut json = read_text_file_limited(
@@ -6536,17 +7108,58 @@ fn load_program_source_artifacts(
             program_deploy::parse_program_keypair_json(&json).map_err(program_source_error)?;
         json.zeroize();
         expected_program_id = Some(keypair.pubkey().to_string());
-        if let (Some(manifest_id), Some(keypair_id)) =
-            (manifest_program_id.as_ref(), expected_program_id.as_ref())
-        {
-            if manifest_id != keypair_id {
+    } else if warn_missing_artifacts {
+        warnings.push("未找到 target/deploy/*-keypair.json（也未找到可用的 .keys/*.json 回退）".to_string());
+    }
+
+    let mut program_so_base64 = None;
+    let mut program_so_sha256 = None;
+    let mut program_so_size = None;
+    let mut program_so_name = None;
+    let mut program_so_validation: Option<(String, Vec<u8>)> = None;
+    if let Some(path) = program_so_path.as_ref() {
+        let bytes = read_bytes_file_limited(path, MAX_PROGRAM_SO_BYTES, ".so 文件")?;
+        let actual_sha = program_deploy::sha256_hex(&bytes);
+        let actual_len = bytes.len();
+        if let Some(expected_sha) = metadata_sha.as_ref() {
+            if expected_sha != &actual_sha {
                 warnings.push(format!(
-                    "Anchor.toml Program ID 为 {manifest_id}，但 Program keypair 派生为 {keypair_id}"
+                    "build metadata SHA-256 为 {expected_sha}，但 .so 实际为 {actual_sha}"
                 ));
             }
         }
+        if let Some(expected_len) = metadata_len {
+            if expected_len != actual_len {
+                warnings.push(format!(
+                    "build metadata 长度为 {expected_len}，但 .so 实际为 {actual_len}"
+                ));
+            }
+        }
+        program_so_base64 = Some(BASE64.encode(&bytes));
+        program_so_sha256 = Some(actual_sha);
+        program_so_size = Some(actual_len);
+        program_so_validation = Some((path_string(path), bytes));
+        program_so_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(ToOwned::to_owned);
     } else if warn_missing_artifacts {
-        warnings.push("未找到 .keys/*.json 或 target/deploy/*-keypair.json".to_string());
+        warnings.push("未找到 target/deploy/<program>.so（也未找到 target/verifiable/*.so 回退）".to_string());
+    }
+
+    let source_validation_errors = collect_source_validation_errors(
+        root,
+        artifact_stem,
+        manifest_network.as_deref().or(fallback_network),
+        expected_program_id.as_deref(),
+        program_so_validation
+            .as_ref()
+            .map(|(label, bytes)| (label.as_str(), bytes.as_slice())),
+    )?;
+    if warn_missing_artifacts && !source_validation_errors.is_empty() {
+        warnings.push(source_validation_blocked_warning(
+            source_validation_errors.len(),
+        ));
     }
 
     Ok(ProgramSourceArtifacts {
@@ -6554,7 +7167,6 @@ fn load_program_source_artifacts(
         program_so_name,
         program_so_base64,
         program_so_sha256: program_so_sha256.clone(),
-        approved_program_sha256: approved_program_sha256.or(program_so_sha256),
         program_so_size,
         program_keypair_path,
         expected_program_id,
@@ -6564,178 +7176,9 @@ fn load_program_source_artifacts(
         manifest_upgrade_authority,
         manifest_owner_admin,
         manifest_operational_admin,
+        source_validation_errors,
         warnings,
     })
-}
-
-fn truncate_build_log(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    if text.len() <= PROGRAM_SOURCE_BUILD_LOG_BYTES {
-        return text.to_string();
-    }
-    let start = text.len().saturating_sub(PROGRAM_SOURCE_BUILD_LOG_BYTES);
-    format!("...[truncated]{}", &text[start..])
-}
-
-#[derive(Clone)]
-struct ProgramSourceBuildPlan {
-    command: Vec<String>,
-    display_command: String,
-    template: String,
-}
-
-impl ProgramSourceBuildPlan {
-    fn new(template: &str, command: &[&str]) -> Self {
-        Self {
-            command: command.iter().map(|part| (*part).to_string()).collect(),
-            display_command: command.join(" "),
-            template: template.to_string(),
-        }
-    }
-}
-
-fn program_source_build_plans(root: &FsPath) -> (Vec<ProgramSourceBuildPlan>, Option<String>) {
-    let contains_source_keys = root.join(".keys").exists();
-    let mut plans = Vec::new();
-    if !contains_source_keys && root.join("scripts/build-verifiable.sh").is_file() {
-        plans.push(ProgramSourceBuildPlan::new(
-            "项目脚本",
-            &["bash", "scripts/build-verifiable.sh"],
-        ));
-    }
-    if !contains_source_keys && root.join("Makefile").is_file() {
-        plans.push(ProgramSourceBuildPlan::new(
-            "项目 Makefile",
-            &["make", "build"],
-        ));
-    }
-    if root.join("Anchor.toml").is_file() {
-        plans.push(ProgramSourceBuildPlan::new(
-            "sol-safekey 内置 Anchor 模板",
-            &["anchor", "build"],
-        ));
-    }
-    if root.join("Cargo.toml").is_file() {
-        plans.push(ProgramSourceBuildPlan::new(
-            "sol-safekey 内置 Cargo SBF 模板",
-            &["cargo", "build-sbf"],
-        ));
-    }
-    if plans.is_empty() {
-        (
-            plans,
-            Some(if contains_source_keys {
-                "源码目录包含 .keys；已跳过项目脚本和 Makefile，且未识别 Anchor.toml 或 Cargo.toml，无法使用内置模板编译".to_string()
-            } else {
-                "未识别 Anchor.toml、Cargo.toml 或构建脚本".to_string()
-            }),
-        )
-    } else {
-        (plans, None)
-    }
-}
-
-fn program_source_keys_build_warning(root: &FsPath) -> Option<String> {
-    root.join(".keys").exists().then(|| {
-        "源码目录包含 .keys；为避免项目脚本读取签名材料，已跳过 scripts/build-verifiable.sh 和 Makefile，仅使用 sol-safekey 内置 Anchor/Cargo 构建模板".to_string()
-    })
-}
-
-async fn run_program_source_build(
-    root: &FsPath,
-    plan: &ProgramSourceBuildPlan,
-) -> Result<(String, String), ApiError> {
-    let executable = plan
-        .command
-        .first()
-        .ok_or_else(|| program_source_error("构建命令为空"))?;
-    let mut process = Command::new(executable);
-    process.args(plan.command.iter().skip(1)).current_dir(root);
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        let candidate_bins = [
-            home.join(".nvm/versions/node/v20.19.5/bin"),
-            home.join(".avm/bin"),
-            home.join(".cargo/bin"),
-            home.join(".local/share/solana/install/active_release/bin"),
-        ];
-        let current_path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = std::env::split_paths(&current_path).collect::<Vec<_>>();
-        for bin in candidate_bins.into_iter().rev() {
-            if bin.is_dir() {
-                paths.insert(0, bin);
-            }
-        }
-        if let Ok(path) = std::env::join_paths(paths) {
-            process.env("PATH", path);
-        }
-    }
-    let output = timeout(
-        Duration::from_secs(PROGRAM_SOURCE_BUILD_TIMEOUT_SECS),
-        process.output(),
-    )
-    .await
-    .map_err(|_| program_source_error("构建超时"))?
-    .map_err(|error| program_source_error(format!("启动构建失败: {error}")))?;
-    let stdout = truncate_build_log(&output.stdout);
-    let stderr = truncate_build_log(&output.stderr);
-    if !output.status.success() {
-        return Err(program_source_error(format!(
-            "{} 构建失败: {}\n{}",
-            plan.template, output.status, stderr
-        )));
-    }
-    Ok((stdout, stderr))
-}
-
-async fn execute_program_source_build(
-    source_dir: &FsPath,
-    build_plans: &[ProgramSourceBuildPlan],
-    build_blocked_reason: Option<String>,
-    artifact_stem: Option<&str>,
-) -> Result<ProgramSourceBuildOutcome, ApiError> {
-    if build_plans.is_empty() {
-        return Err(program_source_error(
-            build_blocked_reason.unwrap_or_else(|| "当前源码目录不可自动编译".to_string()),
-        ));
-    }
-
-    let mut warnings = Vec::new();
-    let mut last_error = None;
-    for plan in build_plans.iter() {
-        match run_program_source_build(source_dir, plan).await {
-            Ok((stdout, stderr)) => {
-                if find_program_so_path(source_dir, artifact_stem).is_none() {
-                    let message = format!(
-                        "{}: 构建命令已结束，但未生成 target/verifiable/*.so 或 target/deploy/*.so",
-                        plan.display_command
-                    );
-                    warnings.push(message.clone());
-                    last_error = Some(message);
-                    continue;
-                }
-                if !warnings.is_empty() {
-                    warnings.push(format!("已改用 {} 完成编译", plan.template));
-                }
-                return Ok(ProgramSourceBuildOutcome {
-                    command: plan.display_command.clone(),
-                    template: plan.template.clone(),
-                    stdout,
-                    stderr,
-                    warnings,
-                });
-            }
-            Err(error) => {
-                let message = format!("{}: {}", plan.display_command, error.message);
-                warnings.push(message.clone());
-                last_error = Some(message);
-            }
-        }
-    }
-
-    Err(program_source_error(last_error.unwrap_or_else(|| {
-        build_blocked_reason.unwrap_or_else(|| "构建完成后未找到可部署 .so".to_string())
-    })))
 }
 
 fn next_program_source_build_job_id() -> String {
@@ -6754,7 +7197,9 @@ async fn start_program_source_build_job(
     initial_warnings: Vec<String>,
 ) -> (String, Option<String>, Option<String>) {
     let job_id = next_program_source_build_job_id();
-    let build_command = build_plans.first().map(|plan| plan.display_command.clone());
+    let build_command = build_plans
+        .first()
+        .map(|plan| display_program_source_build_command(&source_dir, plan));
     let build_template = build_plans.first().map(|plan| plan.template.clone());
     let job = ProgramSourceBuildJob {
         source_dir: source_dir.clone(),
@@ -6779,6 +7224,7 @@ async fn start_program_source_build_job(
             &build_plans,
             build_blocked_reason,
             artifact_stem.as_deref(),
+            find_program_so_path,
         )
         .await;
         let mut jobs = jobs.lock().await;
@@ -6840,6 +7286,62 @@ async fn program_deploy_source(
                     .unwrap_or_else(|| "当前源码目录不可自动编译".to_string()),
             ));
         }
+        let expected_program_id =
+            expected_program_id_from_source_keypair(&source_dir, artifact_stem.as_deref())?;
+        let prebuild_validation_errors = collect_prebuild_source_validation_errors(
+            &source_dir,
+            artifact_stem.as_deref(),
+            req.network.as_deref(),
+            expected_program_id.as_deref(),
+        )?;
+        if !prebuild_validation_errors.is_empty() {
+            let mut artifacts = load_program_source_artifacts(
+                &source_dir,
+                artifact_stem.as_deref(),
+                req.network.as_deref(),
+                true,
+            )?;
+            artifacts.source_validation_errors = prebuild_validation_errors;
+            build_warnings.append(&mut artifacts.warnings);
+            build_warnings.push(format!(
+                "编译未启动：{}",
+                source_validation_blocked_warning(artifacts.source_validation_errors.len())
+            ));
+            return Ok(Json(ProgramDeploySourceResponse {
+                source_dir: path_string(&source_dir),
+                built,
+                build_status: Some("blocked".to_string()),
+                build_job_id: None,
+                build_error: None,
+                build_command,
+                build_template,
+                build_stdout,
+                build_stderr,
+                program_so_path: artifacts
+                    .program_so_path
+                    .as_ref()
+                    .map(|path| path_string(path)),
+                program_so_name: artifacts.program_so_name,
+                program_so_base64: artifacts.program_so_base64,
+                program_so_sha256: artifacts.program_so_sha256,
+                program_so_size: artifacts.program_so_size,
+                program_keypair_path: artifacts
+                    .program_keypair_path
+                    .as_ref()
+                    .map(|path| path_string(path)),
+                expected_program_id: artifacts.expected_program_id.or(expected_program_id),
+                manifest_program_id: artifacts.manifest_program_id,
+                manifest_network: artifacts.manifest_network,
+                manifest_genesis_hash: artifacts.manifest_genesis_hash,
+                manifest_upgrade_authority: artifacts.manifest_upgrade_authority,
+                manifest_owner_admin: artifacts.manifest_owner_admin,
+                manifest_operational_admin: artifacts.manifest_operational_admin,
+                build_available,
+                build_blocked_reason,
+                source_validation_errors: artifacts.source_validation_errors,
+                warnings: build_warnings,
+            }));
+        }
         let (job_id, job_command, job_template) = start_program_source_build_job(
             source_dir.clone(),
             build_plans.clone(),
@@ -6880,7 +7382,6 @@ async fn program_deploy_source(
         program_so_name: artifacts.program_so_name,
         program_so_base64: artifacts.program_so_base64,
         program_so_sha256: artifacts.program_so_sha256,
-        approved_program_sha256: artifacts.approved_program_sha256,
         program_so_size: artifacts.program_so_size,
         program_keypair_path: artifacts
             .program_keypair_path
@@ -6895,7 +7396,190 @@ async fn program_deploy_source(
         manifest_operational_admin: artifacts.manifest_operational_admin,
         build_available,
         build_blocked_reason,
+        source_validation_errors: artifacts.source_validation_errors,
         warnings: build_warnings,
+    }))
+}
+
+#[derive(Deserialize)]
+struct ProgramKeypairArtifactRequest {
+    source_dir: String,
+    #[serde(default)]
+    artifact_stem: Option<String>,
+    #[serde(default)]
+    program_so_name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ProgramKeypairArtifactResponse {
+    source_dir: String,
+    artifact_stem: Option<String>,
+    program_keypair_path: Option<String>,
+    expected_program_id: Option<String>,
+    warnings: Vec<String>,
+}
+
+async fn program_keypair_artifact(
+    Json(req): Json<ProgramKeypairArtifactRequest>,
+) -> Result<Json<ProgramKeypairArtifactResponse>, ApiError> {
+    let source_dir_raw = req.source_dir.trim();
+    if source_dir_raw.is_empty() || source_dir_raw.len() > 4096 {
+        return Err(program_source_error("源码目录路径无效"));
+    }
+    let source_dir = PathBuf::from(source_dir_raw)
+        .canonicalize()
+        .map_err(|error| program_source_error(format!("源码目录不存在或不可访问: {error}")))?;
+    if !source_dir.is_dir() {
+        return Err(program_source_error("源码目录不是目录"));
+    }
+    let artifact_stem = req
+        .artifact_stem
+        .as_deref()
+        .and_then(safe_artifact_stem)
+        .or_else(|| {
+            req.program_so_name
+                .as_deref()
+                .and_then(artifact_stem_from_so_name)
+        })
+        .or_else(|| detect_program_artifact_stem(&source_dir));
+    let mut warnings = Vec::new();
+    let Some(program_keypair_path) =
+        find_program_keypair_path(&source_dir, artifact_stem.as_deref())
+    else {
+        warnings.push("未找到 target/deploy/<program>-keypair.json（也未找到可用的 .keys/*.json 回退）".to_string());
+        return Ok(Json(ProgramKeypairArtifactResponse {
+            source_dir: path_string(&source_dir),
+            artifact_stem,
+            program_keypair_path: None,
+            expected_program_id: None,
+            warnings,
+        }));
+    };
+    let mut json = read_text_file_limited(
+        &program_keypair_path,
+        program_deploy::MAX_PROGRAM_KEYPAIR_JSON_BYTES,
+        "Program keypair",
+    )?;
+    let keypair =
+        program_deploy::parse_program_keypair_json(&json).map_err(program_source_error)?;
+    json.zeroize();
+    Ok(Json(ProgramKeypairArtifactResponse {
+        source_dir: path_string(&source_dir),
+        artifact_stem,
+        program_keypair_path: Some(path_string(&program_keypair_path)),
+        expected_program_id: Some(keypair.pubkey().to_string()),
+        warnings,
+    }))
+}
+
+#[derive(Deserialize)]
+struct ProgramGenerateKeypairRequest {
+    source_dir: String,
+    #[serde(default)]
+    artifact_stem: Option<String>,
+    #[serde(default)]
+    program_so_name: Option<String>,
+    #[serde(default)]
+    update_source: bool,
+}
+
+#[derive(Serialize)]
+struct ProgramGenerateKeypairResponse {
+    source_dir: String,
+    artifact_stem: String,
+    program_keypair_path: String,
+    backup_program_keypair_path: Option<String>,
+    expected_program_id: String,
+    updated_source_files: Vec<String>,
+    warnings: Vec<String>,
+}
+
+async fn program_generate_keypair(
+    Json(req): Json<ProgramGenerateKeypairRequest>,
+) -> Result<Json<ProgramGenerateKeypairResponse>, ApiError> {
+    let source_dir_raw = req.source_dir.trim();
+    if source_dir_raw.is_empty() || source_dir_raw.len() > 4096 {
+        return Err(program_source_error("源码目录路径无效"));
+    }
+    let source_dir = PathBuf::from(source_dir_raw)
+        .canonicalize()
+        .map_err(|error| program_source_error(format!("源码目录不存在或不可访问: {error}")))?;
+    if !source_dir.is_dir() {
+        return Err(program_source_error("源码目录不是目录"));
+    }
+    let artifact_stem = req
+        .artifact_stem
+        .as_deref()
+        .and_then(safe_artifact_stem)
+        .or_else(|| {
+            req.program_so_name
+                .as_deref()
+                .and_then(artifact_stem_from_so_name)
+        })
+        .or_else(|| detect_program_artifact_stem(&source_dir))
+        .ok_or_else(|| program_source_error("无法识别程序名称，请先编译或选择 .so 文件"))?;
+
+    let keypair = Keypair::new();
+    let program_id = keypair.pubkey().to_string();
+    let deploy_dir = source_dir.join("target/deploy");
+    fs::create_dir_all(&deploy_dir)
+        .map_err(|error| program_source_error(format!("创建 target/deploy 失败: {error}")))?;
+    let keypair_path = deploy_dir.join(format!("{artifact_stem}-keypair.json"));
+    let backup_path = if keypair_path.exists() {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let backup_path = deploy_dir.join(format!("{artifact_stem}-keypair.json.bak-{timestamp}"));
+        fs::rename(&keypair_path, &backup_path).map_err(|error| {
+            program_source_error(format!("备份旧 Program keypair 失败: {error}"))
+        })?;
+        Some(backup_path)
+    } else {
+        None
+    };
+    let keypair_json = serde_json::to_string(&keypair.to_bytes().to_vec())
+        .map_err(|error| program_source_error(format!("序列化 Program keypair 失败: {error}")))?;
+    fs::write(&keypair_path, keypair_json)
+        .map_err(|error| program_source_error(format!("写入 Program keypair 失败: {error}")))?;
+
+    let mut warnings = Vec::new();
+    let mut updated_source_files = Vec::new();
+    if req.update_source {
+        let mut anchor_updates =
+            update_anchor_program_ids(&source_dir, Some(&artifact_stem), &program_id)?;
+        let mut rust_updates =
+            update_rust_declare_id_files(&source_dir, Some(&artifact_stem), &program_id)?;
+        updated_source_files.append(&mut anchor_updates);
+        updated_source_files.append(&mut rust_updates);
+        updated_source_files.sort();
+        updated_source_files.dedup();
+        if updated_source_files.is_empty() {
+            warnings.push(
+                "已生成新的 Program keypair，但未找到可自动更新的 Anchor.toml 或 declare_id!；请手动同步 Program ID 后重新编译。"
+                    .to_string(),
+            );
+        } else {
+            warnings.push(
+                "已生成新的 Program keypair，并同步 Anchor.toml / declare_id!；请重新编译后部署。"
+                    .to_string(),
+            );
+        }
+    } else {
+        warnings.push(
+            "已生成新的 Program keypair；请手动同步 Anchor.toml / declare_id! 后重新编译。"
+                .to_string(),
+        );
+    }
+
+    Ok(Json(ProgramGenerateKeypairResponse {
+        source_dir: path_string(&source_dir),
+        artifact_stem,
+        program_keypair_path: path_string(&keypair_path),
+        backup_program_keypair_path: backup_path.as_ref().map(|path| path_string(path)),
+        expected_program_id: program_id,
+        updated_source_files,
+        warnings,
     }))
 }
 
@@ -7238,7 +7922,6 @@ async fn program_deploy_source_build_status(
         program_so_name: artifacts.program_so_name,
         program_so_base64: artifacts.program_so_base64,
         program_so_sha256: artifacts.program_so_sha256,
-        approved_program_sha256: artifacts.approved_program_sha256,
         program_so_size: artifacts.program_so_size,
         program_keypair_path: artifacts
             .program_keypair_path
@@ -7253,6 +7936,7 @@ async fn program_deploy_source_build_status(
         manifest_operational_admin: artifacts.manifest_operational_admin,
         build_available,
         build_blocked_reason,
+        source_validation_errors: artifacts.source_validation_errors,
         warnings,
     }))
 }
@@ -7269,6 +7953,13 @@ struct ProgramDeploymentJournalRequest {
     expected_upgrade_authority: String,
 }
 
+#[derive(Deserialize)]
+struct ProgramDeploymentJournalByProgramRequest {
+    network: String,
+    expected_genesis_hash: String,
+    program_id: String,
+}
+
 #[derive(Serialize)]
 struct ProgramDeploymentJournalResponse {
     network: String,
@@ -7277,6 +7968,8 @@ struct ProgramDeploymentJournalResponse {
     write_chunk_count: usize,
     journal: Option<ProgramDeploymentJournalView>,
     deployment_attempts: Vec<wallet_store::ProgramDeploymentAttemptRecord>,
+    conflicting_journal: Option<ProgramDeploymentJournalView>,
+    conflicting_deployment_attempts: Vec<wallet_store::ProgramDeploymentAttemptRecord>,
 }
 
 #[derive(Serialize)]
@@ -7409,27 +8102,15 @@ async fn program_deployment_journal(
     let intent = validate_program_deployment_journal_request(&req)?;
     let selector = rpc_selector(Some(req.network.trim()))?;
     let network = selector.network;
-    let client = RpcClient::new_with_timeout_and_commitment(
-        selector.url.to_string(),
-        Duration::from_secs(RPC_QUERY_TIMEOUT_SECS),
-        CommitmentConfig::finalized(),
-    );
-    let actual_genesis_hash = client.get_genesis_hash().map_err(|error| ApiError {
-        message: format!("读取 RPC genesis hash 失败: {error}"),
-    })?;
-    if actual_genesis_hash != intent.expected_genesis_hash {
-        return Err(ApiError {
-            message: format!(
-                "RPC genesis hash 为 {}，预期为 {}；拒绝读取其他集群的部署记录",
-                actual_genesis_hash, intent.expected_genesis_hash
-            ),
-        });
-    }
-    let genesis_hash = actual_genesis_hash.to_string();
+    let genesis_hash = intent.expected_genesis_hash.to_string();
     let program_id = intent.program_id.to_string();
     let (journal, deployment_attempts) =
         wallet_store::load_program_deployment_snapshot(&genesis_hash, &program_id)
             .map_err(|message| ApiError { message })?;
+    let mut matching_journal = None;
+    let mut matching_attempts = Vec::new();
+    let mut conflicting_journal = None;
+    let mut conflicting_attempts = Vec::new();
     if let Some(record) = journal.as_ref() {
         if !deployment_status_is_known(&record.status)
             || record.attempt_evidence_version
@@ -7440,7 +8121,10 @@ async fn program_deployment_journal(
                 intent.program_id
             )));
         }
-        validate_deployment_journal_binding(
+        for attempt in &deployment_attempts {
+            validate_program_deployment_attempt_record(record, attempt)?;
+        }
+        let binding_matches = validate_deployment_journal_binding(
             record,
             &genesis_hash,
             &intent.program_id,
@@ -7449,9 +8133,14 @@ async fn program_deployment_journal(
             intent.max_data_len,
             &intent.upgrade_authority,
             None,
-        )?;
-        for attempt in &deployment_attempts {
-            validate_program_deployment_attempt_record(record, attempt)?;
+        )
+        .is_ok();
+        if binding_matches {
+            matching_journal = Some(ProgramDeploymentJournalView::from(record));
+            matching_attempts = deployment_attempts;
+        } else {
+            conflicting_journal = Some(ProgramDeploymentJournalView::from(record));
+            conflicting_attempts = deployment_attempts;
         }
     } else if !deployment_attempts.is_empty() {
         return Err(deployment_journal_error(
@@ -7463,8 +8152,74 @@ async fn program_deployment_journal(
         genesis_hash,
         write_chunk_bytes: PROGRAM_WRITE_CHUNK_BYTES,
         write_chunk_count: intent.program_len.div_ceil(PROGRAM_WRITE_CHUNK_BYTES),
-        journal: journal.as_ref().map(ProgramDeploymentJournalView::from),
+        journal: matching_journal,
+        deployment_attempts: matching_attempts,
+        conflicting_journal,
+        conflicting_deployment_attempts: conflicting_attempts,
+    }))
+}
+
+async fn program_deployment_journal_by_program(
+    Json(req): Json<ProgramDeploymentJournalByProgramRequest>,
+) -> Result<Json<ProgramDeploymentJournalResponse>, ApiError> {
+    if req.network.trim().is_empty() {
+        return Err(ApiError {
+            message: "部署网络不能为空".to_string(),
+        });
+    }
+    let selector = rpc_selector(Some(req.network.trim()))?;
+    let network = selector.network;
+    let expected_genesis_text = req.expected_genesis_hash.trim();
+    let expected_genesis_hash =
+        solana_sdk::hash::Hash::from_str(expected_genesis_text).map_err(|_| ApiError {
+            message: "无效的预期 genesis hash".to_string(),
+        })?;
+    if expected_genesis_hash == solana_sdk::hash::Hash::default()
+        || expected_genesis_hash.to_string() != expected_genesis_text
+    {
+        return Err(ApiError {
+            message: "预期 genesis hash 必须是 canonical 非零值".to_string(),
+        });
+    }
+    let program_id = parse_canonical_deployment_pubkey(&req.program_id, "Program ID")?;
+    let genesis_hash = expected_genesis_hash.to_string();
+    let program_id = program_id.to_string();
+    let (journal, deployment_attempts) =
+        wallet_store::load_program_deployment_snapshot(&genesis_hash, &program_id)
+            .map_err(|message| ApiError { message })?;
+    let Some(record) = journal.as_ref() else {
+        return Ok(Json(ProgramDeploymentJournalResponse {
+            network,
+            genesis_hash,
+            write_chunk_bytes: PROGRAM_WRITE_CHUNK_BYTES,
+            write_chunk_count: 0,
+            journal: None,
+            deployment_attempts: Vec::new(),
+            conflicting_journal: None,
+            conflicting_deployment_attempts: Vec::new(),
+        }));
+    };
+    if !deployment_status_is_known(&record.status)
+        || record.attempt_evidence_version
+            != wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION
+    {
+        return Err(deployment_journal_error(format!(
+            "Program {} 的部署记录状态或证据版本无效",
+            program_id
+        )));
+    }
+    for attempt in &deployment_attempts {
+        validate_program_deployment_attempt_record(record, attempt)?;
+    }
+    Ok(Json(ProgramDeploymentJournalResponse {
+        network,
+        genesis_hash,
+        write_chunk_bytes: PROGRAM_WRITE_CHUNK_BYTES,
+        write_chunk_count: record.program_len.div_ceil(PROGRAM_WRITE_CHUNK_BYTES),
+        journal: Some(ProgramDeploymentJournalView::from(record)),
         deployment_attempts,
+        conflicting_journal: None,
+        conflicting_deployment_attempts: Vec::new(),
     }))
 }
 
@@ -7504,6 +8259,27 @@ mod generic_program_deployment_policy_tests {
         assert_eq!(
             intent.upgrade_authority.to_string(),
             request.expected_upgrade_authority
+        );
+    }
+
+    #[test]
+    fn program_write_chunk_fits_solana_transaction_packet() {
+        let payer = Keypair::new();
+        let buffer = Pubkey::new_unique();
+        let chunk = vec![7_u8; PROGRAM_WRITE_CHUNK_BYTES];
+        let instruction = loader_v3_instruction::write(&buffer, &payer.pubkey(), 0, chunk);
+        let transaction = Transaction::new_signed_with_payer(
+            &[instruction],
+            Some(&payer.pubkey()),
+            &[&payer],
+            solana_sdk::hash::Hash::new_unique(),
+        );
+        let serialized = bincode::serialize(&transaction).unwrap();
+        assert!(
+            serialized.len() <= SOLANA_TRANSACTION_PACKET_DATA_BYTES,
+            "serialized write transaction is {} bytes, above packet limit {}",
+            serialized.len(),
+            SOLANA_TRANSACTION_PACKET_DATA_BYTES,
         );
     }
 
@@ -7562,17 +8338,22 @@ mod generic_program_deployment_policy_tests {
     }
 
     #[test]
-    fn program_source_artifact_discovery_prefers_newer_deploy_so() {
-        let source = unique_temp_path("source-artifact-newer-deploy");
+    fn program_source_artifact_discovery_prefers_target_deploy_so() {
+        let source = unique_temp_path("source-artifact-prefer-deploy-so");
         fs::create_dir_all(source.join("target/verifiable")).unwrap();
         fs::create_dir_all(source.join("target/deploy")).unwrap();
-        fs::write(source.join("target/verifiable/fnzero.so"), b"old-verifiable").unwrap();
-
-        std::thread::sleep(Duration::from_millis(20));
 
         let deploy_so = source.join("target/deploy/fnzero.so");
-        let deploy_bytes = b"new-deploy";
+        let deploy_bytes = b"deploy-so";
         fs::write(&deploy_so, deploy_bytes).unwrap();
+
+        // Even if verifiable is newer, target/deploy/<name>.so must win.
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(
+            source.join("target/verifiable/fnzero.so"),
+            b"newer-verifiable",
+        )
+        .unwrap();
         fs::write(
             source.join("target/verifiable/fnzero-build.json"),
             format!(
@@ -7591,16 +8372,297 @@ mod generic_program_deployment_policy_tests {
             load_program_source_artifacts(&canonical_source, Some("fnzero"), Some("devnet"), true)
                 .unwrap();
         let deploy_sha = program_deploy::sha256_hex(deploy_bytes);
-        assert_eq!(artifacts.program_so_path, Some(deploy_so.canonicalize().unwrap()));
-        assert_eq!(artifacts.program_so_sha256.as_deref(), Some(deploy_sha.as_str()));
         assert_eq!(
-            artifacts.approved_program_sha256.as_deref(),
+            artifacts.program_so_path,
+            Some(deploy_so.canonicalize().unwrap())
+        );
+        assert_eq!(
+            artifacts.program_so_sha256.as_deref(),
             Some(deploy_sha.as_str())
         );
         assert!(artifacts
             .warnings
             .iter()
             .any(|warning| warning.contains("build metadata SHA-256")));
+
+        let _ = fs::remove_dir_all(source);
+    }
+
+    #[test]
+    fn program_keypair_discovery_prefers_so_stem_specific_keypair() {
+        let source = unique_temp_path("source-artifact-keypair-stem");
+        fs::create_dir_all(source.join(".keys")).unwrap();
+        fs::create_dir_all(source.join("target/deploy")).unwrap();
+
+        let unrelated_keypair = Keypair::new();
+        let target_keypair = Keypair::new();
+        fs::write(
+            source.join(".keys/alpha-program-keypair.json"),
+            serde_json::to_string(&unrelated_keypair.to_bytes().to_vec()).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            source.join("target/deploy/beta-keypair.json"),
+            serde_json::to_string(&target_keypair.to_bytes().to_vec()).unwrap(),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let selected = find_program_keypair_path(&canonical_source, Some("beta")).unwrap();
+        assert_eq!(
+            selected,
+            source
+                .join("target/deploy/beta-keypair.json")
+                .canonicalize()
+                .unwrap()
+        );
+        let mut json = fs::read_to_string(selected).unwrap();
+        let parsed = program_deploy::parse_program_keypair_json(&json).unwrap();
+        json.zeroize();
+        assert_eq!(parsed.pubkey(), target_keypair.pubkey());
+        assert_eq!(
+            artifact_stem_from_so_name("beta.so").as_deref(),
+            Some("beta")
+        );
+
+        let _ = fs::remove_dir_all(source);
+    }
+
+    #[test]
+    fn program_keypair_discovery_prefers_target_deploy_over_keys() {
+        let source = unique_temp_path("source-artifact-keypair-prefer-deploy");
+        fs::create_dir_all(source.join(".keys")).unwrap();
+        fs::create_dir_all(source.join("target/deploy")).unwrap();
+
+        let keys_keypair = Keypair::new();
+        let deploy_keypair = Keypair::new();
+        let keys_path = source.join(".keys/fnzero-program-keypair.json");
+        let deploy_path = source.join("target/deploy/fnzero-keypair.json");
+        fs::write(
+            &deploy_path,
+            serde_json::to_string(&deploy_keypair.to_bytes().to_vec()).unwrap(),
+        )
+        .unwrap();
+        // Even if .keys is newer, target/deploy must win.
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(
+            &keys_path,
+            serde_json::to_string(&keys_keypair.to_bytes().to_vec()).unwrap(),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let selected = find_program_keypair_path(&canonical_source, Some("fnzero")).unwrap();
+        assert_eq!(selected, deploy_path.canonicalize().unwrap());
+        let mut json = fs::read_to_string(selected).unwrap();
+        let parsed = program_deploy::parse_program_keypair_json(&json).unwrap();
+        json.zeroize();
+        assert_eq!(parsed.pubkey(), deploy_keypair.pubkey());
+
+        let _ = fs::remove_dir_all(source);
+    }
+
+    #[test]
+    fn program_keypair_discovery_falls_back_to_keys_when_deploy_missing() {
+        let source = unique_temp_path("source-artifact-keypair-keys-fallback");
+        fs::create_dir_all(source.join(".keys")).unwrap();
+        fs::create_dir_all(source.join("target/deploy")).unwrap();
+
+        let keys_keypair = Keypair::new();
+        let keys_path = source.join(".keys/fnzero-program-keypair.json");
+        fs::write(
+            &keys_path,
+            serde_json::to_string(&keys_keypair.to_bytes().to_vec()).unwrap(),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let selected = find_program_keypair_path(&canonical_source, Some("fnzero")).unwrap();
+        assert_eq!(selected, keys_path.canonicalize().unwrap());
+        let mut json = fs::read_to_string(selected).unwrap();
+        let parsed = program_deploy::parse_program_keypair_json(&json).unwrap();
+        json.zeroize();
+        assert_eq!(parsed.pubkey(), keys_keypair.pubkey());
+
+        let _ = fs::remove_dir_all(source);
+    }
+
+    #[test]
+    fn program_source_artifacts_block_mismatched_program_ids_before_deploy() {
+        let source = unique_temp_path("source-artifact-program-id-validation");
+        fs::create_dir_all(source.join("target/deploy")).unwrap();
+        fs::create_dir_all(source.join("target/idl")).unwrap();
+        fs::create_dir_all(source.join("programs/fnzero/src")).unwrap();
+
+        let expected_keypair = Keypair::new();
+        let stale_program_pubkey = Pubkey::new_unique();
+        let stale_program_id = stale_program_pubkey.to_string();
+        let mut stale_so = b"\x7fELFAnchorError occurred".to_vec();
+        stale_so.extend_from_slice(&stale_program_pubkey.to_bytes());
+        fs::write(source.join("target/deploy/fnzero.so"), stale_so).unwrap();
+        fs::write(
+            source.join("target/deploy/fnzero-keypair.json"),
+            serde_json::to_string(&expected_keypair.to_bytes().to_vec()).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            source.join("Anchor.toml"),
+            format!(
+                r#"[programs.devnet]
+fnzero = "{stale_program_id}"
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(
+            source.join("target/idl/fnzero.json"),
+            format!(r#"{{"address":"{stale_program_id}","instructions":[]}}"#),
+        )
+        .unwrap();
+        fs::write(
+            source.join("programs/fnzero/src/lib.rs"),
+            format!(r#"declare_id!("{stale_program_id}");"#),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let artifacts =
+            load_program_source_artifacts(&canonical_source, Some("fnzero"), Some("devnet"), true)
+                .unwrap();
+
+        let expected_program_id = expected_keypair.pubkey().to_string();
+        assert_eq!(
+            artifacts.expected_program_id.as_deref(),
+            Some(expected_program_id.as_str())
+        );
+        assert!(artifacts
+            .source_validation_errors
+            .iter()
+            .any(|error| { error.contains("Anchor.toml") && error.contains(&stale_program_id) }));
+        assert!(artifacts
+            .source_validation_errors
+            .iter()
+            .any(|error| error.contains("target/idl/fnzero.json")));
+        assert!(artifacts
+            .source_validation_errors
+            .iter()
+            .any(|error| error.contains("declare_id!")));
+        assert!(
+            artifacts
+                .source_validation_errors
+                .iter()
+                .any(|error| error.contains("target/deploy/fnzero.so")
+                    && error.contains("Anchor .so"))
+        );
+        assert!(artifacts
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("部署前一致性校验发现")));
+
+        let _ = fs::remove_dir_all(source);
+    }
+
+    #[test]
+    fn prebuild_program_id_validation_blocks_only_source_declarations() {
+        let source = unique_temp_path("source-prebuild-program-id-validation");
+        fs::create_dir_all(source.join("target/idl")).unwrap();
+        fs::create_dir_all(source.join("programs/fnzero/src")).unwrap();
+
+        let expected_program_id = Pubkey::new_unique().to_string();
+        let stale_idl_program_id = Pubkey::new_unique().to_string();
+        fs::write(
+            source.join("Anchor.toml"),
+            format!(
+                r#"[programs.devnet]
+fnzero = "{expected_program_id}"
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(
+            source.join("target/idl/fnzero.json"),
+            format!(r#"{{"address":"{stale_idl_program_id}","instructions":[]}}"#),
+        )
+        .unwrap();
+        fs::write(
+            source.join("programs/fnzero/src/lib.rs"),
+            format!(r#"declare_id!("{expected_program_id}");"#),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let prebuild_errors = collect_prebuild_source_validation_errors(
+            &canonical_source,
+            Some("fnzero"),
+            Some("devnet"),
+            Some(&expected_program_id),
+        )
+        .unwrap();
+        let postbuild_errors = collect_source_validation_errors(
+            &canonical_source,
+            Some("fnzero"),
+            Some("devnet"),
+            Some(&expected_program_id),
+            None,
+        )
+        .unwrap();
+
+        assert!(prebuild_errors.is_empty());
+        assert!(postbuild_errors
+            .iter()
+            .any(|error| error.contains("target/idl/fnzero.json")));
+
+        let _ = fs::remove_dir_all(source);
+    }
+
+    #[test]
+    fn generated_program_keypair_helpers_sync_anchor_sources() {
+        let source = unique_temp_path("source-generate-program-keypair-sync");
+        fs::create_dir_all(source.join("programs/fnzero/src")).unwrap();
+
+        let old_program_id = Pubkey::new_unique().to_string();
+        let new_program_id = Pubkey::new_unique().to_string();
+        fs::write(
+            source.join("Anchor.toml"),
+            format!(
+                r#"[programs.devnet]
+fnzero = "{old_program_id}"
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(
+            source.join("programs/fnzero/src/lib.rs"),
+            format!(
+                r#"use anchor_lang::prelude::*;
+declare_id!("{old_program_id}");
+"#
+            ),
+        )
+        .unwrap();
+
+        let canonical_source = source.canonicalize().unwrap();
+        let anchor_updates =
+            update_anchor_program_ids(&canonical_source, Some("fnzero"), &new_program_id).unwrap();
+        let rust_updates =
+            update_rust_declare_id_files(&canonical_source, Some("fnzero"), &new_program_id)
+                .unwrap();
+
+        assert_eq!(anchor_updates.len(), 1);
+        assert_eq!(rust_updates.len(), 1);
+        assert!(fs::read_to_string(source.join("Anchor.toml"))
+            .unwrap()
+            .contains(&new_program_id));
+        assert!(
+            fs::read_to_string(source.join("programs/fnzero/src/lib.rs"))
+                .unwrap()
+                .contains(&new_program_id)
+        );
+        assert!(
+            !fs::read_to_string(source.join("programs/fnzero/src/lib.rs"))
+                .unwrap()
+                .contains(&old_program_id)
+        );
 
         let _ = fs::remove_dir_all(source);
     }
@@ -7757,6 +8819,8 @@ async fn deploy_program(
     let program_sha256 =
         program_deploy::require_sha256(&program_bytes, &req.expected_program_sha256)
             .map_err(|message| ApiError { message })?;
+    program_deploy::require_anchor_declared_program_id(&program_bytes, &program_id)
+        .map_err(|message| ApiError { message })?;
     let program_bytes = verify_program_binary_offline(program_bytes).await?;
 
     let requested_resume_buffer_address = req
@@ -7819,40 +8883,66 @@ async fn deploy_program(
     let mut deployment_journal =
         wallet_store::find_program_deployment(&genesis_hash, &program_id.to_string())
             .map_err(|message| ApiError { message })?;
-    let journal_buffer_address = deployment_journal
-        .as_ref()
-        .map(|record| {
-            if !deployment_status_is_known(&record.status) {
-                return Err(deployment_journal_error(format!(
-                    "Program {} 的记录状态 {} 无法识别，拒绝继续",
-                    program_id, record.status
-                )));
-            }
-            validate_deployment_journal_binding(
-                record,
-                &genesis_hash,
-                &program_id,
-                &program_sha256,
-                program_bytes.len(),
-                max_data_len,
-                &expected_upgrade_authority,
-                requested_resume_buffer_address.as_ref(),
-            )
-        })
-        .transpose()?;
-    let deployment_attempts = if let Some(record) = deployment_journal.as_ref() {
-        let attempts = wallet_store::load_program_deployment_attempts(
-            &record.genesis_hash,
-            &record.program_id,
-        )
-        .map_err(|message| ApiError { message })?;
-        for attempt in &attempts {
-            validate_program_deployment_attempt_record(record, attempt)?;
+    let mut deployment_journal_binding_matches = true;
+    let mut finalized_journal_binding_conflicts = false;
+    let journal_buffer_address = if let Some(record) = deployment_journal.as_ref() {
+        if !deployment_status_is_known(&record.status) {
+            return Err(deployment_journal_error(format!(
+                "Program {} 的记录状态 {} 无法识别，拒绝继续",
+                program_id, record.status
+            )));
         }
-        attempts
+        match validate_deployment_journal_binding(
+            record,
+            &genesis_hash,
+            &program_id,
+            &program_sha256,
+            program_bytes.len(),
+            max_data_len,
+            &expected_upgrade_authority,
+            requested_resume_buffer_address.as_ref(),
+        ) {
+            Ok(buffer) => Some(buffer),
+            Err(_)
+                if requested_resume_buffer_address.is_none()
+                    && record.status != DEPLOYMENT_STATUS_FINALIZED =>
+            {
+                deployment_journal_binding_matches = false;
+                None
+            }
+            Err(_)
+                if requested_resume_buffer_address.is_none()
+                    && record.status == DEPLOYMENT_STATUS_FINALIZED =>
+            {
+                deployment_journal_binding_matches = false;
+                finalized_journal_binding_conflicts = true;
+                None
+            }
+            Err(error) => return Err(error),
+        }
+    } else {
+        None
+    };
+    let deployment_attempts = if let Some(record) = deployment_journal.as_ref() {
+        if deployment_journal_binding_matches {
+            let attempts = wallet_store::load_program_deployment_attempts(
+                &record.genesis_hash,
+                &record.program_id,
+            )
+            .map_err(|message| ApiError { message })?;
+            for attempt in &attempts {
+                validate_program_deployment_attempt_record(record, attempt)?;
+            }
+            attempts
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
+    if !deployment_journal_binding_matches {
+        deployment_journal = None;
+    }
 
     let programdata_address = get_program_data_address(&program_id);
     let deployment_state_addresses = vec![program_id, programdata_address];
@@ -7890,7 +8980,7 @@ async fn deploy_program(
             )
             .map_err(|error| ApiError {
                 message: format!(
-                    "目标 Program 已存在，但 finalized 状态与本次发布制品不一致，拒绝覆盖或升级: {error}"
+                    "目标 Program 已存在，但链上 finalized 代码与本次 .so 不一致；同一个 Program ID 不能再次走“新部署”，请使用升级流程发布新 .so，或生成新的 Program keypair 后全新部署。链上校验详情: {error}"
                 ),
             })?,
         ),
@@ -7903,6 +8993,15 @@ async fn deploy_program(
             })
         }
     };
+
+    if finalized_journal_binding_conflicts && existing_verified_readback.is_none() {
+        return Err(ApiError {
+            message: format!(
+                "Program {} 已有 finalized 部署记录，但当前 artifact 与记录不同，且链上 finalized Program 不可见；为避免覆盖历史或误复用 Program ID，请生成新的 Program keypair 后新部署，或确认链上 Program 存在后使用升级流程",
+                program_id
+            ),
+        });
+    }
 
     let buffer_lamports = client
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(
@@ -8659,7 +9758,7 @@ async fn deploy_program(
                 wallet_store::reserve_program_deployment_with_attempt(record, create_attempt)
                     .map_err(|message| ApiError { message })?;
             if !inserted {
-                validate_deployment_journal_binding(
+                let binding_matches = validate_deployment_journal_binding(
                     &stored,
                     &genesis_hash,
                     &program_id,
@@ -8668,13 +9767,54 @@ async fn deploy_program(
                     max_data_len,
                     &expected_upgrade_authority,
                     None,
-                )?;
-                return Err(deployment_journal_error(format!(
-                    "另一部署请求已抢先预留 Buffer {}；当前 Buffer {} 的本地签名交易尚未发送，请重新进入恢复流程",
-                    stored.buffer_address, buffer_address
-                )));
+                )
+                .is_ok();
+                if !binding_matches {
+                    let record = wallet_store::ProgramDeploymentRecord {
+                        genesis_hash: genesis_hash.clone(),
+                        program_id: program_id.to_string(),
+                        program_sha256: program_sha256.clone(),
+                        program_len: program_bytes.len(),
+                        max_data_len,
+                        upgrade_authority: expected_upgrade_authority.to_string(),
+                        buffer_address: buffer_address.to_string(),
+                        status: DEPLOYMENT_STATUS_CREATE_BUFFER_SIGNED.to_string(),
+                        create_signature: Some(local_signature.to_string()),
+                        create_last_valid_block_height: Some(last_valid_block_height),
+                        last_write_signature: None,
+                        last_write_chunk_index: None,
+                        last_write_last_valid_block_height: None,
+                        completed_writes: 0,
+                        deploy_signature: None,
+                        deploy_last_valid_block_height: None,
+                        attempt_evidence_version:
+                            wallet_store::PROGRAM_DEPLOYMENT_ATTEMPT_EVIDENCE_VERSION,
+                        revision: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                    };
+                    let create_attempt = new_program_deployment_attempt(
+                        &record,
+                        wallet_store::PROGRAM_DEPLOYMENT_STAGE_CREATE_BUFFER,
+                        None,
+                        &local_signature,
+                        last_valid_block_height,
+                    );
+                    let replaced = wallet_store::replace_inactive_program_deployment_with_attempt(
+                        record,
+                        create_attempt,
+                    )
+                    .map_err(|message| deployment_journal_error(message))?;
+                    deployment_journal = Some(replaced);
+                } else {
+                    return Err(deployment_journal_error(format!(
+                        "另一部署请求已抢先预留 Buffer {}；当前 Buffer {} 的本地签名交易尚未发送，请重新进入恢复流程",
+                        stored.buffer_address, buffer_address
+                    )));
+                }
+            } else {
+                deployment_journal = Some(stored);
             }
-            deployment_journal = Some(stored);
         }
         let context = format!("Program ID: {program_id}；Buffer: {buffer_address}");
         let submission = submit_signed_transaction_once(
@@ -8835,7 +9975,7 @@ async fn deploy_program(
             &context,
             CommitmentConfig::confirmed(),
             "confirmed",
-            Duration::from_secs(60),
+            Duration::from_secs(120),
         )
         .await;
         match submission {
@@ -9101,6 +10241,410 @@ async fn deploy_program(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpgradeProgramRequest {
+    #[serde(default)]
+    wallet_id: Option<String>,
+    #[serde(default)]
+    private_key: Option<String>,
+    #[serde(default)]
+    secret_key: Option<String>,
+    #[serde(default)]
+    keystore_json: Option<String>,
+    #[serde(default)]
+    encrypted_key: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+    program_id: String,
+    expected_upgrade_authority: String,
+    expected_genesis_hash: String,
+    expected_program_sha256: String,
+    program_so_base64: String,
+    network: String,
+    #[serde(default)]
+    spill_address: Option<String>,
+}
+
+impl UpgradeProgramRequest {
+    fn take_wallet_auth(&mut self) -> WalletAuthRequest {
+        WalletAuthRequest {
+            wallet_id: self.wallet_id.take(),
+            private_key: self.private_key.take(),
+            secret_key: self.secret_key.take(),
+            keystore_json: self.keystore_json.take(),
+            encrypted_key: self.encrypted_key.take(),
+            password: self.password.take(),
+        }
+    }
+}
+
+impl Drop for UpgradeProgramRequest {
+    fn drop(&mut self) {
+        self.take_wallet_auth().clear_secrets();
+    }
+}
+
+#[derive(Serialize)]
+struct UpgradeProgramResponse {
+    program_id: String,
+    programdata_address: String,
+    buffer_address: String,
+    authority: String,
+    network: String,
+    genesis_hash: String,
+    program_bytes: usize,
+    program_sha256: String,
+    rent_lamports: u64,
+    create_buffer_signature: String,
+    write_signatures: Vec<String>,
+    upgrade_signature: String,
+    deployed_slot: u64,
+    readback_verified: bool,
+    status: String,
+}
+
+async fn upgrade_generic_program(
+    Json(req): Json<UpgradeProgramRequest>,
+) -> Result<Json<UpgradeProgramResponse>, ApiError> {
+    upgrade_program(Json(req)).await
+}
+
+async fn program_upgrade_progress() -> Json<ProgramUpgradeProgress> {
+    let store = program_upgrade_progress_store();
+    let progress = store.lock().await.clone();
+    Json(progress)
+}
+
+async fn upgrade_program(
+    Json(mut req): Json<UpgradeProgramRequest>,
+) -> Result<Json<UpgradeProgramResponse>, ApiError> {
+    let _deploy_guard = PROGRAM_DEPLOY_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .try_lock()
+        .map_err(|_| ApiError {
+            message: PROGRAM_DEPLOY_BUSY_MESSAGE.to_string(),
+        })?;
+
+    let result = upgrade_program_inner(&mut req).await;
+    finish_program_upgrade_progress(&result).await;
+    result
+}
+
+async fn upgrade_program_inner(
+    req: &mut UpgradeProgramRequest,
+) -> Result<Json<UpgradeProgramResponse>, ApiError> {
+    let program_id = Pubkey::from_str(req.program_id.trim()).map_err(|_| ApiError {
+        message: "无效的 Program ID".to_string(),
+    })?;
+    let expected_upgrade_authority = Pubkey::from_str(req.expected_upgrade_authority.trim())
+        .map_err(|_| ApiError {
+            message: "无效的预期 Upgrade Authority".to_string(),
+        })?;
+
+    let program_bytes = decode_program_binary_base64(&req.program_so_base64)?;
+    let write_chunk_count = program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).count();
+    begin_program_upgrade_progress(
+        &program_id.to_string(),
+        req.network.trim(),
+        program_bytes.len(),
+        write_chunk_count,
+    )
+    .await;
+
+    let program_sha256 =
+        program_deploy::require_sha256(&program_bytes, &req.expected_program_sha256)
+            .map_err(|message| ApiError { message })?;
+    program_deploy::require_anchor_declared_program_id(&program_bytes, &program_id)
+        .map_err(|message| ApiError { message })?;
+    publish_program_upgrade_progress(|progress| {
+        progress.stage = "verifying".to_string();
+        progress.message = "正在离线校验 SBF 程序制品".to_string();
+    })
+    .await;
+    let program_bytes = verify_program_binary_offline(program_bytes).await?;
+
+    if req.network.trim().is_empty() {
+        return Err(ApiError {
+            message: "升级网络不能为空".to_string(),
+        });
+    }
+    let selector = rpc_selector(Some(req.network.trim()))?;
+    let rpc_url = selector.url;
+    let network = selector.network;
+    publish_program_upgrade_progress(|progress| {
+        progress.network = network.clone();
+        progress.message = format!("正在连接 RPC 并校验网络（{network}）");
+    })
+    .await;
+    let client = RpcClient::new_with_timeout_and_commitment(
+        rpc_url.to_string(),
+        Duration::from_secs(PROGRAM_DEPLOY_RPC_TIMEOUT_SECS),
+        CommitmentConfig::confirmed(),
+    );
+
+    let expected_genesis_hash = solana_sdk::hash::Hash::from_str(req.expected_genesis_hash.trim())
+        .map_err(|_| ApiError {
+            message: "无效的预期 genesis hash".to_string(),
+        })?;
+    let actual_genesis_hash = client.get_genesis_hash().map_err(|error| ApiError {
+        message: format!("读取 RPC genesis hash 失败: {error}"),
+    })?;
+    if actual_genesis_hash != expected_genesis_hash {
+        return Err(ApiError {
+            message: format!(
+                "RPC genesis hash 为 {}，预期为 {}；已在花费前中止升级",
+                actual_genesis_hash, expected_genesis_hash
+            ),
+        });
+    }
+    let genesis_hash = actual_genesis_hash.to_string();
+
+    let wallet_auth = req.take_wallet_auth();
+    let payer = wallet_auth.keypair()?;
+    let payer_pubkey = payer.pubkey();
+    if payer_pubkey != expected_upgrade_authority {
+        return Err(ApiError {
+            message: format!(
+                "签名钱包 {} 与预期 Upgrade Authority {} 不一致",
+                payer_pubkey, expected_upgrade_authority
+            ),
+        });
+    }
+
+    let programdata_address =
+        require_program_upgrade_authority(&client, &program_id, &payer_pubkey)?;
+    let programdata_account = client
+        .get_account_with_commitment(&programdata_address, CommitmentConfig::confirmed())
+        .map_err(|error| ApiError {
+            message: format!("读取 ProgramData 失败: {error}"),
+        })?
+        .value
+        .ok_or_else(|| ApiError {
+            message: format!("ProgramData {} 不存在", programdata_address),
+        })?;
+    let metadata_len = UpgradeableLoaderState::size_of_programdata_metadata();
+    if programdata_account.data.len() < metadata_len {
+        return Err(ApiError {
+            message: "ProgramData 账户长度不足".to_string(),
+        });
+    }
+    let max_program_len = programdata_account.data.len() - metadata_len;
+    if program_bytes.len() > max_program_len {
+        return Err(ApiError {
+            message: format!(
+                "新 .so 长度为 {} bytes，超过 ProgramData 容量 {} bytes；无法用当前 Program ID 升级，请重新部署更大 max_data_len 的 Program",
+                program_bytes.len(),
+                max_program_len
+            ),
+        });
+    }
+
+    let spill = if let Some(spill) = req
+        .spill_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Pubkey::from_str(spill).map_err(|_| ApiError {
+            message: "无效的 spill 地址".to_string(),
+        })?
+    } else {
+        payer_pubkey
+    };
+
+    let buffer_keypair = Keypair::new();
+    let buffer_lamports = client
+        .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(
+            program_bytes.len(),
+        ))
+        .map_err(|error| ApiError {
+            message: format!("计算 buffer 租金失败: {error}"),
+        })?;
+    // create buffer + write chunks + upgrade; keep a small SOL reserve for fee spikes
+    let estimated_fee_lamports = (write_chunk_count
+        .saturating_add(2)
+        .saturating_mul(10_000))
+    .saturating_add(50_000_000) as u64;
+    let estimated_required_balance_lamports = buffer_lamports
+        .checked_add(estimated_fee_lamports)
+        .ok_or_else(|| ApiError {
+            message: "升级所需余额总额溢出".to_string(),
+        })?;
+    let payer_balance = client.get_balance(&payer_pubkey).map_err(|error| ApiError {
+        message: format!("查询升级钱包余额失败: {error}"),
+    })?;
+    if payer_balance < estimated_required_balance_lamports {
+        return Err(ApiError {
+            message: format!(
+                "升级钱包余额不足：当前 {:.4} SOL（{} lamports），至少需要约 {:.4} SOL（{} lamports）。其中升级 Buffer 租金约 {:.4} SOL，交易费预留约 {:.4} SOL。Buffer 租金升级成功后会退回 spill 地址，但创建 Buffer 时必须先备足余额。",
+                payer_balance as f64 / 1_000_000_000.0,
+                payer_balance,
+                estimated_required_balance_lamports as f64 / 1_000_000_000.0,
+                estimated_required_balance_lamports,
+                buffer_lamports as f64 / 1_000_000_000.0,
+                estimated_fee_lamports as f64 / 1_000_000_000.0
+            ),
+        });
+    }
+    publish_program_upgrade_progress(|progress| {
+        progress.stage = "creating_buffer".to_string();
+        progress.message = format!(
+            "正在创建升级 Buffer（{}）",
+            buffer_keypair.pubkey()
+        );
+        progress.buffer_address = Some(buffer_keypair.pubkey().to_string());
+        progress.write_total = write_chunk_count;
+        progress.program_bytes = program_bytes.len();
+    })
+    .await;
+    let create_buffer_ixs = loader_v3_instruction::create_buffer(
+        &payer_pubkey,
+        &buffer_keypair.pubkey(),
+        &payer_pubkey,
+        buffer_lamports,
+        program_bytes.len(),
+    )
+    .map_err(|error| ApiError {
+        message: format!("创建 buffer 指令失败: {error}"),
+    })?;
+    let create_buffer_signature = sign_and_send_with_commitment(
+        &client,
+        create_buffer_ixs,
+        &[&payer, &buffer_keypair],
+        &payer_pubkey,
+        "创建升级 Buffer",
+        CommitmentConfig::finalized(),
+        "finalized",
+        Duration::from_secs(90),
+    )
+    .await?
+    .0;
+
+    let mut write_signatures = Vec::with_capacity(write_chunk_count);
+    for (index, chunk) in program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).enumerate() {
+        let offset = index
+            .checked_mul(PROGRAM_WRITE_CHUNK_BYTES)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| ApiError {
+                message: "Program 写入偏移超出范围".to_string(),
+            })?;
+        let write_ix = loader_v3_instruction::write(
+            &buffer_keypair.pubkey(),
+            &payer_pubkey,
+            offset,
+            chunk.to_vec(),
+        );
+        publish_program_upgrade_progress(|progress| {
+            progress.stage = "writing".to_string();
+            progress.write_completed = index;
+            progress.write_total = write_chunk_count;
+            progress.message = format!(
+                "正在写入升级 Buffer：{}/{}（约 {:.1}%）",
+                index + 1,
+                write_chunk_count,
+                ((index as f64) / (write_chunk_count.max(1) as f64)) * 100.0
+            );
+            progress.buffer_address = Some(buffer_keypair.pubkey().to_string());
+        })
+        .await;
+        tracing::info!(
+            "program upgrade write chunk {}/{} for {} ({} bytes)",
+            index + 1,
+            write_chunk_count,
+            program_id,
+            chunk.len()
+        );
+        let write_signature = sign_and_send_with_commitment(
+            &client,
+            vec![write_ix],
+            &[&payer],
+            &payer_pubkey,
+            &format!(
+                "写入升级 Buffer ({}/{})",
+                index + 1,
+                write_chunk_count
+            ),
+            CommitmentConfig::confirmed(),
+            "confirmed",
+            Duration::from_secs(120),
+        )
+        .await?
+        .0;
+        publish_program_upgrade_progress(|progress| {
+            progress.write_completed = index + 1;
+            progress.last_signature = Some(write_signature.clone());
+            progress.message = format!(
+                "已写入升级 Buffer：{}/{}（约 {:.1}%）",
+                index + 1,
+                write_chunk_count,
+                ((index + 1) as f64 / (write_chunk_count.max(1) as f64)) * 100.0
+            );
+        })
+        .await;
+        write_signatures.push(write_signature);
+    }
+
+    publish_program_upgrade_progress(|progress| {
+        progress.stage = "upgrading".to_string();
+        progress.message = "正在提交 upgradeable-loader 升级交易".to_string();
+        progress.write_completed = write_chunk_count;
+    })
+    .await;
+    let upgrade_ix = squads_v4::upgrade_program_ix(
+        &program_id,
+        &buffer_keypair.pubkey(),
+        &payer_pubkey,
+        &spill,
+    );
+    let (upgrade_signature, upgrade_slot) = sign_and_send_with_commitment(
+        &client,
+        vec![upgrade_ix],
+        &[&payer],
+        &payer_pubkey,
+        "提交 Program 升级",
+        CommitmentConfig::finalized(),
+        "finalized",
+        Duration::from_secs(90),
+    )
+    .await?;
+
+    publish_program_upgrade_progress(|progress| {
+        progress.stage = "verifying_readback".to_string();
+        progress.message = "正在 finalized 回读并校验链上 Program 数据".to_string();
+        progress.last_signature = Some(upgrade_signature.clone());
+    })
+    .await;
+    let readback = wait_for_finalized_deployment_readback(
+        &client,
+        &program_id,
+        &programdata_address,
+        &payer_pubkey,
+        &program_bytes,
+        max_program_len,
+        upgrade_slot,
+    )
+    .await?;
+
+    Ok(Json(UpgradeProgramResponse {
+        program_id: program_id.to_string(),
+        programdata_address: programdata_address.to_string(),
+        buffer_address: buffer_keypair.pubkey().to_string(),
+        authority: readback.upgrade_authority.to_string(),
+        network,
+        genesis_hash,
+        program_bytes: program_bytes.len(),
+        program_sha256,
+        rent_lamports: buffer_lamports,
+        create_buffer_signature,
+        write_signatures,
+        upgrade_signature,
+        deployed_slot: readback.deployed_slot,
+        readback_verified: true,
+        status: "finalized".to_string(),
+    }))
+}
+
+#[derive(Deserialize)]
 struct ProgramInfoRequest {
     program_id: String,
     #[serde(default)]
@@ -9157,6 +10701,70 @@ async fn program_info(
         lamports: account.lamports,
         data_len: account.data.len(),
         network,
+    }))
+}
+
+#[derive(Deserialize)]
+struct ProgramAddressSeedRequest {
+    kind: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct ProgramDeriveAddressRequest {
+    program_id: String,
+    seeds: Vec<ProgramAddressSeedRequest>,
+}
+
+#[derive(Serialize)]
+struct ProgramDeriveAddressResponse {
+    address: String,
+    bump: u8,
+}
+
+async fn program_derive_address(
+    Json(req): Json<ProgramDeriveAddressRequest>,
+) -> Result<Json<ProgramDeriveAddressResponse>, ApiError> {
+    let program_id = Pubkey::from_str(req.program_id.trim()).map_err(|_| ApiError {
+        message: "无效的 PDA Program ID".to_string(),
+    })?;
+    if req.seeds.is_empty() || req.seeds.len() > 16 {
+        return Err(ApiError {
+            message: "PDA seeds 数量必须在 1 到 16 之间".to_string(),
+        });
+    }
+
+    let mut seed_bytes = Vec::with_capacity(req.seeds.len());
+    for seed in req.seeds {
+        let bytes = match seed.kind.as_str() {
+            "bytes_base64" => BASE64.decode(seed.value.trim()).map_err(|_| ApiError {
+                message: "PDA seed base64 无效".to_string(),
+            })?,
+            "pubkey" => Pubkey::from_str(seed.value.trim())
+                .map_err(|_| ApiError {
+                    message: "PDA seed pubkey 无效".to_string(),
+                })?
+                .to_bytes()
+                .to_vec(),
+            _ => {
+                return Err(ApiError {
+                    message: "不支持的 PDA seed 类型".to_string(),
+                });
+            }
+        };
+        if bytes.is_empty() || bytes.len() > 32 {
+            return Err(ApiError {
+                message: "PDA 单个 seed 长度必须在 1 到 32 bytes 之间".to_string(),
+            });
+        }
+        seed_bytes.push(bytes);
+    }
+
+    let seed_refs: Vec<&[u8]> = seed_bytes.iter().map(Vec::as_slice).collect();
+    let (address, bump) = Pubkey::find_program_address(&seed_refs, &program_id);
+    Ok(Json(ProgramDeriveAddressResponse {
+        address: address.to_string(),
+        bump,
     }))
 }
 
@@ -9636,6 +11244,8 @@ struct SquadsPrepareUpgradeBufferRequest {
     multisig: String,
     program_so_base64: String,
     #[serde(default)]
+    expected_program_id: Option<String>,
+    #[serde(default)]
     network: Option<String>,
 }
 
@@ -9657,6 +11267,18 @@ async fn squads_prepare_upgrade_buffer(
     Json(req): Json<SquadsPrepareUpgradeBufferRequest>,
 ) -> Result<Json<SquadsPrepareUpgradeBufferResponse>, ApiError> {
     let program_bytes = decode_program_binary_base64(&req.program_so_base64)?;
+    if let Some(expected_program_id) = req
+        .expected_program_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let expected_program_id = Pubkey::from_str(expected_program_id).map_err(|_| ApiError {
+            message: "无效的目标 Program ID".to_string(),
+        })?;
+        program_deploy::require_anchor_declared_program_id(&program_bytes, &expected_program_id)
+            .map_err(|message| ApiError { message })?;
+    }
     let program_bytes = verify_program_binary_offline(program_bytes).await?;
 
     let payer = req.wallet.keypair()?;
@@ -9686,14 +11308,21 @@ async fn squads_prepare_upgrade_buffer(
     .map_err(|e| ApiError {
         message: format!("创建 buffer 指令失败: {}", e),
     })?;
-    let create_signature = sign_and_send(
+    let create_signature = sign_and_send_with_commitment(
         &client,
         create_buffer_ixs,
         &[&payer, &buffer_keypair],
         &payer_pubkey,
-    )?;
+        "创建多签升级 Buffer",
+        CommitmentConfig::finalized(),
+        "finalized",
+        Duration::from_secs(90),
+    )
+    .await?
+    .0;
 
-    let mut write_signatures = Vec::new();
+    let write_chunk_count = program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).count();
+    let mut write_signatures = Vec::with_capacity(write_chunk_count);
     for (index, chunk) in program_bytes.chunks(PROGRAM_WRITE_CHUNK_BYTES).enumerate() {
         let offset = index
             .checked_mul(PROGRAM_WRITE_CHUNK_BYTES)
@@ -9707,17 +11336,40 @@ async fn squads_prepare_upgrade_buffer(
             offset,
             chunk.to_vec(),
         );
-        write_signatures.push(sign_and_send(
-            &client,
-            vec![write_ix],
-            &[&payer],
-            &payer_pubkey,
-        )?);
+        write_signatures.push(
+            sign_and_send_with_commitment(
+                &client,
+                vec![write_ix],
+                &[&payer],
+                &payer_pubkey,
+                &format!(
+                    "写入多签升级 Buffer ({}/{})",
+                    index + 1,
+                    write_chunk_count
+                ),
+                CommitmentConfig::confirmed(),
+                "confirmed",
+                Duration::from_secs(120),
+            )
+            .await?
+            .0,
+        );
     }
 
     let set_authority_ix =
         squads_v4::set_buffer_authority_ix(&buffer_keypair.pubkey(), &payer_pubkey, &vault);
-    let authority_signature = sign_and_send_single(&client, set_authority_ix, &payer)?;
+    let authority_signature = sign_and_send_with_commitment(
+        &client,
+        vec![set_authority_ix],
+        &[&payer],
+        &payer_pubkey,
+        "移交升级 Buffer 给 Squads vault",
+        CommitmentConfig::confirmed(),
+        "confirmed",
+        Duration::from_secs(90),
+    )
+    .await?
+    .0;
 
     Ok(Json(SquadsPrepareUpgradeBufferResponse {
         multisig: multisig.to_string(),

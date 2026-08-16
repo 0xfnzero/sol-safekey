@@ -37,11 +37,59 @@ for (const [relativePath, source] of genericBoundarySources) {
 }
 
 assert.match(deploymentPage, /apiFetch\("program\/deploy"/);
+assert.match(deploymentPage, /apiFetch\("program\/upgrade"/);
+assert.match(deploymentPage, /openProgramProjectDirectUpgrade/);
+assert.match(deploymentPage, /removeProgramDeploymentHistoryRecord/);
+assert.match(deploymentPage, /features\.program-projects\.historyRemoveConfirm/);
 assert.match(deploymentPage, /buildProgramDeploymentReceiptJson\(/);
+
+const backendMain = fs.readFileSync(path.join(uiRoot, "backend", "main.rs"), "utf8");
+assert.match(backendMain, /route\("\/api\/program\/upgrade", post\(upgrade_generic_program\)\)/);
+assert.match(backendMain, /struct UpgradeProgramRequest/);
+assert.match(backendMain, /#\[serde\(deny_unknown_fields\)\]\s*struct UpgradeProgramRequest/);
+assert.match(backendMain, /squads_v4::upgrade_program_ix\(/);
+assert.doesNotMatch(
+  backendMain.slice(
+    backendMain.indexOf("async fn upgrade_program"),
+    backendMain.indexOf("async fn program_info"),
+  ),
+  /set_buffer_authority|vault_pda|require_squads_member/,
+  "direct upgrade must not hand authority to a Squads vault",
+);
 assert.match(deploymentPage, /const programSoBase64 = btoa\(binary\);/);
 assert.match(deploymentPage, /programSoBase64,\s*programSoName:/);
 assert.doesNotMatch(deploymentPage, /programSoBase64:\s*btoa\(binary\)/);
 assert.doesNotMatch(deploymentPage, /devnet\/deploy/i);
+assert.doesNotMatch(
+  deploymentPage,
+  /account\.isSigner\s*&&\s*walletAddress/,
+  "generic function calls must not guess signer accounts from the current wallet",
+);
+assert.doesNotMatch(
+  deploymentPage,
+  /signerAccounts\[0\]/,
+  "generic function calls must not auto-fill the first signer account",
+);
+assert.match(
+  deploymentPage,
+  /seed\.kind === "arg"/,
+  "generic function calls must derive PDA accounts from Anchor arg seeds",
+);
+assert.match(
+  deploymentPage,
+  /readOnly=\{isAutoAccount\}/,
+  "deterministic IDL accounts must be read-only in the generic function caller",
+);
+assert.match(
+  deploymentPage,
+  /programInvokeFriendlyError/,
+  "generic function calls must convert common RPC and Anchor errors into user-facing messages",
+);
+assert.match(
+  deploymentPage,
+  /rawErrorMessage/,
+  "generic function calls must preserve raw errors alongside friendly messages",
+);
 assert.match(fieldHelpComponent, /CircleHelp/);
 assert.match(fieldHelpComponent, /Tooltip\.Trigger/);
 assert.match(fieldHelpComponent, /Tooltip\.Portal/);
@@ -51,7 +99,6 @@ assert.match(fieldHelpComponent, /aria-describedby=\{tooltipId\}/);
 assert.match(fieldHelpComponent, /role="tooltip"/);
 
 const tooltipKeys = [
-  "approvedProgramSha256Tooltip",
   "deploymentWalletTooltip",
   "derivedProgramIdTooltip",
   "expectedGenesisHashTooltip",
@@ -75,6 +122,40 @@ for (const locale of ["en", "zh"]) {
   for (const key of tooltipKeys) {
     assert.equal(typeof deploymentMessages?.[key], "string", `${locale}.${key} is required`);
     assert.ok(deploymentMessages[key].trim().length > 0, `${locale}.${key} must not be empty`);
+  }
+  const upgradeMessages = messages.features?.["program-upgrade"];
+  for (const key of [
+    "title",
+    "hint",
+    "upgradeButton",
+    "upgrading",
+    "success",
+    "error",
+    "fillAllFields",
+  ]) {
+    assert.equal(typeof upgradeMessages?.[key], "string", `${locale}.program-upgrade.${key}`);
+  }
+  const projectMessages = messages.features?.["program-projects"];
+  for (const key of [
+    "openDirectUpgrade",
+    "removeHistoryRecord",
+    "historyRemoveConfirm",
+  ]) {
+    assert.equal(typeof projectMessages?.[key], "string", `${locale}.program-projects.${key}`);
+  }
+  assert.equal(typeof projectMessages?.planKinds?.["direct-upgrade"], "string");
+  assert.equal(typeof projectMessages?.historyKinds?.["direct-upgrade"], "string");
+  const invokeMessages = messages.features?.["program-invoke"];
+  for (const key of [
+    "friendlyMissingPayerAccount",
+    "friendlyInsufficientLamports",
+    "friendlyAnchorErrorWithHint",
+    "friendlyDeclaredProgramIdMismatch",
+    "rawErrorLog",
+    "rawSimulationErrorLog",
+  ]) {
+    assert.equal(typeof invokeMessages?.[key], "string", `${locale}.${key} is required`);
+    assert.ok(invokeMessages[key].trim().length > 0, `${locale}.${key} must not be empty`);
   }
 }
 for (const key of tooltipKeys) {

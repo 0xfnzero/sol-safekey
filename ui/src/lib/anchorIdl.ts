@@ -1,4 +1,4 @@
-import { isLikelySolanaPublicKey } from "@/lib/programDeploy";
+import { isLikelySolanaPublicKey } from "./programDeploy";
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111";
@@ -19,7 +19,21 @@ export interface AnchorIdlAccount {
   isMut?: boolean;
   isSigner?: boolean;
   address?: string;
+  pda?: AnchorIdlPda;
   accounts?: AnchorIdlAccount[];
+}
+
+export interface AnchorIdlPdaSeed {
+  kind: string;
+  value?: unknown;
+  path?: string;
+  account?: string;
+  arg?: string;
+}
+
+export interface AnchorIdlPda {
+  seeds?: AnchorIdlPdaSeed[];
+  program?: AnchorIdlPdaSeed;
 }
 
 export interface AnchorIdlInstruction {
@@ -41,6 +55,7 @@ export interface FlatAnchorAccount {
   isSigner: boolean;
   isWritable: boolean;
   address?: string;
+  pda?: AnchorIdlPda;
 }
 
 export interface EncodedAnchorInstruction {
@@ -88,19 +103,63 @@ export function flattenAnchorAccounts(
       isSigner: account.signer === true || account.isSigner === true,
       isWritable: account.writable === true || account.mut === true || account.isMut === true,
       address: account.address,
+      pda: account.pda,
     });
   }
   return flattened;
 }
 
-export function defaultAccountAddress(accountName: string, idlAccount?: FlatAnchorAccount): string {
-  if (idlAccount?.address && isLikelySolanaPublicKey(idlAccount.address)) return idlAccount.address;
-  const normalized = accountName.replace(/[_\s-]/g, "").toLowerCase();
-  if (normalized === "systemprogram") return SYSTEM_PROGRAM_ID;
-  if (normalized === "tokenprogram") return TOKEN_PROGRAM_ID;
-  if (normalized === "associatedtokenprogram") return ASSOCIATED_TOKEN_PROGRAM_ID;
-  if (normalized === "rent") return SYSVAR_RENT_ID;
+function normalizeAnchorAccountAlias(value: string): string {
+  return value.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
+function builtinAnchorAccountAddress(value: string): string {
+  switch (normalizeAnchorAccountAlias(value)) {
+    case "system":
+    case "systemprogram":
+    case "systemprogramid":
+      return SYSTEM_PROGRAM_ID;
+    case "token":
+    case "tokenprogram":
+    case "spltoken":
+    case "spltokenprogram":
+      return TOKEN_PROGRAM_ID;
+    case "associatedtoken":
+    case "associatedtokenprogram":
+    case "associatedtokenaccount":
+    case "associatedtokenaccountprogram":
+      return ASSOCIATED_TOKEN_PROGRAM_ID;
+    case "rent":
+    case "sysvarrent":
+      return SYSVAR_RENT_ID;
+    default:
+      return "";
+  }
+}
+
+export function isValidAnchorAccountAddress(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed === SYSTEM_PROGRAM_ID || isLikelySolanaPublicKey(trimmed);
+}
+
+export function resolveAnchorAccountAddress(value: string, idlAccount?: FlatAnchorAccount): string {
+  const trimmed = value.trim();
+  if (trimmed) {
+    if (isValidAnchorAccountAddress(trimmed)) return trimmed;
+    const builtin = builtinAnchorAccountAddress(trimmed);
+    if (builtin) return builtin;
+    return trimmed;
+  }
+  if (idlAccount?.address) {
+    const resolved = resolveAnchorAccountAddress(idlAccount.address);
+    if (isValidAnchorAccountAddress(resolved)) return resolved;
+  }
   return "";
+}
+
+export function defaultAccountAddress(accountName: string, idlAccount?: FlatAnchorAccount): string {
+  const explicitAddress = resolveAnchorAccountAddress("", idlAccount);
+  return explicitAddress || builtinAnchorAccountAddress(accountName);
 }
 
 export function idlTypeLabel(type: unknown): string {
@@ -283,6 +342,30 @@ function encodeArgValue(type: unknown, rawValue: string): Uint8Array {
   }
 }
 
+export function isAnchorSeedArgTypeSupported(type: unknown): boolean {
+  if (typeof type !== "string") return false;
+  return [
+    "bool",
+    "u8",
+    "i8",
+    "u16",
+    "i16",
+    "u32",
+    "i32",
+    "u64",
+    "i64",
+    "u128",
+    "i128",
+    "pubkey",
+    "publicKey",
+  ].includes(type);
+}
+
+export function encodeAnchorSeedArgToBase64(type: unknown, rawValue: string): string {
+  if (!isAnchorSeedArgTypeSupported(type)) throw new Error("unsupported-seed-arg-type");
+  return bytesToBase64(encodeArgValue(type, rawValue));
+}
+
 export async function encodeAnchorInstruction(
   programId: string,
   instruction: AnchorIdlInstruction,
@@ -296,8 +379,10 @@ export async function encodeAnchorInstruction(
   );
   const flatAccounts = flattenAnchorAccounts(instruction.accounts);
   const accounts = flatAccounts.map((account) => {
-    const pubkey = String(accountValues[account.path] || account.address || "").trim();
-    if (!isLikelySolanaPublicKey(pubkey)) throw new Error(`invalid-account:${account.path}`);
+    const pubkey =
+      resolveAnchorAccountAddress(String(accountValues[account.path] || ""), account) ||
+      defaultAccountAddress(account.name, account);
+    if (!isValidAnchorAccountAddress(pubkey)) throw new Error(`invalid-account:${account.path}`);
     return {
       pubkey,
       is_signer: account.isSigner,
