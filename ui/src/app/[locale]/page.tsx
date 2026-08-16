@@ -14919,19 +14919,36 @@ export default function Home() {
           : workspace.programProjects.find((item) => String(item.programId || "").trim() === upgradeProgramId);
         const lastFinalizedSha = lastFinalizedProgramArtifactSha(upgradeProject, upgradeProgramId);
         const currentArtifactSha = String(formData.programSoSha256 || "").trim().toLowerCase();
-        const upgradeArtifactIsStale = isStaleProgramUpgradeArtifact(
+        const upgradeJustSucceeded = Boolean(String(formData.signature || "").trim());
+        // After a successful upgrade, current SHA naturally equals the latest record — don't treat that as stale.
+        const upgradeArtifactIsStale = !upgradeJustSucceeded && isStaleProgramUpgradeArtifact(
           upgradeProject,
           upgradeProgramId,
           currentArtifactSha,
         );
-        const upgradeNeedsCompile = Boolean(upgradeSourceDir && !formData.programSoBase64);
+        const upgradeNeedsCompile = Boolean(upgradeSourceDir && !formData.programSoBase64 && !upgradeJustSucceeded);
         return (
           <div className="space-y-4">
             <p className="text-sm text-gray-400">{t("features.program-upgrade.hint")}</p>
+            {upgradeJustSucceeded && formData.message && !loading && (
+              <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">
+                <p className="font-semibold text-emerald-50">{t("features.program-upgrade.success")}</p>
+                <p className="mt-1 text-xs leading-5 text-emerald-100/85">{formData.message}</p>
+                {formData.signature && (
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(String(formData.signature), "program-upgrade-signature")}
+                    className="mt-2 block max-w-full truncate text-left font-mono text-xs text-emerald-200 hover:text-white"
+                  >
+                    {formData.signature}
+                  </button>
+                )}
+              </div>
+            )}
             {upgradeSourceDir ? renderProgramSourceImport() : null}
             {renderProgramIdInput()}
             {renderProgramFileInput()}
-            {(programSourceLoading || upgradeNeedsCompile || upgradeArtifactIsStale) && (
+            {!upgradeJustSucceeded && (programSourceLoading || upgradeNeedsCompile || upgradeArtifactIsStale) && (
               <div className={`space-y-3 rounded-lg border p-3 ${
                 upgradeArtifactIsStale
                   ? "border-amber-300/25 bg-amber-400/10 text-amber-50"
@@ -15161,18 +15178,9 @@ export default function Home() {
             >
               {loading ? t("features.program-upgrade.upgrading") : t("features.program-upgrade.upgradeButton")}
             </button>
-            {formData.message && !loading && (
+            {formData.message && !loading && !upgradeJustSucceeded && (
               <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">
                 {formData.message}
-                {formData.signature && (
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(String(formData.signature), "program-upgrade-signature")}
-                    className="mt-2 block max-w-full truncate text-left font-mono text-xs text-emerald-200 hover:text-white"
-                  >
-                    {formData.signature}
-                  </button>
-                )}
               </div>
             )}
           </div>
