@@ -3269,6 +3269,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/program/idl/", post(program_idl))
         .route("/api/program/invoke", post(program_invoke))
         .route("/api/program/invoke/", post(program_invoke))
+        .route("/api/external-sign/submit", post(external_sign_submit))
+        .route("/api/external-sign/submit/", post(external_sign_submit))
         .route("/api/program/info", post(program_info))
         .route("/api/program/info/", post(program_info))
         .route("/api/program/derive-address", post(program_derive_address))
@@ -7666,6 +7668,45 @@ struct ProgramInvokeResponse {
 }
 
 #[derive(Deserialize)]
+struct ExternalSignSubmitRequest {
+    #[serde(flatten)]
+    wallet: WalletAuthRequest,
+    #[serde(default, alias = "requiredSigner")]
+    required_signer: String,
+    #[serde(default, alias = "transactionBase64")]
+    transaction_base64: String,
+    #[serde(default)]
+    network: Option<String>,
+    #[serde(default, alias = "requestId")]
+    request_id: Option<String>,
+    #[serde(default, alias = "expiresAt")]
+    expires_at: Option<u64>,
+    #[serde(default, alias = "expectedGenesisHash")]
+    expected_genesis_hash: Option<String>,
+    #[serde(default, alias = "recentBlockhash")]
+    recent_blockhash: Option<String>,
+    #[serde(default, alias = "lastValidBlockHeight")]
+    last_valid_block_height: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct ExternalSignSubmitResponse {
+    status: String,
+    signature: String,
+    slot: u64,
+    required_signer: String,
+    signed_by: String,
+    network: String,
+    request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "rawTransaction")]
+    raw_transaction: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "recentBlockhash")]
+    recent_blockhash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "lastValidBlockHeight")]
+    last_valid_block_height: Option<u64>,
+}
+
+#[derive(Deserialize)]
 struct GenericProgramAdditionalSignerRequest {
     pubkey: String,
     wallet_id: String,
@@ -7711,6 +7752,190 @@ fn keypair_from_saved_wallet(
         });
     }
     Ok(keypair)
+}
+
+fn validate_external_sign_expiry(expires_at: Option<u64>) -> Result<(), ApiError> {
+    let Some(expires_at) = expires_at else {
+        return Ok(());
+    };
+    let now_ms = now_unix_ms_lossy();
+    let expires_at_ms = if expires_at < 10_000_000_000 {
+        expires_at.saturating_mul(1_000)
+    } else {
+        expires_at
+    };
+    if expires_at_ms <= now_ms {
+        return Err(ApiError {
+            message: "外部签名请求已过期".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn decode_external_legacy_transaction(transaction_base64: &str) -> Result<Transaction, ApiError> {
+    let trimmed = transaction_base64.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError {
+            message: "需要提供交易 base64".to_string(),
+        });
+    }
+    let bytes = BASE64.decode(trimmed).map_err(|error| ApiError {
+        message: format!("交易 base64 解码失败: {error}"),
+    })?;
+    if bytes.len() > SOLANA_TRANSACTION_PACKET_DATA_BYTES {
+        return Err(ApiError {
+            message: format!(
+                "交易数据过大: {} bytes，最大 {} bytes",
+                bytes.len(),
+                SOLANA_TRANSACTION_PACKET_DATA_BYTES
+            ),
+        });
+    }
+    bincode::deserialize::<Transaction>(&bytes).map_err(|error| ApiError {
+        message: format!("交易反序列化失败；当前仅支持 legacy Transaction base64: {error}"),
+    })
+}
+
+async fn external_sign_submit(
+    Json(req): Json<ExternalSignSubmitRequest>,
+) -> Result<Json<ExternalSignSubmitResponse>, ApiError> {
+    validate_external_sign_expiry(req.expires_at)?;
+
+    let required_signer = Pubkey::from_str(req.required_signer.trim()).map_err(|_| ApiError {
+        message: "requiredSigner 地址无效".to_string(),
+    })?;
+    let signing_keypair = req.wallet.keypair()?;
+    let signed_by = signing_keypair.pubkey();
+    if signed_by != required_signer {
+        return Err(ApiError {
+            message: format!(
+                "外部签名请求只允许 {} 签名，当前解锁钱包为 {}",
+                required_signer, signed_by
+            ),
+        });
+    }
+
+    let mut transaction = decode_external_legacy_transaction(&req.transaction_base64)?;
+    transaction.sanitize().map_err(|error| ApiError {
+        message: format!("外部交易结构校验失败: {error:?}"),
+    })?;
+    let required_signature_count = transaction.message.header.num_required_signatures as usize;
+    let signing_position = transaction
+        .message
+        .account_keys
+        .get(0..required_signature_count)
+        .and_then(|signers| signers.iter().position(|pubkey| pubkey == &required_signer))
+        .ok_or_else(|| ApiError {
+            message: format!("交易没有要求 {} 作为 signer", required_signer),
+        })?;
+    if signing_position >= transaction.signatures.len() {
+        return Err(ApiError {
+            message: "交易签名数组与 message signer 数量不匹配".to_string(),
+        });
+    }
+
+    let recent_blockhash = transaction.message.recent_blockhash;
+    transaction
+        .try_partial_sign(&[&signing_keypair], recent_blockhash)
+        .map_err(|error| ApiError {
+            message: format!("外部交易签名失败: {error}"),
+        })?;
+    transaction.verify().map_err(|error| ApiError {
+        message: format!("外部交易仍缺少有效签名，已中止提交: {error:?}"),
+    })?;
+
+    let signed_transaction_base64 = BASE64.encode(
+        bincode::serialize(&transaction).map_err(|error| ApiError {
+            message: format!("已签名交易序列化失败: {error}"),
+        })?,
+    );
+    let signed_recent_blockhash = transaction.message.recent_blockhash.to_string();
+    if let Some(expected_recent_blockhash) = req
+        .recent_blockhash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if expected_recent_blockhash != signed_recent_blockhash {
+            return Err(ApiError {
+                message: format!(
+                    "交易 blockhash 为 {}，与请求中的 {} 不一致；请重新导入签名请求",
+                    signed_recent_blockhash, expected_recent_blockhash
+                ),
+            });
+        }
+    }
+
+    let (client, network) = rpc_client_for(req.network.as_deref())?;
+    let signed_last_valid_block_height = match req.last_valid_block_height {
+        Some(last_valid_block_height) if last_valid_block_height > 0 => last_valid_block_height,
+        _ => {
+            let latest = client
+                .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+                .map_err(|error| ApiError {
+                    message: format!("读取 RPC latest blockhash 失败: {error}"),
+                })?;
+            if latest.0 != transaction.message.recent_blockhash {
+                return Err(ApiError {
+                    message: "签名请求缺少 lastValidBlockHeight，且当前 RPC latest blockhash 与交易不一致；请重新导入签名请求"
+                        .to_string(),
+                });
+            }
+            latest.1
+        }
+    };
+    if let Some(expected_genesis_hash) = req
+        .expected_genesis_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let expected_genesis_hash = solana_sdk::hash::Hash::from_str(expected_genesis_hash)
+            .map_err(|_| ApiError {
+                message: "expectedGenesisHash 无效".to_string(),
+            })?;
+        let actual_genesis_hash = client.get_genesis_hash().map_err(|error| ApiError {
+            message: format!("读取 RPC genesis hash 失败: {error}"),
+        })?;
+        if actual_genesis_hash != expected_genesis_hash {
+            return Err(ApiError {
+                message: format!(
+                    "RPC genesis hash 为 {}，预期为 {}；已在提交前中止",
+                    actual_genesis_hash, expected_genesis_hash
+                ),
+            });
+        }
+    }
+
+    let context = format!(
+        "external_sign request={} signer={} network={}",
+        req.request_id.as_deref().unwrap_or("-"),
+        required_signer,
+        network
+    );
+    let (signature, slot) = submit_signed_transaction_once(
+        &client,
+        &transaction,
+        "外部签名",
+        &context,
+        CommitmentConfig::confirmed(),
+        "confirmed",
+        Duration::from_secs(20),
+    )
+    .await?;
+
+    Ok(Json(ExternalSignSubmitResponse {
+        status: "success".to_string(),
+        signature: signature.to_string(),
+        slot,
+        required_signer: required_signer.to_string(),
+        signed_by: signed_by.to_string(),
+        network,
+        request_id: req.request_id,
+        raw_transaction: Some(signed_transaction_base64),
+        recent_blockhash: Some(signed_recent_blockhash),
+        last_valid_block_height: Some(signed_last_valid_block_height),
+    }))
 }
 
 fn decode_generic_instruction_data(value: &str) -> Result<Vec<u8>, ApiError> {

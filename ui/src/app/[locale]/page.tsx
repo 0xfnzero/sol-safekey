@@ -95,6 +95,7 @@ import { localTokenMetadata } from "@/lib/localTokenRegistry";
 import {
   buildProgramDeploymentReceiptJson,
   compactProgramDeploymentReceiptJson,
+  isLikelySolanaGenesisHash,
   isLikelySolanaPublicKey,
   MAX_PROGRAM_KEYPAIR_FILE_BYTES,
   parseProgramKeypairJson,
@@ -168,6 +169,7 @@ const WALLET_PASSWORD_FORM_IDS = new Set([
   "program-upgrade",
   "program-invoke",
   "program-invoke-standalone",
+  "external-sign",
   "squads-create",
   "squads-sol-transfer",
   "squads-token-transfer",
@@ -1074,6 +1076,7 @@ function defaultBackTarget(formId: string): string | null {
     case "program-info":
       return "program-workbench";
     case "program-invoke-standalone":
+    case "external-sign":
       return "contract-tools";
     case "create-nonce":
       return "nonce-workbench";
@@ -1409,6 +1412,12 @@ export default function Home() {
           id: "program-invoke-standalone",
           label: t("features.program-invoke.title"),
           icon: <Send className="w-4 h-4" />,
+          network: true,
+        },
+        {
+          id: "external-sign",
+          label: t("features.external-sign.title"),
+          icon: <ShieldCheck className="w-4 h-4" />,
           network: true,
         },
       ],
@@ -3962,6 +3971,65 @@ export default function Home() {
     });
   };
 
+  const importExternalSignRequest = () => {
+    const raw = String(formData.externalSignRequestJson || "").trim();
+    if (!raw) {
+      toast.error(t("features.external-sign.requestJsonRequired"));
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      toast.error(t("features.external-sign.invalidRequestJson"));
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      toast.error(t("features.external-sign.invalidRequestJson"));
+      return;
+    }
+    const request = parsed as Record<string, unknown>;
+    const nestedTransaction =
+      request.transaction && typeof request.transaction === "object" && !Array.isArray(request.transaction)
+        ? (request.transaction as Record<string, unknown>)
+        : undefined;
+    const readString = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = request[key] ?? nestedTransaction?.[key];
+        if (typeof value === "string" && value.trim()) return value.trim();
+        if (typeof value === "number" && Number.isFinite(value)) return String(value);
+      }
+      return "";
+    };
+
+    const requiredSigner = readString("requiredSigner", "required_signer", "signer", "signerPubkey", "signer_pubkey");
+    const transactionBase64 = readString("transactionBase64", "transaction_base64", "txBase64", "tx_base64", "base64");
+    const requestId = readString("requestId", "request_id", "id");
+    const expiresAt = readString("expiresAt", "expires_at");
+    const expectedGenesisHash = readString("expectedGenesisHash", "expected_genesis_hash", "genesisHash", "genesis_hash");
+    const recentBlockhash = readString("recentBlockhash", "recent_blockhash");
+    const lastValidBlockHeight = readString("lastValidBlockHeight", "last_valid_block_height");
+    const network = readString("network");
+    const matchingWallet = requiredSigner
+      ? wallets.find((wallet) => wallet.public_key === requiredSigner)
+      : undefined;
+
+    setFormData((prev) => ({
+      ...prev,
+      externalSignRequestJson: raw,
+      ...(requestId ? { requestId } : {}),
+      ...(requiredSigner ? { requiredSigner } : {}),
+      ...(transactionBase64 ? { transactionBase64 } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
+      ...(expectedGenesisHash ? { expectedGenesisHash } : {}),
+      ...(recentBlockhash ? { recentBlockhash } : {}),
+      ...(lastValidBlockHeight ? { lastValidBlockHeight } : {}),
+      ...(network ? { network } : {}),
+      ...(matchingWallet ? { wallet_id: matchingWallet.id, keystoreJson: undefined } : {}),
+    }));
+    toast.success(t("features.external-sign.requestImported"));
+  };
+
   const handleSellPercentShortcut = async (
     formId: "pumpfun-sell" | "pumpswap-sell",
     percent: number,
@@ -5568,6 +5636,32 @@ export default function Home() {
               return failProgramInvoke(t("features.program-invoke.signerWalletMismatch", { account: account.path }));
             }
           }
+        }
+        return true;
+      }
+      case "external-sign": {
+        const requiredSigner = String(nextFormData.requiredSigner || "").trim();
+        const transactionBase64 = String(nextFormData.transactionBase64 || "").trim();
+        if (!requiredSigner || !transactionBase64) {
+          return fail(t("features.external-sign.fillAllFields"));
+        }
+        if (!isLikelySolanaPublicKey(requiredSigner)) {
+          return fail(t("features.external-sign.invalidRequiredSigner"));
+        }
+        const selectedWallet = savedWalletFromForm(nextFormData) ?? effectiveWallet;
+        if (selectedWallet && selectedWallet.public_key !== requiredSigner) {
+          return fail(t("features.external-sign.walletMismatch", {
+            wallet: selectedWallet.public_key,
+            signer: requiredSigner,
+          }));
+        }
+        const expiresAt = String(nextFormData.expiresAt || "").trim();
+        if (expiresAt && !/^\d+$/.test(expiresAt)) {
+          return fail(t("features.external-sign.invalidExpiresAt"));
+        }
+        const expectedGenesisHash = String(nextFormData.expectedGenesisHash || "").trim();
+        if (expectedGenesisHash && !isLikelySolanaGenesisHash(expectedGenesisHash)) {
+          return fail(t("features.external-sign.invalidGenesisHash"));
         }
         return true;
       }
@@ -7627,6 +7721,61 @@ export default function Home() {
             }
           }
           setProgramInvoke((prev) => ({ ...prev, signerPasswords: {} }));
+          break;
+        }
+
+        case "external-sign": {
+          const m = walletAuth("external-sign");
+          if (!validateWalletAuth(m, formData, "private_key")) {
+            toast.error(t("features.external-sign.fillAllFields"));
+            setLoading(false);
+            return;
+          }
+          const requestBody: ApiRequestBody = {
+            required_signer: String(formData.requiredSigner || "").trim(),
+            transaction_base64: String(formData.transactionBase64 || "").trim(),
+            network: submitNetwork(),
+          };
+          const requestId = String(formData.requestId || "").trim();
+          const expiresAt = String(formData.expiresAt || "").trim();
+          const expectedGenesisHash = String(formData.expectedGenesisHash || "").trim();
+          const recentBlockhash = String(formData.recentBlockhash || "").trim();
+          const lastValidBlockHeight = String(formData.lastValidBlockHeight || "").trim();
+          if (requestId) requestBody.request_id = requestId;
+          if (expiresAt) requestBody.expires_at = Number(expiresAt);
+          if (expectedGenesisHash) requestBody.expected_genesis_hash = expectedGenesisHash;
+          if (recentBlockhash) requestBody.recent_blockhash = recentBlockhash;
+          if (lastValidBlockHeight) requestBody.last_valid_block_height = Number(lastValidBlockHeight);
+          applyWalletAuth(requestBody, m, formData, "private_key");
+
+          const response = await apiFetch("external-sign/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          });
+          const data = await response.json();
+          if (response.ok) {
+            toast.success(t("features.external-sign.success"));
+            const backfillPayload = {
+              signature: String(data.signature || "").trim(),
+              rawTransaction: String(data.raw_transaction || data.rawTransaction || "").trim(),
+              recentBlockhash: String(data.recent_blockhash || data.recentBlockhash || "").trim(),
+              lastValidBlockHeight: Number(data.last_valid_block_height ?? data.lastValidBlockHeight ?? 0),
+            };
+            setFormData((prev) => ({
+              ...prev,
+              status: data.status,
+              signature: data.signature,
+              externalSignSlot: data.slot,
+              signedBy: data.signed_by,
+              externalSignNetwork: data.network,
+              requestId: data.request_id || requestId,
+              externalSignBackfillJson: JSON.stringify(backfillPayload, null, 2),
+            }));
+            refreshWalletAfterMutation(savedWalletFromForm(formData) ?? effectiveWallet);
+          } else {
+            toast.error(data.error || t("features.external-sign.error"));
+          }
           break;
         }
 
@@ -11642,6 +11791,12 @@ export default function Home() {
                 icon: <Send className="w-4 h-4" />,
                 preset: { wallet_id: effectiveWalletId, network: effectiveNetwork },
               },
+              {
+                id: "external-sign",
+                title: t("features.external-sign.title"),
+                icon: <ShieldCheck className="w-4 h-4" />,
+                preset: { wallet_id: effectiveWalletId, network: effectiveNetwork },
+              },
             ])}
           </div>
         );
@@ -14597,6 +14752,232 @@ export default function Home() {
         );
       }
 
+      case "external-sign": {
+        const externalSignAuth = walletAuth("external-sign");
+        const externalSignWallet = savedWalletFromForm(formData) ?? effectiveWallet;
+        const requiredSigner = String(formData.requiredSigner || "").trim();
+        const walletMismatch = Boolean(
+          requiredSigner &&
+          externalSignWallet?.public_key &&
+          externalSignWallet.public_key !== requiredSigner,
+        );
+        const fillSelectedWalletSigner = () => {
+          if (externalSignWallet?.public_key) {
+            handleFormChange("requiredSigner", externalSignWallet.public_key);
+          }
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className={ALLOW_DIRECT_SECRET_INPUT ? undefined : "hidden"}>
+              <label className="block text-sm font-medium mb-2">{t("formUi.authMethod")}</label>
+              <div className={ALLOW_DIRECT_SECRET_INPUT ? "grid grid-cols-3 gap-2" : "grid grid-cols-1 gap-2 [&>button:not(:first-child)]:hidden"}>
+                {([
+                  ["keystore", t("formUi.tabKeystore")],
+                  ["encrypted", t("formUi.tabEncrypted")],
+                  ["private", t("formUi.tabPrivateKey")],
+                ] as const).map(([method, label]) => (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => {
+                      setAuthMethod({ ...authMethod, "external-sign": method });
+                      const nextFormData = { ...formData };
+                      if (method !== "private") delete nextFormData.private_key;
+                      if (method !== "encrypted") delete nextFormData.encrypted_key;
+                      if (method !== "keystore") {
+                        delete nextFormData.wallet_id;
+                        delete nextFormData.keystoreJson;
+                      }
+                      if (method === "private") delete nextFormData.password;
+                      setFormData(nextFormData);
+                    }}
+                    className={`py-2 px-3 rounded-lg font-medium transition-colors text-sm ${
+                      externalSignAuth === method
+                        ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                        : "bg-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {externalSignAuth === "keystore" && (
+              <SavedWalletPicker
+                copied={copied}
+                formData={formData}
+                formId="external-sign"
+                loading={walletsLoading}
+                t={t}
+                walletAuth={externalSignAuth}
+                wallets={wallets}
+                showTemporaryKeystore
+                onCopy={copyToClipboard}
+                onFieldChange={handleFormChange}
+                onKeystoreUpload={handleFileUpload}
+                onRefresh={() => void loadWallets()}
+              />
+            )}
+
+            {ALLOW_DIRECT_SECRET_INPUT && externalSignAuth === "encrypted" && (
+              <div>
+                <label className="block text-sm font-medium mb-2">{t("formUi.encryptedKey")}</label>
+                <textarea
+                  value={formData.encrypted_key || ""}
+                  onChange={(e) => handleFormChange("encrypted_key", e.target.value)}
+                  className="w-full min-h-[120px] px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
+                  placeholder={t("formUi.placeholderEncryptedKey")}
+                />
+              </div>
+            )}
+
+            {ALLOW_DIRECT_SECRET_INPUT && externalSignAuth === "private" && (
+              <div>
+                <label className="block text-sm font-medium mb-2">{t("formUi.senderPrivateKey")}</label>
+                <input
+                  type="password"
+                  value={formData.private_key || ""}
+                  onChange={(e) => handleFormChange("private_key", e.target.value)}
+                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
+                  placeholder={t("formUi.placeholderPrivateKeyBase58")}
+                />
+                <p className="mt-1 text-xs text-yellow-400">{t("formUi.warnPlaintextStrong")}</p>
+              </div>
+            )}
+
+            <section className="space-y-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <div>
+                <label className="block text-sm font-medium mb-2">{t("features.external-sign.requestJson")}</label>
+                <textarea
+                  value={formData.externalSignRequestJson || ""}
+                  onChange={(e) => handleFormChange("externalSignRequestJson", e.target.value)}
+                  spellCheck={false}
+                  className="w-full min-h-[140px] px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white font-mono text-xs select-text"
+                  placeholder={t("features.external-sign.requestJsonPlaceholder")}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={importExternalSignRequest}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/20"
+              >
+                <Upload className="h-4 w-4" />
+                {t("features.external-sign.importRequest")}
+              </button>
+            </section>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <label className="block text-sm font-medium">{t("features.external-sign.requiredSigner")}</label>
+                <button
+                  type="button"
+                  onClick={fillSelectedWalletSigner}
+                  disabled={!externalSignWallet?.public_key}
+                  className="rounded bg-white/10 px-2 py-1 text-xs text-gray-200 hover:bg-white/20 disabled:opacity-40"
+                >
+                  {t("features.external-sign.useSelectedWallet")}
+                </button>
+              </div>
+              <input
+                type="text"
+                value={formData.requiredSigner || ""}
+                onChange={(e) => handleFormChange("requiredSigner", e.target.value.trim())}
+                className={`w-full px-4 py-2 bg-white/5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white font-mono text-sm select-text ${
+                  walletMismatch ? "border-red-400/60" : "border-white/10"
+                }`}
+                placeholder={t("features.external-sign.requiredSignerPlaceholder")}
+              />
+              {walletMismatch && (
+                <p className="mt-2 text-xs text-red-200">
+                  {t("features.external-sign.walletMismatch", {
+                    wallet: externalSignWallet?.public_key || "-",
+                    signer: requiredSigner,
+                  })}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">{t("features.external-sign.transactionBase64")}</label>
+              <textarea
+                value={formData.transactionBase64 || ""}
+                onChange={(e) => handleFormChange("transactionBase64", e.target.value.trim())}
+                spellCheck={false}
+                className="w-full min-h-[160px] px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white font-mono text-xs select-text"
+                placeholder={t("features.external-sign.transactionBase64Placeholder")}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium mb-2">{t("features.external-sign.requestId")}</label>
+                <input
+                  type="text"
+                  value={formData.requestId || ""}
+                  onChange={(e) => handleFormChange("requestId", e.target.value)}
+                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white select-text"
+                  placeholder={t("features.external-sign.requestIdPlaceholder")}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t("features.external-sign.expiresAt")}</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={formData.expiresAt || ""}
+                  onChange={(e) => handleFormChange("expiresAt", e.target.value.replace(/[^\d]/g, ""))}
+                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white select-text"
+                  placeholder={t("features.external-sign.expiresAtPlaceholder")}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">{t("features.external-sign.expectedGenesisHash")}</label>
+              <input
+                type="text"
+                value={formData.expectedGenesisHash || ""}
+                onChange={(e) => handleFormChange("expectedGenesisHash", e.target.value.trim())}
+                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white font-mono text-sm select-text"
+                placeholder={t("features.external-sign.expectedGenesisHashPlaceholder")}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => requestPasswordSubmit("external-sign")}
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50"
+            >
+              {loading ? t("features.external-sign.submitting") : t("features.external-sign.submitButton")}
+            </button>
+
+            {formData.signature && (
+              <div className="space-y-3 p-4 bg-white/5 rounded-lg">
+                {renderCopyRow("external-sign-signature", t("formUi.txSignature"), formData.signature)}
+                {renderCopyRow("external-sign-signed-by", t("features.external-sign.signedBy"), formData.signedBy)}
+                {renderCopyRow("external-sign-required-signer", t("features.external-sign.requiredSigner"), formData.requiredSigner)}
+                {formData.externalSignBackfillJson ? (
+                  renderCopyRow(
+                    "external-sign-backfill-json",
+                    t("features.external-sign.backfillJson"),
+                    formData.externalSignBackfillJson,
+                  )
+                ) : null}
+                <p className="text-xs text-gray-400">
+                  {t("features.external-sign.resultMeta", {
+                    slot: String(formData.externalSignSlot || "-"),
+                    network: String(formData.externalSignNetwork || submitNetwork()),
+                  })}
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      }
+
       case "program-info":
         return (
           <div className="space-y-4">
@@ -16440,6 +16821,7 @@ export default function Home() {
         "program-upgrade": t("features.program-upgrade.title"),
         "program-invoke": t("features.program-invoke.title"),
         "program-invoke-standalone": t("features.program-invoke.title"),
+        "external-sign": t("features.external-sign.title"),
         "program-info": t("features.program-info.title"),
         "squads-workspace": t("features.workspace.title"),
         "squads-proposals": t("features.workspace.savedProposals"),
@@ -16462,6 +16844,7 @@ export default function Home() {
     "program-upgrade",
     "program-invoke",
     "program-invoke-standalone",
+    "external-sign",
     "squads-prepare-upgrade-buffer",
     "squads-program-upgrade",
   ].includes(selectedForm || "");

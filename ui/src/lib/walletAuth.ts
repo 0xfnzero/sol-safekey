@@ -34,7 +34,7 @@ export const authFormsWithWallets = new Set([
   "create-wsol-ata", "wrap-sol", "unwrap-sol", "close-wsol-ata",
   "create-nonce", "pumpfun-sell", "pumpswap-sell", "create-tfa",
   "pumpfun-cashback", "pumpswap-cashback", "program-deploy", "program-upgrade",
-  "program-invoke", "program-invoke-standalone",
+  "program-invoke", "program-invoke-standalone", "external-sign",
   "squads-create", "squads-sol-transfer", "squads-token-transfer",
   "squads-prepare-upgrade-buffer", "squads-program-upgrade",
   "squads-approve", "squads-reject", "squads-execute", "squads-set-authority",
