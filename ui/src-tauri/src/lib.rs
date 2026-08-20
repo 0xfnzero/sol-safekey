@@ -7,7 +7,11 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use zeroize::Zeroizing;
 
 /// Must match `DEFAULT_API_PORT` in `src/lib/api.ts`
@@ -18,6 +22,72 @@ const MAX_SECURE_PUBLIC_KEY_PEM_BYTES: usize = 2 * 1024;
 const PROGRAM_DEPLOY_PROXY_TIMEOUT_SECS: u64 = 60 * 60;
 const SECURE_BODY_HEADER: &str = "x-sol-safekey-secure-body";
 const SECURE_BODY_VERSION: &str = "1";
+const DAPP_WINDOW_LABEL: &str = "dapp";
+const DAPP_SIGN_REQUEST_EVENT: &str = "dapp://sign-request";
+const DAPP_REQUEST_TTL_MS: u64 = 3 * 60 * 1000;
+
+#[derive(Clone)]
+struct AllowedDapp {
+    id: &'static str,
+    name: &'static str,
+    url: &'static str,
+}
+
+#[derive(Clone)]
+struct DappSession {
+    app_id: String,
+    app_name: String,
+    url: String,
+    wallet_public_key: String,
+    network: String,
+    opened_at_ms: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct DappSignRequestEvent {
+    request_id: String,
+    app_id: String,
+    app_name: String,
+    app_url: String,
+    method: String,
+    wallet_public_key: String,
+    network: String,
+    transaction_base64: String,
+    transaction_format: String,
+    created_at_ms: u64,
+}
+
+#[derive(Clone)]
+struct DappPendingRequest {
+    event: DappSignRequestEvent,
+    result: Option<DappSignResult>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct DappSignResult {
+    approved: bool,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    signature: Option<String>,
+    #[serde(default)]
+    raw_transaction: Option<String>,
+    #[serde(default)]
+    recent_blockhash: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DappPollResponse {
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<DappSignResult>,
+}
+
+#[derive(Default)]
+struct DappBridgeState {
+    session: Mutex<Option<DappSession>>,
+    requests: Mutex<HashMap<String, DappPendingRequest>>,
+}
 
 #[derive(Serialize)]
 struct ProxyResponse {
@@ -254,6 +324,243 @@ fn reveal_file_in_system_file_manager(path: &Path) -> Result<(), String> {
     }
 }
 
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
+}
+
+fn allowed_dapp(app_id: &str) -> Option<AllowedDapp> {
+    match app_id.trim().to_ascii_lowercase().as_str() {
+        "jupiter" => Some(AllowedDapp {
+            id: "jupiter",
+            name: "Jupiter",
+            url: "https://jup.ag/swap",
+        }),
+        "pumpfun" => Some(AllowedDapp {
+            id: "pumpfun",
+            name: "pump.fun",
+            url: "https://pump.fun/",
+        }),
+        "raydium" => Some(AllowedDapp {
+            id: "raydium",
+            name: "Raydium",
+            url: "https://raydium.io/swap/",
+        }),
+        "meteora" => Some(AllowedDapp {
+            id: "meteora",
+            name: "Meteora",
+            url: "https://app.meteora.ag/",
+        }),
+        _ => None,
+    }
+}
+
+fn is_likely_solana_pubkey(value: &str) -> bool {
+    let trimmed = value.trim();
+    (32..=44).contains(&trimmed.len())
+        && trimmed
+            .bytes()
+            .all(|b| matches!(b, b'1'..=b'9' | b'A'..=b'H' | b'J'..=b'N' | b'P'..=b'Z' | b'a'..=b'k' | b'm'..=b'z'))
+}
+
+fn validate_dapp_method(method: &str) -> Result<String, String> {
+    let normalized = method.trim();
+    match normalized {
+        "signTransaction"
+        | "signAllTransactions"
+        | "signAndSendTransaction"
+        | "sendTransaction" => Ok(normalized.to_string()),
+        _ => Err("unsupported dapp signing method".to_string()),
+    }
+}
+
+fn validate_transaction_format(format: &str) -> Result<String, String> {
+    let normalized = format.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "legacy" | "versioned" | "v0" | "auto" => Ok(normalized),
+        _ => Err("unsupported transaction format".to_string()),
+    }
+}
+
+fn validate_dapp_transaction_base64(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > 4096 {
+        return Err("invalid transaction payload".to_string());
+    }
+    if BASE64.decode(trimmed).is_err() {
+        return Err("transaction payload is not valid base64".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn dapp_request_id() -> String {
+    let mut random = [0_u8; 8];
+    OsRng.fill_bytes(&mut random);
+    format!("dapp-{}-{}", now_ms(), BASE64.encode(random))
+        .replace(['+', '/', '='], "")
+}
+
+fn dapp_provider_script(
+    dapp: &AllowedDapp,
+    wallet_public_key: &str,
+    network: &str,
+) -> Result<String, String> {
+    let wallet_public_key = serde_json::to_string(wallet_public_key).map_err(|e| e.to_string())?;
+    let network = serde_json::to_string(network).map_err(|e| e.to_string())?;
+    let app_id = serde_json::to_string(dapp.id).map_err(|e| e.to_string())?;
+    let app_name = serde_json::to_string(dapp.name).map_err(|e| e.to_string())?;
+    Ok(format!(
+        r#"
+(function () {{
+  const walletPublicKey = {wallet_public_key};
+  const network = {network};
+  const appId = {app_id};
+  const appName = {app_name};
+  const listeners = new Map();
+  let connected = true;
+
+  function sleep(ms) {{ return new Promise((resolve) => setTimeout(resolve, ms)); }}
+  function tauriInvoke(command, args) {{
+    const api = window.__TAURI__ && window.__TAURI__.core;
+    if (!api || typeof api.invoke !== "function") {{
+      throw new Error("Sol SafeKey bridge is unavailable");
+    }}
+    return api.invoke(command, args || {{}});
+  }}
+  function bytesToBase64(bytes) {{
+    const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    let binary = "";
+    for (let i = 0; i < view.length; i += 0x8000) {{
+      binary += String.fromCharCode.apply(null, Array.from(view.subarray(i, i + 0x8000)));
+    }}
+    return btoa(binary);
+  }}
+  function base64ToBytes(base64) {{
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }}
+  function transactionFormat(transaction) {{
+    if (transaction && (transaction.version !== undefined || transaction.message?.addressTableLookups)) return "versioned";
+    return "legacy";
+  }}
+  function serializeTransaction(transaction) {{
+    if (!transaction || typeof transaction.serialize !== "function") {{
+      throw new Error("Invalid Solana transaction");
+    }}
+    try {{
+      return transaction.serialize({{ requireAllSignatures: false, verifySignatures: false }});
+    }} catch (_) {{
+      return transaction.serialize();
+    }}
+  }}
+  function hydrateSignedTransaction(original, rawTransaction) {{
+    const bytes = base64ToBytes(rawTransaction);
+    if (original?.constructor && typeof original.constructor.deserialize === "function") {{
+      return original.constructor.deserialize(bytes);
+    }}
+    if (original?.constructor && typeof original.constructor.from === "function") {{
+      return original.constructor.from(bytes);
+    }}
+    return bytes;
+  }}
+  async function requestSignature(method, transaction) {{
+    const transactionBase64 = bytesToBase64(serializeTransaction(transaction));
+    const transaction_format = transactionFormat(transaction);
+    const requestId = await tauriInvoke("dapp_submit_sign_request", {{
+      method,
+      transaction_base64: transactionBase64,
+      transaction_format,
+    }});
+    const started = Date.now();
+    while (Date.now() - started < 180000) {{
+      const poll = await tauriInvoke("dapp_poll_sign_request", {{ request_id: requestId }});
+      if (poll.status === "approved") return poll.result || {{}};
+      if (poll.status === "rejected") throw new Error(poll.result?.error || "User rejected the request");
+      if (poll.status === "expired") throw new Error("Sol SafeKey signing request expired");
+      await sleep(500);
+    }}
+    throw new Error("Sol SafeKey signing request timed out");
+  }}
+  function emit(event, value) {{
+    const handlers = listeners.get(event);
+    if (!handlers) return;
+    handlers.forEach((handler) => {{
+      try {{ handler(value); }} catch (_) {{}}
+    }});
+  }}
+  const publicKey = {{
+    toBase58: () => walletPublicKey,
+    toString: () => walletPublicKey,
+    equals: (other) => String(other?.toBase58 ? other.toBase58() : other) === walletPublicKey,
+  }};
+  const provider = {{
+    isPhantom: true,
+    isSolflare: true,
+    isSolSafeKey: true,
+    appId,
+    appName,
+    network,
+    get publicKey() {{ return connected ? publicKey : null; }},
+    get isConnected() {{ return connected; }},
+    async connect() {{
+      connected = true;
+      emit("connect", publicKey);
+      return {{ publicKey }};
+    }},
+    async disconnect() {{
+      connected = false;
+      emit("disconnect");
+    }},
+    on(event, handler) {{
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event).add(handler);
+      return this;
+    }},
+    off(event, handler) {{
+      listeners.get(event)?.delete(handler);
+      return this;
+    }},
+    async signTransaction(transaction) {{
+      const result = await requestSignature("signTransaction", transaction);
+      if (!result.raw_transaction) throw new Error("Sol SafeKey did not return a signed transaction");
+      return hydrateSignedTransaction(transaction, result.raw_transaction);
+    }},
+    async signAllTransactions(transactions) {{
+      const signed = [];
+      for (const transaction of transactions || []) {{
+        signed.push(await this.signTransaction(transaction));
+      }}
+      return signed;
+    }},
+    async signAndSendTransaction(input) {{
+      const transaction = input?.transaction || input;
+      const result = await requestSignature("signAndSendTransaction", transaction);
+      if (!result.signature) throw new Error("Sol SafeKey did not return a transaction signature");
+      return {{ signature: result.signature }};
+    }},
+    async sendTransaction(transaction) {{
+      const result = await requestSignature("sendTransaction", transaction);
+      if (!result.signature) throw new Error("Sol SafeKey did not return a transaction signature");
+      return result.signature;
+    }},
+    async signMessage() {{
+      throw new Error("Sol SafeKey DApp mode does not support message signing yet");
+    }},
+  }};
+  Object.defineProperty(window, "solana", {{ value: provider, configurable: true }});
+  window.phantom = window.phantom || {{}};
+  Object.defineProperty(window.phantom, "solana", {{ value: provider, configurable: true }});
+  Object.defineProperty(window, "solflare", {{ value: provider, configurable: true }});
+  window.dispatchEvent(new Event("solana#initialized"));
+}})();
+"#
+    ))
+}
+
 /// Open a URL in the system default browser (not the Tauri webview).
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
@@ -262,6 +569,174 @@ fn open_external_url(url: String) -> Result<(), String> {
         return Err("only https URLs can be opened externally".to_string());
     }
     spawn_system_browser(&url)
+}
+
+#[tauri::command]
+fn open_dapp_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DappBridgeState>,
+    app_id: String,
+    wallet_public_key: String,
+    network: String,
+) -> Result<(), String> {
+    let dapp = allowed_dapp(&app_id).ok_or_else(|| "unsupported dapp".to_string())?;
+    let wallet_public_key = wallet_public_key.trim().to_string();
+    if !is_likely_solana_pubkey(&wallet_public_key) {
+        return Err("invalid wallet public key".to_string());
+    }
+    let network = network.trim().to_string();
+    if network.is_empty() || network.len() > 256 || network.chars().any(|ch| ch.is_control()) {
+        return Err("invalid network".to_string());
+    }
+
+    let init_script = dapp_provider_script(&dapp, &wallet_public_key, &network)?;
+    if let Some(existing) = app.get_webview_window(DAPP_WINDOW_LABEL) {
+        let _ = existing.close();
+    }
+    let url = dapp
+        .url
+        .parse()
+        .map_err(|error| format!("invalid dapp URL: {error}"))?;
+    WebviewWindowBuilder::new(&app, DAPP_WINDOW_LABEL, WebviewUrl::External(url))
+        .title(format!("Sol SafeKey DApp - {}", dapp.name))
+        .inner_size(1220.0, 820.0)
+        .resizable(true)
+        .initialization_script(&init_script)
+        .build()
+        .map_err(|error| format!("failed to open dapp window: {error}"))?;
+
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| "dapp session lock poisoned".to_string())?;
+    *session = Some(DappSession {
+        app_id: dapp.id.to_string(),
+        app_name: dapp.name.to_string(),
+        url: dapp.url.to_string(),
+        wallet_public_key,
+        network,
+        opened_at_ms: now_ms(),
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn dapp_submit_sign_request(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DappBridgeState>,
+    method: String,
+    transaction_base64: String,
+    transaction_format: String,
+) -> Result<String, String> {
+    if window.label() != DAPP_WINDOW_LABEL {
+        return Err("dapp signing requests are only accepted from the dapp window".to_string());
+    }
+    let method = validate_dapp_method(&method)?;
+    let transaction_base64 = validate_dapp_transaction_base64(&transaction_base64)?;
+    let transaction_format = validate_transaction_format(&transaction_format)?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| "dapp session lock poisoned".to_string())?
+        .clone()
+        .ok_or_else(|| "no active dapp session".to_string())?;
+    if now_ms().saturating_sub(session.opened_at_ms) > 12 * 60 * 60 * 1000 {
+        return Err("dapp session expired".to_string());
+    }
+
+    let request_id = dapp_request_id();
+    let event = DappSignRequestEvent {
+        request_id: request_id.clone(),
+        app_id: session.app_id,
+        app_name: session.app_name,
+        app_url: session.url,
+        method,
+        wallet_public_key: session.wallet_public_key,
+        network: session.network,
+        transaction_base64,
+        transaction_format,
+        created_at_ms: now_ms(),
+    };
+
+    let mut requests = state
+        .requests
+        .lock()
+        .map_err(|_| "dapp request lock poisoned".to_string())?;
+    requests.retain(|_, pending| {
+        now_ms().saturating_sub(pending.event.created_at_ms) <= DAPP_REQUEST_TTL_MS
+            && pending.result.is_none()
+    });
+    requests.insert(
+        request_id.clone(),
+        DappPendingRequest {
+            event: event.clone(),
+            result: None,
+        },
+    );
+    drop(requests);
+
+    app.emit_to("main", DAPP_SIGN_REQUEST_EVENT, event)
+        .map_err(|error| format!("failed to notify main window: {error}"))?;
+    Ok(request_id)
+}
+
+#[tauri::command]
+fn dapp_poll_sign_request(
+    state: tauri::State<'_, DappBridgeState>,
+    request_id: String,
+) -> Result<DappPollResponse, String> {
+    let request_id = request_id.trim();
+    let mut requests = state
+        .requests
+        .lock()
+        .map_err(|_| "dapp request lock poisoned".to_string())?;
+    let Some(pending) = requests.get(request_id) else {
+        return Ok(DappPollResponse {
+            status: "expired",
+            result: None,
+        });
+    };
+    if now_ms().saturating_sub(pending.event.created_at_ms) > DAPP_REQUEST_TTL_MS {
+        requests.remove(request_id);
+        return Ok(DappPollResponse {
+            status: "expired",
+            result: None,
+        });
+    }
+    if let Some(result) = pending.result.clone() {
+        requests.remove(request_id);
+        return Ok(DappPollResponse {
+            status: if result.approved { "approved" } else { "rejected" },
+            result: Some(result),
+        });
+    }
+    Ok(DappPollResponse {
+        status: "pending",
+        result: None,
+    })
+}
+
+#[tauri::command]
+fn resolve_dapp_sign_request(
+    state: tauri::State<'_, DappBridgeState>,
+    request_id: String,
+    result: DappSignResult,
+) -> Result<(), String> {
+    let request_id = request_id.trim();
+    let mut requests = state
+        .requests
+        .lock()
+        .map_err(|_| "dapp request lock poisoned".to_string())?;
+    let pending = requests
+        .get_mut(request_id)
+        .ok_or_else(|| "dapp signing request is no longer pending".to_string())?;
+    if now_ms().saturating_sub(pending.event.created_at_ms) > DAPP_REQUEST_TTL_MS {
+        requests.remove(request_id);
+        return Err("dapp signing request expired".to_string());
+    }
+    pending.result = Some(result);
+    Ok(())
 }
 
 #[tauri::command]
@@ -371,9 +846,14 @@ fn open_download_file_location(path: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(DappBridgeState::default())
         .invoke_handler(tauri::generate_handler![
             proxy_api_request,
             open_external_url,
+            open_dapp_window,
+            dapp_submit_sign_request,
+            dapp_poll_sign_request,
+            resolve_dapp_sign_request,
             pick_source_directory,
             save_download_file,
             open_download_file_location

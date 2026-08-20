@@ -227,6 +227,24 @@
       "circleFaucetOpened": "Opened the Circle faucet in your system browser",
       "circleFaucetFailed": "Unable to open the Circle faucet in your system browser"
     },
+    "dapp-store": {
+      "title": "DApp Apps",
+      "currentWallet": "Current wallet",
+      "noWallet": "Select a wallet first.",
+      "tauriOnly": "DApp auto-connect is available in the desktop app.",
+      "opened": "DApp opened",
+      "openFailed": "Failed to open DApp",
+      "open": "Open and Connect",
+      "signRequestTitle": "DApp Transaction Confirmation",
+      "requestWallet": "Signing wallet",
+      "requestNetwork": "Network",
+      "requestFormat": "Transaction format",
+      "approve": "Confirm Signature",
+      "walletMissing": "The wallet required by this request is not in the current wallet list.",
+      "signFailed": "Failed to sign the DApp transaction",
+      "signSuccess": "DApp transaction signed",
+      "submitSuccess": "DApp transaction submitted"
+    },
     "token-actions": {
       "title": "Token Actions",
       "token": "Token",

@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dapp",
+  "description": "Narrow bridge permissions for allowlisted Solana DApp webviews.",
+  "windows": [
+    "dapp"
+  ],
+  "local": false,
+  "remote": {
+    "urls": [
+      "https://jup.ag/*",
+      "https://*.jup.ag/*",
+      "https://pump.fun/*",
+      "https://*.pump.fun/*",
+      "https://raydium.io/*",
+      "https://*.raydium.io/*",
+      "https://app.meteora.ag/*",
+      "https://*.meteora.ag/*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "allow-submit-dapp-sign-request",
+    "allow-poll-dapp-sign-request"
+  ]
+}

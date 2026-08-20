@@ -9,6 +9,8 @@
     "core:default",
     "allow-proxy-api-request",
     "allow-open-external-url",
+    "allow-open-dapp-window",
+    "allow-resolve-dapp-sign-request",
     "allow-pick-source-directory",
     "allow-save-download-file",
     "allow-open-download-file-location"

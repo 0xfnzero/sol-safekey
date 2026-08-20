@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { useTranslations } from '@/hooks/useTranslations';
 import {
@@ -32,6 +33,7 @@ import {
   Trash2,
   ExternalLink,
   Menu,
+  Compass,
   FolderOpen,
   CheckCircle2,
   XCircle,
@@ -751,6 +753,43 @@ type PasswordPromptRequest =
   | { kind: "export-private-key"; wallet: SavedWallet; formState: FormState }
   | { kind: "migrate-keystore"; wallet: SavedWallet; formState: FormState };
 
+type DappId = "jupiter" | "pumpfun" | "raydium" | "meteora";
+
+interface DappCatalogItem {
+  id: DappId;
+  name: string;
+  url: string;
+  accentClass: string;
+}
+
+interface DappSignRequestEvent {
+  request_id: string;
+  app_id: string;
+  app_name: string;
+  app_url: string;
+  method: "signTransaction" | "signAllTransactions" | "signAndSendTransaction" | "sendTransaction" | string;
+  wallet_public_key: string;
+  network: string;
+  transaction_base64: string;
+  transaction_format: "legacy" | "versioned" | "v0" | "auto" | string;
+  created_at_ms: number;
+}
+
+interface DappSignResult {
+  approved: boolean;
+  error?: string;
+  signature?: string;
+  raw_transaction?: string;
+  recent_blockhash?: string;
+}
+
+const DAPP_CATALOG: DappCatalogItem[] = [
+  { id: "jupiter", name: "Jupiter", url: "https://jup.ag/swap", accentClass: "from-teal-400/25 to-amber-300/20" },
+  { id: "pumpfun", name: "pump.fun", url: "https://pump.fun/", accentClass: "from-lime-300/25 to-pink-400/20" },
+  { id: "raydium", name: "Raydium", url: "https://raydium.io/swap/", accentClass: "from-cyan-400/25 to-fuchsia-400/20" },
+  { id: "meteora", name: "Meteora", url: "https://app.meteora.ag/", accentClass: "from-orange-300/25 to-sky-400/20" },
+];
+
 interface WalletTokenAsset {
   account: string;
   mint: string;
@@ -1423,6 +1462,12 @@ export default function Home() {
       ],
     },
     {
+      id: "dapp-store",
+      label: tf("features.dapp-store.title", "DApp 应用"),
+      icon: <Compass className="w-5 h-5" />,
+      network: true,
+    },
+    {
       id: "squads-workspace",
       label: t("features.workspace.title"),
       icon: <ShieldCheck className="w-5 h-5" />,
@@ -1456,6 +1501,9 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [walletActionsMenuOpen, setWalletActionsMenuOpen] = useState<string | null>(null);
   const [walletFaucetMenuOpen, setWalletFaucetMenuOpen] = useState(false);
+  const [dappSignRequest, setDappSignRequest] = useState<DappSignRequestEvent | null>(null);
+  const [dappPassword, setDappPassword] = useState("");
+  const [dappSignBusy, setDappSignBusy] = useState(false);
   const [backTarget, setBackTarget] = useState<string | null>(null);
   const [passwordPrompt, setPasswordPrompt] = useState<PasswordPromptRequest | null>(null);
   const [passwordPromptValue, setPasswordPromptValue] = useState("");
@@ -1641,6 +1689,23 @@ export default function Home() {
       rpcRequest: effectiveRpcRequest,
     };
   }, [effectiveNetwork, effectiveRpcRequest, effectiveWalletId]);
+
+  useEffect(() => {
+    if (!isTauriWebview()) return;
+    let unlisten: UnlistenFn | undefined;
+    void listen<DappSignRequestEvent>("dapp://sign-request", (event) => {
+      setDappSignRequest(event.payload);
+      setDappPassword("");
+      toast.message("DApp 发起了交易签名请求");
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    }).catch(() => {
+      // The web build has no Tauri event bridge.
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   const loadProgramDeploymentJournal = useCallback(async (
     intent: ProgramDeploymentJournalIntent,
@@ -4235,6 +4300,107 @@ export default function Home() {
       toast.success(t(`features.wallet-list.${faucet === "circle" ? "circleFaucetOpened" : "faucetAirdropOpened"}`));
     } catch {
       toast.error(t(`features.wallet-list.${faucet === "circle" ? "circleFaucetFailed" : "faucetAirdropFailed"}`));
+    }
+  };
+
+  const openDapp = async (dapp: DappCatalogItem) => {
+    const wallet = effectiveWallet;
+    if (!wallet) {
+      toast.error(tf("features.dapp-store.noWallet", "请先选择一个钱包。"));
+      return;
+    }
+    if (!isTauriWebview()) {
+      toast.error(tf("features.dapp-store.tauriOnly", "DApp 自动连接需要在桌面客户端中使用。"));
+      return;
+    }
+    try {
+      await invoke("open_dapp_window", {
+        app_id: dapp.id,
+        wallet_public_key: wallet.public_key,
+        network: effectiveRpcRequest,
+      });
+      toast.success(tf("features.dapp-store.opened", "DApp 已打开"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : tf("features.dapp-store.openFailed", "打开 DApp 失败"));
+    }
+  };
+
+  const resolveDappSignRequest = async (request: DappSignRequestEvent, result: DappSignResult) => {
+    await invoke("resolve_dapp_sign_request", {
+      request_id: request.request_id,
+      result,
+    });
+  };
+
+  const rejectDappSignRequest = async () => {
+    const request = dappSignRequest;
+    if (!request) return;
+    setDappSignBusy(true);
+    try {
+      await resolveDappSignRequest(request, {
+        approved: false,
+        error: "用户拒绝了 DApp 交易签名请求",
+      });
+      setDappSignRequest(null);
+      setDappPassword("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "拒绝 DApp 请求失败");
+    } finally {
+      setDappSignBusy(false);
+    }
+  };
+
+  const approveDappSignRequest = async () => {
+    const request = dappSignRequest;
+    if (!request) return;
+    const wallet = wallets.find((item) => item.public_key === request.wallet_public_key);
+    if (!wallet) {
+      toast.error(tf("features.dapp-store.walletMissing", "这个请求指定的钱包不在当前钱包列表中。"));
+      return;
+    }
+    if (!dappPassword) {
+      toast.error(t("formUi.placeholderKeystorePassword"));
+      return;
+    }
+    const shouldSubmit = request.method === "sendTransaction" || request.method === "signAndSendTransaction";
+    setDappSignBusy(true);
+    try {
+      const response = await apiFetch(shouldSubmit ? "external-sign/submit" : "external-sign/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet_id: wallet.id,
+          password: dappPassword,
+          required_signer: request.wallet_public_key,
+          transaction_base64: request.transaction_base64,
+          transaction_format: request.transaction_format || "auto",
+          network: request.network || effectiveRpcRequest,
+          request_id: request.request_id,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || tf("features.dapp-store.signFailed", "DApp 交易签名失败"));
+      }
+      const result: DappSignResult = {
+        approved: true,
+        signature: String(data.signature || "").trim() || undefined,
+        raw_transaction: String(data.raw_transaction || data.rawTransaction || "").trim() || undefined,
+        recent_blockhash: String(data.recent_blockhash || data.recentBlockhash || "").trim() || undefined,
+      };
+      await resolveDappSignRequest(request, result);
+      toast.success(
+        shouldSubmit
+          ? tf("features.dapp-store.submitSuccess", "DApp 交易已提交")
+          : tf("features.dapp-store.signSuccess", "DApp 交易已签名"),
+      );
+      setDappSignRequest(null);
+      setDappPassword("");
+      refreshWalletAfterMutation(wallet);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : tf("features.dapp-store.signFailed", "DApp 交易签名失败"));
+    } finally {
+      setDappSignBusy(false);
     }
   };
 
@@ -11554,6 +11720,67 @@ export default function Home() {
       case "wallet-list":
         return renderWalletListPanel();
 
+      case "dapp-store":
+        return (
+          <div className="space-y-4">
+            <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                    {tf("features.dapp-store.currentWallet", "当前连接钱包")}
+                  </p>
+                  {effectiveWallet ? (
+                    <>
+                      <p className="mt-1 select-text truncate text-sm font-semibold text-gray-100">
+                        {effectiveWallet.name}
+                      </p>
+                      <code className="mt-1 block select-text break-all text-xs text-gray-500">
+                        {effectiveWallet.public_key}
+                      </code>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-sm text-yellow-200">
+                      {tf("features.dapp-store.noWallet", "请先选择一个钱包。")}
+                    </p>
+                  )}
+                </div>
+                <div className="shrink-0 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-gray-300">
+                  {networkLabel(t, effectiveNetwork)}
+                </div>
+              </div>
+            </section>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {DAPP_CATALOG.map((dapp) => (
+                <div
+                  key={dapp.id}
+                  className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.04]"
+                >
+                  <div className={`h-2 bg-gradient-to-r ${dapp.accentClass}`} />
+                  <div className="space-y-4 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-base font-semibold text-gray-100">{dapp.name}</h3>
+                        <p className="mt-1 truncate text-xs text-gray-500">{dapp.url}</p>
+                      </div>
+                      <Compass className="h-5 w-5 shrink-0 text-gray-400" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void openDapp(dapp)}
+                      disabled={!effectiveWallet}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-black hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      {tf("features.dapp-store.open", "打开并连接")}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
       case "settings":
         return (
           <div className="space-y-6">
@@ -14969,7 +15196,7 @@ export default function Home() {
                 <p className="text-xs text-gray-400">
                   {t("features.external-sign.resultMeta", {
                     slot: String(formData.externalSignSlot || "-"),
-                    network: String(formData.externalSignNetwork || submitNetwork()),
+                    network: String(formData.externalSignNetwork || requestNetwork()),
                   })}
                 </p>
               </div>
@@ -16792,6 +17019,7 @@ export default function Home() {
         "wallet-list": t("features.wallet-list.title"),
         "wsol-workbench": t("features.wsol-workbench.title"),
         "pump-workbench": t("features.pump-workbench.title"),
+        "dapp-store": tf("features.dapp-store.title", "DApp 应用"),
         "contract-tools": tf("features.contract-tools.title", "合约工具"),
         "program-workbench": t("features.program-workbench.title"),
         "nonce-workbench": t("features.nonce-workbench.title"),
@@ -17148,6 +17376,86 @@ export default function Home() {
                   className="flex-1 rounded-lg bg-red-500/20 px-4 py-2.5 text-sm font-semibold text-red-100 hover:bg-red-500/30"
                 >
                   {t("features.program-projects.removeHistoryRecord")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {dappSignRequest && (
+        <div className="fixed inset-0 z-[200] flex items-end bg-black/60 sm:items-center sm:justify-center">
+          <button
+            type="button"
+            aria-label={t("common.cancel")}
+            className="absolute inset-0 cursor-default"
+            onClick={() => void rejectDappSignRequest()}
+          />
+          <div className="relative w-full border-t border-white/10 bg-zinc-950 px-4 py-5 shadow-2xl sm:mx-4 sm:max-w-xl sm:rounded-2xl sm:border">
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold">
+                    {tf("features.dapp-store.signRequestTitle", "DApp 交易确认")}
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {dappSignRequest.app_name} · {dappSignRequest.method}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void rejectDappSignRequest()}
+                  disabled={dappSignBusy}
+                  className="rounded-lg bg-white/10 p-2 text-gray-300 hover:bg-white/20 disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="space-y-2 rounded-lg border border-white/10 bg-black/30 p-3">
+                {[
+                  [tf("features.dapp-store.requestWallet", "签名钱包"), dappSignRequest.wallet_public_key],
+                  [tf("features.dapp-store.requestNetwork", "网络"), dappSignRequest.network],
+                  [tf("features.dapp-store.requestFormat", "交易格式"), dappSignRequest.transaction_format],
+                ].map(([label, value]) => (
+                  <div key={label} className="grid gap-1 sm:grid-cols-[7rem_minmax(0,1fr)]">
+                    <span className="text-xs text-gray-500">{label}</span>
+                    <code className="select-text break-all text-xs text-gray-300">{value}</code>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t("formUi.walletPassword")}</label>
+                <input
+                  autoFocus
+                  type="password"
+                  data-sensitive-field="password"
+                  value={dappPassword}
+                  onChange={(event) => setDappPassword(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void approveDappSignRequest();
+                    }
+                  }}
+                  className="w-full rounded-lg border border-white/10 bg-black/40 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                  placeholder={t("formUi.placeholderKeystorePassword")}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void rejectDappSignRequest()}
+                  disabled={dappSignBusy}
+                  className="rounded-lg bg-white/10 px-4 py-3 text-sm font-semibold hover:bg-white/20 disabled:opacity-50"
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void approveDappSignRequest()}
+                  disabled={dappSignBusy}
+                  className="rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-3 text-sm font-semibold hover:from-purple-600 hover:to-pink-600 disabled:opacity-50"
+                >
+                  {dappSignBusy ? t("common.processing") : tf("features.dapp-store.approve", "确认签名")}
                 </button>
               </div>
             </div>

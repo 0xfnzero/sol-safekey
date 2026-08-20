@@ -62,7 +62,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::sanitize::Sanitize;
 use solana_sdk::signature::Signer;
 use solana_sdk::signature::{Keypair, Signature};
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use solana_transaction_status_client_types::{
     option_serializer::OptionSerializer, EncodedTransaction, TransactionStatus, UiInstruction,
     UiMessage, UiParsedInstruction, UiTransactionEncoding,
@@ -1756,6 +1756,68 @@ async fn submit_signed_transaction_once(
     }
 }
 
+async fn submit_signed_versioned_transaction_once(
+    client: &RpcClient,
+    transaction: &VersionedTransaction,
+    action: &str,
+    context: &str,
+    commitment: CommitmentConfig,
+    commitment_label: &str,
+    timeout: Duration,
+) -> Result<(Signature, u64), ApiError> {
+    let local_signature = *transaction.signatures.first().ok_or_else(|| ApiError {
+        message: format!("{action}交易缺少本地签名；{context}"),
+    })?;
+    if local_signature == Signature::default() {
+        return Err(ApiError {
+            message: format!("{action}交易尚未签名；{context}"),
+        });
+    }
+
+    let send_error = match client.send_transaction(transaction) {
+        Ok(rpc_signature) => {
+            if rpc_signature != local_signature {
+                return Err(ApiError {
+                    message: format!(
+                        "{action} RPC 返回签名 {rpc_signature}，但本地确定签名为 {local_signature}；{context}"
+                    ),
+                });
+            }
+            None
+        }
+        Err(error) => Some(error.to_string()),
+    };
+
+    let wait_timeout = if send_error.is_some() {
+        timeout.min(Duration::from_secs(10))
+    } else {
+        timeout
+    };
+    match wait_for_signature_commitment(
+        client,
+        &local_signature,
+        wait_timeout,
+        action,
+        commitment,
+        commitment_label,
+    )
+    .await
+    {
+        Ok(slot) => Ok((local_signature, slot)),
+        Err(wait_error) => {
+            let send_detail = send_error
+                .map(|error| format!("；首次提交 RPC 错误: {error}"))
+                .unwrap_or_default();
+            Err(ApiError {
+                message: format!(
+                    "{}{}；{}；本地确定签名: {}。不得自动重签或盲目重试",
+                    wait_error.message, send_detail, context, local_signature
+                ),
+            })
+        }
+    }
+}
+
 async fn sign_and_send_with_commitment(
     client: &RpcClient,
     instructions: Vec<solana_sdk::instruction::Instruction>,
@@ -3269,6 +3331,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/program/idl/", post(program_idl))
         .route("/api/program/invoke", post(program_invoke))
         .route("/api/program/invoke/", post(program_invoke))
+        .route("/api/external-sign/sign", post(external_sign_sign))
+        .route("/api/external-sign/sign/", post(external_sign_sign))
         .route("/api/external-sign/submit", post(external_sign_submit))
         .route("/api/external-sign/submit/", post(external_sign_submit))
         .route("/api/program/info", post(program_info))
@@ -7675,6 +7739,8 @@ struct ExternalSignSubmitRequest {
     required_signer: String,
     #[serde(default, alias = "transactionBase64")]
     transaction_base64: String,
+    #[serde(default, alias = "transactionFormat")]
+    transaction_format: Option<String>,
     #[serde(default)]
     network: Option<String>,
     #[serde(default, alias = "requestId")]
@@ -7704,6 +7770,16 @@ struct ExternalSignSubmitResponse {
     recent_blockhash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "lastValidBlockHeight")]
     last_valid_block_height: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct ExternalSignOnlyResponse {
+    status: String,
+    required_signer: String,
+    signed_by: String,
+    request_id: Option<String>,
+    raw_transaction: String,
+    recent_blockhash: String,
 }
 
 #[derive(Deserialize)]
@@ -7796,11 +7872,175 @@ fn decode_external_legacy_transaction(transaction_base64: &str) -> Result<Transa
     })
 }
 
-async fn external_sign_submit(
-    Json(req): Json<ExternalSignSubmitRequest>,
-) -> Result<Json<ExternalSignSubmitResponse>, ApiError> {
-    validate_external_sign_expiry(req.expires_at)?;
+fn decode_external_versioned_transaction(
+    transaction_base64: &str,
+) -> Result<VersionedTransaction, ApiError> {
+    let trimmed = transaction_base64.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError {
+            message: "需要提供交易 base64".to_string(),
+        });
+    }
+    let bytes = BASE64.decode(trimmed).map_err(|error| ApiError {
+        message: format!("交易 base64 解码失败: {error}"),
+    })?;
+    if bytes.len() > SOLANA_TRANSACTION_PACKET_DATA_BYTES {
+        return Err(ApiError {
+            message: format!(
+                "交易数据过大: {} bytes，最大 {} bytes",
+                bytes.len(),
+                SOLANA_TRANSACTION_PACKET_DATA_BYTES
+            ),
+        });
+    }
+    bincode::deserialize::<VersionedTransaction>(&bytes).map_err(|error| ApiError {
+        message: format!("versioned transaction 反序列化失败: {error}"),
+    })
+}
 
+fn external_sign_legacy_transaction(
+    transaction_base64: &str,
+    required_signer: &Pubkey,
+    signing_keypair: &Keypair,
+) -> Result<Transaction, ApiError> {
+    let mut transaction = decode_external_legacy_transaction(transaction_base64)?;
+    transaction.sanitize().map_err(|error| ApiError {
+        message: format!("外部交易结构校验失败: {error:?}"),
+    })?;
+    let required_signature_count = transaction.message.header.num_required_signatures as usize;
+    let signing_position = transaction
+        .message
+        .account_keys
+        .get(0..required_signature_count)
+        .and_then(|signers| signers.iter().position(|pubkey| pubkey == required_signer))
+        .ok_or_else(|| ApiError {
+            message: format!("交易没有要求 {} 作为 signer", required_signer),
+        })?;
+    if signing_position >= transaction.signatures.len() {
+        return Err(ApiError {
+            message: "交易签名数组与 message signer 数量不匹配".to_string(),
+        });
+    }
+
+    let recent_blockhash = transaction.message.recent_blockhash;
+    transaction
+        .try_partial_sign(&[signing_keypair], recent_blockhash)
+        .map_err(|error| ApiError {
+            message: format!("外部交易签名失败: {error}"),
+        })?;
+    transaction.verify().map_err(|error| ApiError {
+        message: format!("外部交易仍缺少有效签名，已中止提交: {error:?}"),
+    })?;
+    Ok(transaction)
+}
+
+fn external_sign_versioned_transaction(
+    transaction_base64: &str,
+    required_signer: &Pubkey,
+    signing_keypair: &Keypair,
+) -> Result<VersionedTransaction, ApiError> {
+    let mut transaction = decode_external_versioned_transaction(transaction_base64)?;
+    transaction.sanitize().map_err(|error| ApiError {
+        message: format!("外部 versioned 交易结构校验失败: {error:?}"),
+    })?;
+    let required_signature_count = transaction.message.header().num_required_signatures as usize;
+    let signing_position = transaction
+        .message
+        .static_account_keys()
+        .get(0..required_signature_count)
+        .and_then(|signers| signers.iter().position(|pubkey| pubkey == required_signer))
+        .ok_or_else(|| ApiError {
+            message: format!("交易没有要求 {} 作为 signer", required_signer),
+        })?;
+    if signing_position >= transaction.signatures.len() {
+        return Err(ApiError {
+            message: "交易签名数组与 message signer 数量不匹配".to_string(),
+        });
+    }
+
+    let signature = signing_keypair
+        .try_sign_message(&transaction.message.serialize())
+        .map_err(|error| ApiError {
+            message: format!("外部 versioned 交易签名失败: {error}"),
+        })?;
+    transaction.signatures[signing_position] = signature;
+    if transaction.verify_with_results().iter().any(|result| !result) {
+        return Err(ApiError {
+            message: "外部 versioned 交易仍缺少有效签名，已中止提交".to_string(),
+        });
+    }
+    Ok(transaction)
+}
+
+enum SignedExternalTransaction {
+    Legacy(Transaction),
+    Versioned(VersionedTransaction),
+}
+
+impl SignedExternalTransaction {
+    fn raw_base64(&self) -> Result<String, ApiError> {
+        Ok(match self {
+            Self::Legacy(transaction) => {
+                BASE64.encode(bincode::serialize(transaction).map_err(|error| ApiError {
+                    message: format!("已签名交易序列化失败: {error}"),
+                })?)
+            }
+            Self::Versioned(transaction) => {
+                BASE64.encode(bincode::serialize(transaction).map_err(|error| ApiError {
+                    message: format!("已签名 versioned 交易序列化失败: {error}"),
+                })?)
+            }
+        })
+    }
+
+    fn recent_blockhash(&self) -> solana_sdk::hash::Hash {
+        match self {
+            Self::Legacy(transaction) => transaction.message.recent_blockhash,
+            Self::Versioned(transaction) => *transaction.message.recent_blockhash(),
+        }
+    }
+
+    async fn submit_once(
+        &self,
+        client: &RpcClient,
+        action: &str,
+        context: &str,
+        commitment: CommitmentConfig,
+        commitment_label: &str,
+        timeout: Duration,
+    ) -> Result<(Signature, u64), ApiError> {
+        match self {
+            Self::Legacy(transaction) => {
+                submit_signed_transaction_once(
+                    client,
+                    transaction,
+                    action,
+                    context,
+                    commitment,
+                    commitment_label,
+                    timeout,
+                )
+                .await
+            }
+            Self::Versioned(transaction) => {
+                submit_signed_versioned_transaction_once(
+                    client,
+                    transaction,
+                    action,
+                    context,
+                    commitment,
+                    commitment_label,
+                    timeout,
+                )
+                .await
+            }
+        }
+    }
+}
+
+fn sign_external_transaction_request(
+    req: &ExternalSignSubmitRequest,
+) -> Result<(Pubkey, Pubkey, SignedExternalTransaction, String, String), ApiError> {
     let required_signer = Pubkey::from_str(req.required_signer.trim()).map_err(|_| ApiError {
         message: "requiredSigner 地址无效".to_string(),
     })?;
@@ -7815,41 +8055,115 @@ async fn external_sign_submit(
         });
     }
 
-    let mut transaction = decode_external_legacy_transaction(&req.transaction_base64)?;
-    transaction.sanitize().map_err(|error| ApiError {
-        message: format!("外部交易结构校验失败: {error:?}"),
-    })?;
-    let required_signature_count = transaction.message.header.num_required_signatures as usize;
-    let signing_position = transaction
-        .message
-        .account_keys
-        .get(0..required_signature_count)
-        .and_then(|signers| signers.iter().position(|pubkey| pubkey == &required_signer))
-        .ok_or_else(|| ApiError {
-            message: format!("交易没有要求 {} 作为 signer", required_signer),
-        })?;
-    if signing_position >= transaction.signatures.len() {
-        return Err(ApiError {
-            message: "交易签名数组与 message signer 数量不匹配".to_string(),
-        });
+    let transaction_format = req
+        .transaction_format
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("auto")
+        .to_ascii_lowercase();
+    let signed_transaction = match transaction_format.as_str() {
+        "legacy" => SignedExternalTransaction::Legacy(external_sign_legacy_transaction(
+            &req.transaction_base64,
+            &required_signer,
+            &signing_keypair,
+        )?),
+        "versioned" | "v0" => SignedExternalTransaction::Versioned(
+            external_sign_versioned_transaction(
+                &req.transaction_base64,
+                &required_signer,
+                &signing_keypair,
+            )?,
+        ),
+        "auto" => {
+            match external_sign_versioned_transaction(
+                &req.transaction_base64,
+                &required_signer,
+                &signing_keypair,
+            ) {
+                Ok(transaction) => SignedExternalTransaction::Versioned(transaction),
+                Err(versioned_error) => SignedExternalTransaction::Legacy(
+                    external_sign_legacy_transaction(
+                        &req.transaction_base64,
+                        &required_signer,
+                        &signing_keypair,
+                    )
+                    .map_err(|legacy_error| ApiError {
+                        message: format!(
+                            "交易既不能按 versioned 也不能按 legacy 签名；versioned: {}；legacy: {}",
+                            versioned_error.message, legacy_error.message
+                        ),
+                    })?,
+                ),
+            }
+        }
+        _ => {
+            return Err(ApiError {
+                message: "transactionFormat 必须是 auto、legacy 或 versioned".to_string(),
+            })
+        }
+    };
+    let signed_transaction_base64 = signed_transaction.raw_base64()?;
+    let signed_recent_blockhash_hash = signed_transaction.recent_blockhash();
+    let signed_recent_blockhash = signed_recent_blockhash_hash.to_string();
+    Ok((
+        required_signer,
+        signed_by,
+        signed_transaction,
+        signed_transaction_base64,
+        signed_recent_blockhash,
+    ))
+}
+
+async fn external_sign_sign(
+    Json(req): Json<ExternalSignSubmitRequest>,
+) -> Result<Json<ExternalSignOnlyResponse>, ApiError> {
+    validate_external_sign_expiry(req.expires_at)?;
+    let (
+        required_signer,
+        signed_by,
+        _signed_transaction,
+        signed_transaction_base64,
+        signed_recent_blockhash,
+    ) = sign_external_transaction_request(&req)?;
+    if let Some(expected_recent_blockhash) = req
+        .recent_blockhash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if expected_recent_blockhash != signed_recent_blockhash {
+            return Err(ApiError {
+                message: format!(
+                    "交易 blockhash 为 {}，与请求中的 {} 不一致；请重新导入签名请求",
+                    signed_recent_blockhash, expected_recent_blockhash
+                ),
+            });
+        }
     }
 
-    let recent_blockhash = transaction.message.recent_blockhash;
-    transaction
-        .try_partial_sign(&[&signing_keypair], recent_blockhash)
-        .map_err(|error| ApiError {
-            message: format!("外部交易签名失败: {error}"),
-        })?;
-    transaction.verify().map_err(|error| ApiError {
-        message: format!("外部交易仍缺少有效签名，已中止提交: {error:?}"),
-    })?;
+    Ok(Json(ExternalSignOnlyResponse {
+        status: "success".to_string(),
+        required_signer: required_signer.to_string(),
+        signed_by: signed_by.to_string(),
+        request_id: req.request_id,
+        raw_transaction: signed_transaction_base64,
+        recent_blockhash: signed_recent_blockhash,
+    }))
+}
 
-    let signed_transaction_base64 = BASE64.encode(
-        bincode::serialize(&transaction).map_err(|error| ApiError {
-            message: format!("已签名交易序列化失败: {error}"),
-        })?,
-    );
-    let signed_recent_blockhash = transaction.message.recent_blockhash.to_string();
+async fn external_sign_submit(
+    Json(req): Json<ExternalSignSubmitRequest>,
+) -> Result<Json<ExternalSignSubmitResponse>, ApiError> {
+    validate_external_sign_expiry(req.expires_at)?;
+    let (
+        required_signer,
+        signed_by,
+        signed_transaction,
+        signed_transaction_base64,
+        signed_recent_blockhash,
+    ) = sign_external_transaction_request(&req)?;
+    let signed_recent_blockhash_hash = signed_transaction.recent_blockhash();
     if let Some(expected_recent_blockhash) = req
         .recent_blockhash
         .as_deref()
@@ -7875,7 +8189,7 @@ async fn external_sign_submit(
                 .map_err(|error| ApiError {
                     message: format!("读取 RPC latest blockhash 失败: {error}"),
                 })?;
-            if latest.0 != transaction.message.recent_blockhash {
+            if latest.0 != signed_recent_blockhash_hash {
                 return Err(ApiError {
                     message: "签名请求缺少 lastValidBlockHeight，且当前 RPC latest blockhash 与交易不一致；请重新导入签名请求"
                         .to_string(),
@@ -7913,16 +8227,16 @@ async fn external_sign_submit(
         required_signer,
         network
     );
-    let (signature, slot) = submit_signed_transaction_once(
-        &client,
-        &transaction,
-        "外部签名",
-        &context,
-        CommitmentConfig::confirmed(),
-        "confirmed",
-        Duration::from_secs(20),
-    )
-    .await?;
+    let (signature, slot) = signed_transaction
+        .submit_once(
+            &client,
+            "外部签名",
+            &context,
+            CommitmentConfig::confirmed(),
+            "confirmed",
+            Duration::from_secs(20),
+        )
+        .await?;
 
     Ok(Json(ExternalSignSubmitResponse {
         status: "success".to_string(),

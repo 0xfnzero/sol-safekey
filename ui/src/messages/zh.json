@@ -227,6 +227,24 @@
       "circleFaucetOpened": "已用系统浏览器打开 Circle 水龙头",
       "circleFaucetFailed": "无法用系统浏览器打开 Circle 水龙头"
     },
+    "dapp-store": {
+      "title": "DApp 应用",
+      "currentWallet": "当前连接钱包",
+      "noWallet": "请先选择一个钱包。",
+      "tauriOnly": "DApp 自动连接需要在桌面客户端中使用。",
+      "opened": "DApp 已打开",
+      "openFailed": "打开 DApp 失败",
+      "open": "打开并连接",
+      "signRequestTitle": "DApp 交易确认",
+      "requestWallet": "签名钱包",
+      "requestNetwork": "网络",
+      "requestFormat": "交易格式",
+      "approve": "确认签名",
+      "walletMissing": "这个请求指定的钱包不在当前钱包列表中。",
+      "signFailed": "DApp 交易签名失败",
+      "signSuccess": "DApp 交易已签名",
+      "submitSuccess": "DApp 交易已提交"
+    },
     "token-actions": {
       "title": "Token 操作",
       "token": "Token",
