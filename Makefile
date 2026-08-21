@@ -1,66 +1,118 @@
 SHELL := /bin/bash
 
-RELEASE_NODE_VERSION := 20.19.5
-RELEASE_NPM_VERSION := 10.8.2
-RELEASE_CARGO_AUDIT_VERSION := 0.22.1
-
 .DEFAULT_GOAL := help
 
-.PHONY: help install ui-dev ui-build api-build desktop-dev desktop-build check release-check
+ROOT_DIR := $(CURDIR)
+RELEASE_DIR := $(ROOT_DIR)/release
+MOBILE_DIR := $(ROOT_DIR)/apps/mobile
+DESKTOP_DIR := $(ROOT_DIR)/apps/desktop
+ANDROID_RELEASE_DIR := $(RELEASE_DIR)/android
+IOS_RELEASE_DIR := $(RELEASE_DIR)/ios
+MACOS_RELEASE_DIR := $(RELEASE_DIR)/macos
+WINDOWS_RELEASE_DIR := $(RELEASE_DIR)/windows
+IOS_CODESIGN ?= false
+IOS_EXPORT_OPTIONS_PLIST ?=
+TAURI_WINDOWS_TARGET ?= x86_64-pc-windows-msvc
+ANDROID_JAVA_HOME ?= $(shell if [[ -d /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ]]; then echo /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home; fi)
+ANDROID_ENV := $(if $(ANDROID_JAVA_HOME),JAVA_HOME="$(ANDROID_JAVA_HOME)" PATH="$(ANDROID_JAVA_HOME)/bin:$$PATH",)
+
+.PHONY: help dev package package-android package-ios package-macos package-windows prepare-release-dir
 
 help:
-	@echo "Sol SafeKey workspace commands"
-	@echo "  make install        Install UI dependencies and prefetch Rust crates"
-	@echo "  make ui-dev         Start Next.js and the local Rust API"
-	@echo "  make ui-build       Build the static web UI"
-	@echo "  make api-build      Build the UI API release binary"
-	@echo "  make desktop-dev    Start the Tauri desktop app"
-	@echo "  make desktop-build  Build the Tauri desktop app"
-	@echo "  make check          Run Rust, lint, and TypeScript checks"
-	@echo "  make release-check  Run the complete non-deploying release gate"
+	@echo "FnzeroSafe commands"
+	@echo "  make dev              Start the desktop dev app; old local dev processes are stopped first"
+	@echo "  make package          Build Android, iOS, macOS, and Windows packages into ./release"
+	@echo "  make package-android  Build Android APK/AAB into ./release/android"
+	@echo "  make package-ios      Build iOS app/IPA into ./release/ios"
+	@echo "  make package-macos    Build the macOS desktop package into ./release/macos"
+	@echo "  make package-windows  Build the Windows desktop package into ./release/windows"
+	@echo ""
+	@echo "Options:"
+	@echo "  ANDROID_JAVA_HOME=/path/to/jdk17 make package-android"
+	@echo "  IOS_CODESIGN=true IOS_EXPORT_OPTIONS_PLIST=/path/ExportOptions.plist make package-ios"
+	@echo "  TAURI_WINDOWS_TARGET=x86_64-pc-windows-msvc make package-windows"
 
-install:
-	cd ui && npm ci
-	cargo fetch
+dev:
+	cd apps/desktop && npm run desktop:dev
 
-ui-dev:
-	cd ui && npm run dev:stack
+package: package-android package-ios package-macos package-windows
 
-ui-build:
-	cd ui && npm run build
+prepare-release-dir:
+	mkdir -p "$(RELEASE_DIR)"
 
-api-build: ui-build
-	cargo build --release -p sol-safekey-ui
+package-android: prepare-release-dir
+	mkdir -p "$(ANDROID_RELEASE_DIR)"
+	cd "$(MOBILE_DIR)" && ./tool/build_android_native.sh
+	cd "$(MOBILE_DIR)" && $(ANDROID_ENV) flutter build apk --release
+	cd "$(MOBILE_DIR)" && $(ANDROID_ENV) flutter build appbundle
+	@copied=0; \
+	for artifact in \
+		"$(MOBILE_DIR)/build/app/outputs/flutter-apk/app-release.apk" \
+		"$(MOBILE_DIR)/build/app/outputs/bundle/release/app-release.aab"; do \
+		if [[ -f "$$artifact" ]]; then \
+			cp -f "$$artifact" "$(ANDROID_RELEASE_DIR)/"; \
+			echo "Copied $$artifact -> $(ANDROID_RELEASE_DIR)/"; \
+			copied=1; \
+		fi; \
+	done; \
+	if [[ "$$copied" != "1" ]]; then \
+		echo "No Android package artifacts were found." >&2; \
+		exit 1; \
+	fi
 
-desktop-dev:
-	cd ui && npm run desktop:dev
+package-ios: prepare-release-dir
+	mkdir -p "$(IOS_RELEASE_DIR)"
+	cd "$(MOBILE_DIR)" && ./tool/build_ios_native.sh
+	@if [[ "$(IOS_CODESIGN)" == "true" ]]; then \
+		if [[ -n "$(IOS_EXPORT_OPTIONS_PLIST)" ]]; then \
+			cd "$(MOBILE_DIR)" && flutter build ipa --release --export-options-plist "$(IOS_EXPORT_OPTIONS_PLIST)"; \
+		else \
+			cd "$(MOBILE_DIR)" && flutter build ipa --release; \
+		fi; \
+	else \
+		cd "$(MOBILE_DIR)" && flutter build ios --release --no-codesign; \
+	fi
+	@copied=0; \
+	while IFS= read -r artifact; do \
+		cp -R "$$artifact" "$(IOS_RELEASE_DIR)/"; \
+		echo "Copied $$artifact -> $(IOS_RELEASE_DIR)/"; \
+		copied=1; \
+	done < <(find "$(MOBILE_DIR)/build/ios" -maxdepth 5 \( -name "*.ipa" -o -name "*.app" \) -print 2>/dev/null); \
+	if [[ "$$copied" != "1" ]]; then \
+		echo "No iOS package artifacts were found." >&2; \
+		exit 1; \
+	fi
 
-desktop-build:
-	cd ui && npm run desktop:build
+package-macos:
+	mkdir -p "$(MACOS_RELEASE_DIR)"
+	cd "$(DESKTOP_DIR)" && npm run desktop:build
+	@copied=0; \
+	while IFS= read -r artifact; do \
+		cp -R "$$artifact" "$(MACOS_RELEASE_DIR)/"; \
+		echo "Copied $$artifact -> $(MACOS_RELEASE_DIR)/"; \
+		copied=1; \
+	done < <(find \
+		"$(DESKTOP_DIR)/src-tauri/target/release/bundle" \
+		"$(ROOT_DIR)/build-cache/release/bundle" \
+		-maxdepth 5 \( -name "*.dmg" -o -name "*.app" \) ! -name "rw.*" -print 2>/dev/null); \
+	if [[ "$$copied" != "1" ]]; then \
+		echo "No macOS desktop package artifacts were found." >&2; \
+		exit 1; \
+	fi
 
-check:
-	cargo check --workspace
-	cd ui && npm run test:dependency-compat
-	cd ui && npm run test:devnet-airdrop
-	cd ui && npm run test:program-deploy
-	cd ui && npm run lint
-	cd ui && npm exec tsc -- --noEmit
-
-release-check:
-	@command -v cargo-audit >/dev/null || { echo "cargo-audit $(RELEASE_CARGO_AUDIT_VERSION) is required: cargo install cargo-audit --locked --version $(RELEASE_CARGO_AUDIT_VERSION)" >&2; exit 1; }
-	@test "$$(cargo audit --version | awk '{print $$NF}')" = "$(RELEASE_CARGO_AUDIT_VERSION)" || { echo "cargo-audit must be exactly $(RELEASE_CARGO_AUDIT_VERSION)" >&2; exit 1; }
-	@test "$$(node -p 'process.versions.node')" = "$(RELEASE_NODE_VERSION)" || { echo "Node.js must be exactly $(RELEASE_NODE_VERSION)" >&2; exit 1; }
-	@test "$$(npm --version)" = "$(RELEASE_NPM_VERSION)" || { echo "npm must be exactly $(RELEASE_NPM_VERSION)" >&2; exit 1; }
-	cd ui && node scripts/assert-no-next-dev.cjs
-	cargo fmt --all -- --check
-	cargo test --locked --workspace
-	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	cd ui && npm ci
-	cd ui && npm run test:dependency-compat
-	cd ui && npm run test:devnet-airdrop
-	cd ui && npm run test:program-deploy
-	cd ui && npm run lint
-	cd ui && npm exec tsc -- --noEmit
-	cd ui && npm run build
-	cargo audit
-	cd ui && npm audit --audit-level=high
+package-windows:
+	mkdir -p "$(WINDOWS_RELEASE_DIR)"
+	cd "$(DESKTOP_DIR)" && npm run tauri -- build --target "$(TAURI_WINDOWS_TARGET)"
+	@copied=0; \
+	while IFS= read -r artifact; do \
+		cp -f "$$artifact" "$(WINDOWS_RELEASE_DIR)/"; \
+		echo "Copied $$artifact -> $(WINDOWS_RELEASE_DIR)/"; \
+		copied=1; \
+	done < <(find \
+		"$(DESKTOP_DIR)/src-tauri/target/$(TAURI_WINDOWS_TARGET)/release/bundle" \
+		"$(ROOT_DIR)/build-cache/$(TAURI_WINDOWS_TARGET)/release/bundle" \
+		-maxdepth 6 \( -name "*.msi" -o -name "*.exe" \) -print 2>/dev/null); \
+	if [[ "$$copied" != "1" ]]; then \
+		echo "No Windows desktop package artifacts were found." >&2; \
+		exit 1; \
+	fi

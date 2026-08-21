@@ -1,0 +1,34 @@
+[[permission]]
+identifier = "allow-open-dapp-tab"
+description = "Open an embedded Solana DApp browser tab."
+commands.allow = ["dapp_open_tab"]
+
+[[permission]]
+identifier = "allow-navigate-dapp-tab"
+description = "Navigate an embedded Solana DApp browser tab."
+commands.allow = ["dapp_navigate_tab"]
+
+[[permission]]
+identifier = "allow-set-active-dapp-tab"
+description = "Show and position the active embedded Solana DApp browser tab."
+commands.allow = ["dapp_set_active_tab"]
+
+[[permission]]
+identifier = "allow-close-dapp-tab"
+description = "Close an embedded Solana DApp browser tab."
+commands.allow = ["dapp_close_tab"]
+
+[[permission]]
+identifier = "allow-submit-dapp-sign-request"
+description = "Allow an allowlisted DApp webview to submit a transaction signing request."
+commands.allow = ["dapp_submit_sign_request"]
+
+[[permission]]
+identifier = "allow-poll-dapp-sign-request"
+description = "Allow an allowlisted DApp webview to poll its transaction signing result."
+commands.allow = ["dapp_poll_sign_request"]
+
+[[permission]]
+identifier = "allow-resolve-dapp-sign-request"
+description = "Allow the main FnzeroSafe window to approve or reject a pending DApp signing request."
+commands.allow = ["resolve_dapp_sign_request"]

@@ -1,12 +1,12 @@
 # Bot 集成指南
 
-将 sol-safekey 集成到你的 Solana 交易机器人或应用程序的完整指南。
+将 fnzero-safe 集成到你的 Solana 交易机器人或应用程序的完整指南。
 
 [English Documentation](BOT_INTEGRATION.md)
 
-## 为什么选择 Sol-SafeKey？
+## 为什么选择 FnzeroSafe？
 
-Sol-SafeKey 提供军事级钱包安全性和简单集成 - 只需 3 行代码即可为你的 bot 添加完整的交互式钱包管理系统。
+FnzeroSafe 提供军事级钱包安全性和简单集成 - 只需 3 行代码即可为你的 bot 添加完整的交互式钱包管理系统。
 
 ### 核心优势
 
@@ -24,11 +24,11 @@ Sol-SafeKey 提供军事级钱包安全性和简单集成 - 只需 3 行代码�
 
 ```toml
 [dependencies]
-sol-safekey = { path = "../sol-safekey" }
+fnzero-safe = { path = "../fnzero-safe" }
 
 [features]
 default = ["solana-ops"]
-solana-ops = ["sol-safekey/solana-ops"]
+solana-ops = ["fnzero-safe/solana-ops"]
 ```
 
 ### 步骤 2: 添加 Safekey 命令
@@ -42,8 +42,8 @@ fn main() -> Result<()> {
     // 检查是否运行在 safekey 交互模式
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(|s| s.as_str()) == Some("safekey") {
-        // 启动 sol-safekey 交互式菜单
-        if let Err(e) = sol_safekey::interactive::show_main_menu() {
+        // 启动 fnzero-safe 交互式菜单
+        if let Err(e) = fnzero_safe::interactive::show_main_menu() {
             eprintln!("❌ {}", e);
             std::process::exit(1);
         }
@@ -97,7 +97,7 @@ cargo build --features solana-ops --release
 
 ### 密码处理
 
-Sol-SafeKey 使用安全的密码处理模型:
+FnzeroSafe 使用安全的密码处理模型:
 
 **✅ 安全方式:**
 - 密码通过 stdin 管道传递
@@ -156,7 +156,7 @@ fi
 ### 加载加密钱包
 
 ```rust
-use sol_safekey::KeyManager;
+use fnzero_safe::KeyManager;
 use std::io::{self, Read};
 
 fn load_wallet() -> Result<solana_sdk::signature::Keypair> {
@@ -180,7 +180,7 @@ fn load_wallet() -> Result<solana_sdk::signature::Keypair> {
 ### 创建新钱包
 
 ```rust
-use sol_safekey::KeyManager;
+use fnzero_safe::KeyManager;
 
 fn create_wallet(password: &str) -> Result<()> {
     // 生成新密钥对
@@ -201,7 +201,7 @@ fn create_wallet(password: &str) -> Result<()> {
 ### 使用 Solana 操作
 
 ```rust
-use sol_safekey::solana_ops::SolanaClient;
+use fnzero_safe::solana_ops::SolanaClient;
 
 fn bot_logic(keypair: &solana_sdk::signature::Keypair) -> Result<()> {
     // 初始化 Solana 客户端
@@ -252,7 +252,7 @@ echo "你的密码" | ./build-cache/release/examples/bot_example
 
 ## 核心功能总结
 
-Sol-SafeKey 提供全面的钱包管理:
+FnzeroSafe 提供全面的钱包管理:
 
 | 功能 | 支持 |
 |------|------|
@@ -290,7 +290,7 @@ solana airdrop 2 你的钱包地址 --url devnet
 
 ### 集成检查清单
 
-- [ ] 在 Cargo.toml 中添加了 sol-safekey 依赖
+- [ ] 在 Cargo.toml 中添加了 fnzero-safe 依赖
 - [ ] 在 main() 中添加了 3 行 safekey 命令检查
 - [ ] 创建了带 stdin 密码的安全启动脚本
 - [ ] 通过 safekey 命令测试了钱包创建

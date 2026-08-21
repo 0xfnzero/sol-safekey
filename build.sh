@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Build with full features (includes CLI)
-cargo build --release --features full
+# Build the CLI with full features.
+cargo build --release -p fnzero-safe-core --features full
 
 # Copy the binary to project root
-cp -rf build-cache/release/sol-safekey ./
+cp -rf build-cache/release/fnzero-safe ./

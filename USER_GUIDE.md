@@ -1,12 +1,12 @@
 # User Guide
 
-Complete guide for using sol-safekey interactive commands and operations.
+Complete guide for using fnzero-safe interactive commands and operations.
 
 [中文文档](USER_GUIDE_CN.md)
 
 ## Getting Started
 
-Sol-SafeKey provides an interactive command-line interface for secure Solana wallet management and operations. This guide covers all available features and operations.
+FnzeroSafe provides an interactive command-line interface for secure Solana wallet management and operations. This guide covers all available features and operations.
 
 ### Prerequisites
 
@@ -16,7 +16,7 @@ Sol-SafeKey provides an interactive command-line interface for secure Solana wal
 
 ### Accessing Interactive Menu
 
-If you're using a bot that integrates sol-safekey:
+If you're using a bot that integrates fnzero-safe:
 
 ```bash
 ./your-bot safekey
@@ -30,20 +30,20 @@ Or if using the standalone binary:
 
 #### Direct Installation (Standalone)
 
-For standalone usage without a bot, install sol-safekey directly:
+For standalone usage without a bot, install fnzero-safe directly:
 
 ```bash
 # Install from crates.io (recommended for latest version)
-cargo install sol-safekey --features="full"
+cargo install fnzero-safe --features="full"
 
 # Verify installation
-sol-safekey --version
+fnzero-safe --version
 
 # Start interactive menu
-sol-safekey start
+fnzero-safe start
 ```
 
-This method provides direct access to all sol-safekey features through the interactive menu.
+This method provides direct access to all fnzero-safe features through the interactive menu.
 
 ## Main Menu
 
@@ -702,7 +702,7 @@ Sell tokens on **Pump.fun internal market** (bonding curve) for native SOL. Use 
 - Bilingual prompts (English/Chinese)
 
 **Steps**:
-1. Run `sol-safekey` (or `./your-bot safekey`) and unlock your wallet.
+1. Run `fnzero-safe` (or `./your-bot safekey`) and unlock your wallet.
 2. Choose **13** (Pump.fun Sell) or **16** (Pump.fun Sell, no 2FA prompt).
 3. Enter RPC URL when prompted (or use default).
 4. Choose whether to use seed-optimized ATA when asked.

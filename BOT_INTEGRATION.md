@@ -1,12 +1,12 @@
 # Bot Integration Guide
 
-Complete guide for integrating sol-safekey into your Solana trading bot or application.
+Complete guide for integrating fnzero-safe into your Solana trading bot or application.
 
 [中文文档](BOT_INTEGRATION_CN.md)
 
-## Why Sol-SafeKey?
+## Why FnzeroSafe?
 
-Sol-SafeKey provides military-grade wallet security with simple integration - just 3 lines of code to add a complete interactive wallet management system to your bot.
+FnzeroSafe provides military-grade wallet security with simple integration - just 3 lines of code to add a complete interactive wallet management system to your bot.
 
 ### Key Benefits
 
@@ -24,11 +24,11 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sol-safekey = { path = "../sol-safekey" }
+fnzero-safe = { path = "../fnzero-safe" }
 
 [features]
 default = ["solana-ops"]
-solana-ops = ["sol-safekey/solana-ops"]
+solana-ops = ["fnzero-safe/solana-ops"]
 ```
 
 ### Step 2: Add Safekey Command
@@ -42,8 +42,8 @@ fn main() -> Result<()> {
     // Check if running in safekey interactive mode
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(|s| s.as_str()) == Some("safekey") {
-        // Launch sol-safekey interactive menu
-        if let Err(e) = sol_safekey::interactive::show_main_menu() {
+        // Launch fnzero-safe interactive menu
+        if let Err(e) = fnzero_safe::interactive::show_main_menu() {
             eprintln!("❌ {}", e);
             std::process::exit(1);
         }
@@ -97,7 +97,7 @@ This launches the full interactive menu with all wallet operations:
 
 ### Password Handling
 
-Sol-SafeKey uses a secure password handling model:
+FnzeroSafe uses a secure password handling model:
 
 **✅ Secure Approach:**
 - Password passed via stdin pipe
@@ -156,7 +156,7 @@ fi
 ### Loading Encrypted Wallet
 
 ```rust
-use sol_safekey::KeyManager;
+use fnzero_safe::KeyManager;
 use std::io::{self, Read};
 
 fn load_wallet() -> Result<solana_sdk::signature::Keypair> {
@@ -180,7 +180,7 @@ fn load_wallet() -> Result<solana_sdk::signature::Keypair> {
 ### Creating New Wallet
 
 ```rust
-use sol_safekey::KeyManager;
+use fnzero_safe::KeyManager;
 
 fn create_wallet(password: &str) -> Result<()> {
     // Generate new keypair
@@ -201,7 +201,7 @@ fn create_wallet(password: &str) -> Result<()> {
 ### Using Solana Operations
 
 ```rust
-use sol_safekey::solana_ops::SolanaClient;
+use fnzero_safe::solana_ops::SolanaClient;
 
 fn bot_logic(keypair: &solana_sdk::signature::Keypair) -> Result<()> {
     // Initialize Solana client
@@ -252,7 +252,7 @@ echo "your-password" | ./build-cache/release/examples/bot_example
 
 ## Key Features Summary
 
-Sol-SafeKey provides comprehensive wallet management:
+FnzeroSafe provides comprehensive wallet management:
 
 | Feature | Support |
 |---------|---------|
@@ -290,7 +290,7 @@ solana airdrop 2 YOUR_WALLET_ADDRESS --url devnet
 
 ### Integration Checklist
 
-- [ ] Added sol-safekey dependency to Cargo.toml
+- [ ] Added fnzero-safe dependency to Cargo.toml
 - [ ] Added 3-line safekey command check to main()
 - [ ] Created secure startup script with stdin password
 - [ ] Tested wallet creation with safekey command

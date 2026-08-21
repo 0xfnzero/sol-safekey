@@ -1,8 +1,8 @@
-# Sol SafeKey UI 钱包用户指南
+# FnzeroSafe UI 钱包用户指南
 
 [English](UI_USER_GUIDE.md) | [项目 README](README_CN.md)
 
-Sol SafeKey UI 是由 `sol-safekey` Rust 核心库驱动的本地钱包界面，支持加密 Keystore 钱包、资产和交易记录、SOL 与 Token 转账、WSOL、Pump.fun/PumpSwap 卖出、Nonce 账户、程序部署和 Squads v4 多签。
+FnzeroSafe UI 是由 `fnzero-safe` Rust 核心库驱动的本地钱包界面，支持加密 Keystore 钱包、资产和交易记录、SOL 与 Token 转账、WSOL、Pump.fun/PumpSwap 卖出、Nonce 账户、程序部署和 Squads v4 多签。
 
 ## 使用前须知
 
@@ -19,8 +19,7 @@ Sol SafeKey UI 是由 `sol-safekey` Rust 核心库驱动的本地钱包界面，
 在仓库根目录执行：
 
 ```bash
-make install
-make ui-dev
+make dev
 ```
 
 打开以下任一地址：
@@ -28,13 +27,7 @@ make ui-dev
 - 中文：`http://127.0.0.1:3840/zh/`
 - English：`http://127.0.0.1:3840/en/`
 
-`make ui-dev` 会同时启动 `3840` 端口的 Next.js 界面和 `3841` 端口的本地 Rust API。只运行 `npm run dev` 不会启动钱包 API。
-
-桌面应用使用：
-
-```bash
-make desktop-dev
-```
+`make dev` 会先停止旧的本地开发进程，再启动桌面应用、`3840` 端口的 Next.js 界面和 `3841` 端口的本地 Rust API。
 
 ## 创建钱包
 
@@ -160,7 +153,7 @@ make desktop-dev
 默认钱包数据库位于：
 
 ```text
-ui/data/sol-safekey.sqlite3
+apps/desktop/data/fnzero-safe.sqlite3
 ```
 
 数据库包含加密钱包记录和本地元数据，并已被 Git 忽略。前端不会持久化钱包密码。本地 UI 或 Tauri 安全桥与 Rust API 之间的敏感请求体会加密传输。
@@ -170,14 +163,14 @@ ui/data/sol-safekey.sqlite3
 - 数据库不能替代导出的 Keystore 备份。
 - 任何同时获得 Keystore 和密码的人都能访问钱包。
 - 任何获得明文私钥的人都能支配钱包内全部资产。
-- 不要提交 `ui/data/`、Keystore、密码、环境文件或导出的私钥。
+- 不要提交 `apps/desktop/data/`、Keystore、密码、环境文件或导出的私钥。
 - API 默认只监听 `127.0.0.1`，不要将其暴露到不可信网络。
 
 ## 常见问题
 
 ### 页面能打开，但钱包操作失败
 
-使用 `make ui-dev` 启动完整服务，并访问 `http://127.0.0.1:3841/api/health` 检查 API。
+使用 `make dev` 启动完整服务，并访问 `http://127.0.0.1:3841/api/health` 检查 API。
 
 ### 钱包或资产没有显示
 
@@ -193,4 +186,4 @@ ui/data/sol-safekey.sqlite3
 
 ### 3840 或 3841 端口被占用
 
-停止已有的 Sol SafeKey 开发进程后，再运行 `make ui-dev`。不要结束属于其他项目的无关进程。
+再次运行 `make dev`。它会在启动前停止旧的本地开发进程。

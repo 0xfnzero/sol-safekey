@@ -1,0 +1,32 @@
+name: fnzero_safe_mobile
+description: FnzeroSafe mobile wallet for iOS and Android.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  file_picker: ^10.0.0
+  flutter_riverpod: ^2.6.1
+  flutter_rust_bridge: ^2.0.0
+  flutter_secure_storage: ^9.2.4
+  go_router: ^16.0.0
+  intl: ^0.20.0
+  local_auth: ^2.3.0
+  mobile_scanner: ^7.0.0
+  path_provider: ^2.1.5
+  share_plus: ^11.0.0
+  webview_flutter: ^4.10.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

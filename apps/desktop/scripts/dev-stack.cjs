@@ -1,0 +1,89 @@
+const { spawn } = require("node:child_process");
+const { randomBytes } = require("node:crypto");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const isWindows = process.platform === "win32";
+let shuttingDown = false;
+const children = [];
+
+function sharedApiToken() {
+  const existing = String(process.env.FNZERO_SAFE_API_TOKEN || process.env.SOL_SAFEKEY_API_TOKEN || "").trim();
+  return existing || randomBytes(32).toString("base64url");
+}
+
+function spawnManaged(label, command, args, env) {
+  const child = spawn(command, args, {
+    cwd: root,
+    stdio: "inherit",
+    shell: isWindows,
+    detached: !isWindows,
+    env,
+  });
+  children.push(child);
+
+  child.on("error", (error) => {
+    if (!shuttingDown) {
+      console.error(`[dev:stack] ${label} failed to start: ${error.message}`);
+    }
+  });
+
+  child.once("exit", (code, signal) => {
+    if (!shuttingDown) {
+      console.error(`[dev:stack] ${label} exited (${signal || `code ${code ?? 0}`}); stopping stack`);
+      cleanup();
+      process.exit(code ?? (signal ? 1 : 0));
+    }
+  });
+
+  return child;
+}
+
+function stopProcess(child, signal = "SIGTERM") {
+  if (!child || !child.pid || child.exitCode !== null || child.killed) return;
+  try {
+    if (isWindows) {
+      child.kill(signal);
+    } else {
+      process.kill(-child.pid, signal);
+    }
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function cleanup(signal = "SIGTERM") {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const child of children) {
+    stopProcess(child, signal);
+  }
+}
+
+const token = sharedApiToken();
+const env = {
+  ...process.env,
+  FNZERO_SAFE_API_TOKEN: token,
+  NEXT_PUBLIC_FNZERO_SAFE_API_TOKEN: token,
+  SOL_SAFEKEY_API_TOKEN: token,
+  NEXT_PUBLIC_SOL_SAFEKEY_API_TOKEN: token,
+};
+
+spawnManaged("Next.js", "npm", ["exec", "--", "next", "dev", "-H", "127.0.0.1", "-p", "3840"], env);
+spawnManaged("Rust API", "cargo", ["run", "--release", "-p", "fnzero-safe-desktop-api"], env);
+
+process.once("SIGINT", () => {
+  cleanup("SIGINT");
+  process.exit(130);
+});
+
+process.once("SIGTERM", () => {
+  cleanup("SIGTERM");
+  process.exit(143);
+});
+
+process.once("exit", () => cleanup());

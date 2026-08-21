@@ -1,5 +1,5 @@
 <div align="center">
-    <h1>📖 Sol-SafeKey 交互式菜单完整教程</h1>
+    <h1>📖 FnzeroSafe 交互式菜单完整教程</h1>
     <h3><em>Step-by-step guide for all interactive menu operations</em></h3>
 </div>
 
@@ -69,7 +69,7 @@ Quick access to all 18 interactive menu operations:
 #### Step 1: Launch Interactive Menu
 
 ```bash
-sol-safekey start
+fnzero-safe start
 ```
 
 You will see the language selection screen. Choose your preferred language:

@@ -1,8 +1,8 @@
-# Sol SafeKey UI Wallet User Guide
+# FnzeroSafe UI Wallet User Guide
 
 [中文](UI_USER_GUIDE_CN.md) | [Project README](README.md)
 
-Sol SafeKey UI is a local wallet interface backed by the `sol-safekey` Rust library. It supports encrypted Keystore wallets, asset and transaction views, SOL and token transfers, WSOL operations, Pump.fun and PumpSwap sells, durable nonce accounts, program deployment, and Squads v4 multisig workflows.
+FnzeroSafe UI is a local wallet interface backed by the `fnzero-safe` Rust library. It supports encrypted Keystore wallets, asset and transaction views, SOL and token transfers, WSOL operations, Pump.fun and PumpSwap sells, durable nonce accounts, program deployment, and Squads v4 multisig workflows.
 
 ## Before you start
 
@@ -19,8 +19,7 @@ The default configuration accepts saved Keystore wallets only. Direct private-ke
 From the repository root:
 
 ```bash
-make install
-make ui-dev
+make dev
 ```
 
 Open one of these addresses:
@@ -28,13 +27,7 @@ Open one of these addresses:
 - English: `http://127.0.0.1:3840/en/`
 - Chinese: `http://127.0.0.1:3840/zh/`
 
-`make ui-dev` starts both the Next.js interface on port `3840` and the local Rust API on port `3841`. Running only `npm run dev` does not start the wallet API.
-
-For the desktop application:
-
-```bash
-make desktop-dev
-```
+`make dev` stops stale local development processes, starts the desktop app, starts the Next.js interface on port `3840`, and starts the local Rust API on port `3841`.
 
 ## Create a wallet
 
@@ -160,7 +153,7 @@ These operations can permanently affect programs or treasury assets. Confirm the
 The default wallet database is:
 
 ```text
-ui/data/sol-safekey.sqlite3
+apps/desktop/data/fnzero-safe.sqlite3
 ```
 
 It contains encrypted wallet records and local metadata and is ignored by Git. Passwords are not persisted by the frontend. Sensitive request bodies are encrypted between the local UI or Tauri bridge and the local Rust API.
@@ -170,14 +163,14 @@ Security boundaries to remember:
 - The database is not a substitute for an exported Keystore backup.
 - Anyone with a Keystore and its password can access the wallet.
 - Anyone with a plaintext private key can spend all wallet assets.
-- Do not commit `ui/data/`, Keystores, passwords, environment files, or exported private keys.
+- Do not commit `apps/desktop/data/`, Keystores, passwords, environment files, or exported private keys.
 - The API binds to `127.0.0.1` by default. Do not expose it to an untrusted network.
 
 ## Troubleshooting
 
 ### The page opens but wallet actions fail
 
-Start the full stack with `make ui-dev`. Check the API at `http://127.0.0.1:3841/api/health`.
+Start the full stack with `make dev`. Check the API at `http://127.0.0.1:3841/api/health`.
 
 ### The wallet or assets are missing
 
@@ -193,4 +186,4 @@ Check the network, RPC health, wallet balance, fee balance, recipient or mint ad
 
 ### Ports 3840 or 3841 are already in use
 
-Stop the existing Sol SafeKey development process, then run `make ui-dev` again. Avoid terminating unrelated applications that happen to use a different project directory.
+Run `make dev` again. It stops stale local development processes before starting the app.
