@@ -1,5 +1,5 @@
 <div align="center">
-    <h1>📖 Sol-SafeKey 交互式菜单完整教程</h1>
+    <h1>📖 FnzeroSafe 交互式菜单完整教程</h1>
     <h3><em>所有交互式菜单操作的逐步指南</em></h3>
 </div>
 
@@ -69,7 +69,7 @@
 #### 步骤 1：启动交互式菜单
 
 ```bash
-sol-safekey start
+fnzero-safe start
 ```
 
 你将看到语言选择界面。选择你偏好的语言：

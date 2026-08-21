@@ -1,0 +1,4 @@
+storeFile=../release/fnzero-safe-mobile-upload.jks
+storePassword=change-me
+keyAlias=fnzero-safe-mobile
+keyPassword=change-me

@@ -32,6 +32,19 @@ jobs:
             patchelf \
             pkg-config
 
+      - name: Set up Node.js for embedded desktop assets
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20.19.5
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Build embedded desktop assets
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -53,7 +66,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: ui
+        working-directory: apps/desktop
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -63,7 +76,7 @@ jobs:
         with:
           node-version: 20.19.5
           cache: npm
-          cache-dependency-path: ui/package-lock.json
+          cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Install locked dependencies
         run: |
@@ -92,9 +105,35 @@ jobs:
       - name: Audit all Node dependencies
         run: npm audit --audit-level=high
 
+  mobile:
+    name: Flutter mobile release gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze mobile app
+        run: flutter analyze
+
+      - name: Test mobile app
+        run: flutter test
+
   container:
     name: Linux container build
-    needs: [rust, frontend]
+    needs: [rust, frontend, mobile]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -102,4 +141,4 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build deployment image
-        run: docker build --pull --tag sol-safekey-ui:ci .
+        run: docker build --pull --tag fnzero-safe:ci .

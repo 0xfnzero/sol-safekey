@@ -1,0 +1,38 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dapp",
+  "description": "Narrow bridge permissions for allowlisted Solana DApp webviews.",
+  "webviews": [
+    "dapp-tab-*"
+  ],
+  "local": false,
+  "remote": {
+    "urls": [
+      "https://jup.ag/*",
+      "https://*.jup.ag/*",
+      "https://pump.fun/*",
+      "https://*.pump.fun/*",
+      "https://raydium.io/*",
+      "https://*.raydium.io/*",
+      "https://app.meteora.ag/*",
+      "https://*.meteora.ag/*",
+      "https://orca.so/*",
+      "https://*.orca.so/*",
+      "https://drift.trade/*",
+      "https://*.drift.trade/*",
+      "https://kamino.finance/*",
+      "https://*.kamino.finance/*",
+      "https://tensor.trade/*",
+      "https://*.tensor.trade/*",
+      "https://magiceden.io/*",
+      "https://*.magiceden.io/*",
+      "https://sanctum.so/*",
+      "https://*.sanctum.so/*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "allow-submit-dapp-sign-request",
+    "allow-poll-dapp-sign-request"
+  ]
+}

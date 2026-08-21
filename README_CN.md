@@ -1,39 +1,38 @@
 <div align="center">
-    <h1>🔐 Sol SafeKey - 安全的 Solana 钱包与 Keystore</h1>
-    <h3><em>Rust SDK · CLI · Web UI · Tauri 桌面钱包</em></h3>
+    <h1>FnzeroSafe</h1>
+    <h3><em>本地优先的 Solana 钱包、安全 Keystore、桌面端与 iOS/Android 移动端应用</em></h3>
 </div>
 
 <p align="center">
-    <strong>开源、本地优先的 Solana 钱包安全工具，支持加密 Keystore、2FA、Bot 集成、Token 操作、Pump 交易和 Squads 多签。</strong>
+    <strong>FnzeroSafe 是一个开源 Solana 钱包安全工作区，覆盖加密 Keystore、桌面端签名、移动端钱包、dApp 签名、Pump 交易、Squads 多签、Bot 集成，以及仅桌面端开放的高级 Program 工作流。</strong>
 </p>
 
 <p align="center">
-    <a href="https://crates.io/crates/sol-safekey">
-        <img src="https://img.shields.io/crates/v/sol-safekey.svg" alt="Crates.io">
+    <a href="https://crates.io/crates/fnzero-safe-core">
+        <img src="https://img.shields.io/crates/v/fnzero-safe-core.svg" alt="Crates.io">
     </a>
-    <a href="https://docs.rs/sol-safekey">
-        <img src="https://img.shields.io/docs.rs/sol-safekey/badge.svg" alt="Documentation">
+    <a href="https://docs.rs/fnzero-safe-core">
+        <img src="https://img.shields.io/docs.rs/fnzero-safe-core/badge.svg" alt="Documentation">
     </a>
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
     </a>
-    <a href="https://github.com/0xfnzero/sol-safekey">
-        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
-    </a>
-    <a href="https://github.com/0xfnzero/sol-safekey/network">
-        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
+    <a href="https://github.com/0xfnzero/fnzero-safe">
+        <img src="https://img.shields.io/github/stars/0xfnzero/fnzero-safe?style=social" alt="GitHub stars">
     </a>
 </p>
 
 <p align="center">
     <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
     <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
-    <img src="https://img.shields.io/badge/Security-FF0000?style=for-the-badge&logo=security&logoColor=white" alt="Security">
+    <img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js">
+    <img src="https://img.shields.io/badge/Tauri-24C8DB?style=for-the-badge&logo=tauri&logoColor=white" alt="Tauri">
+    <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter">
 </p>
 
 <p align="center">
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
+    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/README.md">English</a> |
     <a href="https://fnzero.dev/">官网</a> |
     <a href="https://t.me/fnzero_group">Telegram</a> |
     <a href="https://discord.gg/ckf5UHxz">Discord</a>
@@ -41,205 +40,433 @@
 
 ---
 
-## 📑 目录
+## 文档大纲
 
-- [这个项目提供什么](#这个项目提供什么)
-- [✨ 特性](#-特性)
-- [🚀 快速开始](#-快速开始)
-- [📦 安装](#-安装)
-- [🖥️ Web 与桌面 UI](#️-web-与桌面-ui)
-- [📋 功能指南](#-功能指南)
-- [📚 文档](#-文档)
-- [🔐 安全性](#-安全性)
-- [📖 示例](#-示例)
-- [🤝 贡献](#-贡献)
-- [📄 许可证](#-许可证)
+1. [项目概览](#1-项目概览)
+   1. [FnzeroSafe 适合什么场景](#11-fnzerosafe-适合什么场景)
+   2. [产品形态](#12-产品形态)
+   3. [能力矩阵](#13-能力矩阵)
+   4. [平台矩阵](#14-平台矩阵)
+2. [仓库结构](#2-仓库结构)
+3. [开发环境](#3-开发环境)
+   1. [必要工具链](#31-必要工具链)
+   2. [一次性初始化](#32-一次性初始化)
+   3. [构建机说明](#33-构建机说明)
+4. [开发环境运行](#4-开发环境运行)
+   1. [桌面端](#41-桌面端)
+   2. [iOS 端](#42-ios-端)
+   3. [Android 端](#43-android-端)
+   4. [CLI](#44-cli)
+5. [打包发布](#5-打包发布)
+   1. [Release 目录](#51-release-目录)
+   2. [macOS 桌面端](#52-macos-桌面端)
+   3. [Windows 桌面端](#53-windows-桌面端)
+   4. [iOS](#54-ios)
+   5. [Android](#55-android)
+   6. [全部平台](#56-全部平台)
+6. [命令速查](#6-命令速查)
+7. [配置项](#7-配置项)
+8. [安全模型](#8-安全模型)
+9. [文档索引](#9-文档索引)
+10. [提交到 GitHub 前](#10-提交到-github-前)
+11. [许可证](#11-许可证)
 
-## 这个项目提供什么
+---
 
-Sol SafeKey 是一个开源、本地优先的 Solana 钱包和密钥管理工具。本仓库统一提供 Rust SDK、CLI、自托管 Web 钱包和 Tauri 桌面应用，适用于开发者、Bot 运营者、多签团队和个人钱包用户的加密 Keystore 工作流。
+## 1. 项目概览
 
-| 范围 | 覆盖内容 |
-|------|----------|
-| 使用界面 | Rust SDK、交互式 CLI、Next.js Web 钱包、Tauri 桌面钱包 |
-| 钱包安全 | AES-256 加密 Keystore、密码解锁、硬件指纹、可选 TOTP 2FA/3FA |
-| Solana 操作 | SOL 与 SPL Token 转账、Token-2022 资产、WSOL、Nonce 账户、交易记录 |
-| 交易工具 | Pump.fun 与 PumpSwap 卖出、余额比例快捷操作、返现领取 |
-| 团队与程序 | Squads v4 多签提案、程序部署、升级和权限管理 |
-| 自动化集成 | Bot helper API、本地 Rust API、示例代码和中英双语文档 |
+### 1.1 FnzeroSafe 适合什么场景
 
-### 📋 功能指南
+FnzeroSafe 是一个本地优先的 Solana 钱包与密钥管理工作区。仓库内同时包含 Rust 核心库、交互式 CLI、本地桌面 API、Next.js 前端、Tauri 桌面壳，以及面向 iOS/Android 的 Flutter 移动端应用。
 
-#### 🎯 开始使用
+| 方向 | 覆盖范围 |
+|---|---|
+| 钱包 | 创建钱包、导入 keystore/私钥/助记词、解锁钱包、导出加密备份 |
+| 安全 | 密码 Keystore、本地 API 敏感请求加密、本地 API token、TOTP、生物识别确认、敏感日志过滤 |
+| 资产 | SOL 余额、SPL Token 账户、Token-2022 账户、mint 元数据、交易历史 |
+| 转账 | SOL 转账、SPL 转账、WSOL wrap/unwrap/close ATA |
+| dApp | 内置 WebView、Solana provider 注入、消息/交易预览、用户确认签名 |
+| Squads | Squads v4 多签创建、查看、proposal、approve/reject/execute、SOL/SPL 支付 proposal |
+| 交易 | Pump.fun 与 PumpSwap 卖出流程、返现查看与领取、SWQoS token 配置 |
+| Program | 仅桌面端开放 Program 部署、升级、源码构建、权限与部署管理 |
+| 自动化 | Rust SDK、CLI helper、本地 API、Bot 集成示例 |
 
-#### 步骤 1：启动交互式菜单
-```bash
-sol-safekey start
+### 1.2 产品形态
+
+| 形态 | 路径 | 技术栈 | 主要用途 |
+|---|---|---|---|
+| 桌面端应用 | `apps/desktop` | Next.js + Tauri + Rust API | 完整本地钱包控制台、dApp 签名、Pump、Squads、Program 工作流 |
+| 移动端应用 | `apps/mobile` | Flutter + `flutter_rust_bridge` + Rust core | iOS/Android 钱包、资产、转账、dApp 签名、Pump、Squads |
+| Rust core / CLI | `crates/core` | Rust | Keystore、CLI、SDK 集成和自动化 |
+| 共享服务层 | `crates/app-services` | Rust | 桌面端与移动端复用的钱包/资产/转账/dApp/Squads 业务逻辑 |
+| 移动端 bridge | `crates/mobile-bridge` | Rust FFI | Flutter 调用的 FRB-friendly API |
+
+### 1.3 能力矩阵
+
+| 能力 | 桌面端 | iOS | Android | 说明 |
+|---|---:|---:|---:|---|
+| 钱包创建/导入/解锁/导出 | 支持 | 支持 | 支持 | Secret 保存在加密 Keystore 中 |
+| SOL/SPL 资产和交易历史 | 支持 | 支持 | 支持 | 使用 Solana RPC |
+| SOL/SPL/WSOL 转账 | 支持 | 支持 | 支持 | 必须用户确认 |
+| dApp 消息签名 | 支持 | 支持 | 支持 | 移动端通过 WebView/provider 流程 |
+| dApp 交易签名/发送 | 支持 | 支持 | 支持 | 必须用户确认 |
+| Squads 多签 | 支持 | 支持 | 支持 | 创建、proposal、approve/reject/execute |
+| PumpFun/PumpSwap | 支持 | 移动端部分集成 | 移动端部分集成 | 移动端 submit 流程持续完善 |
+| Program deploy | 支持 | 不支持 | 不支持 | 设计上仅桌面端开放 |
+| Program upgrade | 支持 | 不支持 | 不支持 | 设计上仅桌面端开放 |
+| Program source build | 支持 | 不支持 | 不支持 | 设计上仅桌面端开放 |
+| 通用 Program invoke | 支持 | 不支持 | 不支持 | 设计上仅桌面端开放 |
+
+### 1.4 平台矩阵
+
+| 平台 | 状态 | 主要命令 | 输出 |
+|---|---|---|---|
+| 桌面端开发 | 支持 | `make dev` | Tauri 应用、`127.0.0.1:3840` 上的 Next.js、`127.0.0.1:3841` 上的 API |
+| macOS 桌面端包 | macOS 构建机支持 | `make package-macos` | `release/macos/*.dmg` 和 `.app` |
+| Windows 桌面端包 | Windows runner 支持 | `make package-windows` | `release/windows/*.msi` 和/或 `.exe` |
+| iOS 应用包 | 需要 Xcode iOS platform/signing | `make package-ios` | `release/ios/*.app` 或 `.ipa` |
+| Android 应用包 | 支持 | `make package-android` | `release/android/*.apk` 和 `.aab` |
+| CLI | 支持 | `cargo run -p fnzero-safe-core --features full -- start` | 交互式终端钱包工具 |
+
+---
+
+## 2. 仓库结构
+
+```text
+/
+├─ Cargo.toml
+├─ Makefile
+├─ crates/
+│  ├─ core/                      # Rust SDK 与 CLI 二进制：fnzero-safe
+│  ├─ app-services/              # 共享钱包/资产/转账/dApp/Squads 服务
+│  ├─ desktop-api/               # 桌面端/Web 使用的本地 Axum API
+│  └─ mobile-bridge/             # flutter_rust_bridge FFI 层
+├─ apps/
+│  ├─ desktop/                   # Next.js UI 与 Tauri 桌面壳
+│  └─ mobile/                    # Flutter iOS/Android 应用
+├─ packages/
+│  └─ shared-contracts/          # 共享 API 契约和接口说明
+├─ examples/                     # Bot 与 Keystore 示例
+├─ docs/                         # 内测和开发文档
+└─ release/                      # 打包产物目录，已被 Git 忽略
 ```
 
-你将看到语言选择界面。选择你偏好的语言：
-
-**英文**：输入 `2`
-**中文**：输入 `1`
-
-#### 步骤 2：选择一个操作
-选择语言后，你将看到主菜单。输入与你想执行的操作对应的数字。
-
-**重要提示**：如果你还没有创建钱包，你需要：
-- **解锁现有钱包**（选项 `U`）
-- **创建新钱包**（选项 `1` 或 `2`）
+对外产品名统一是 **FnzeroSafe**。`fnzero-safe-core`、`fnzero-safe-desktop-api`、`fnzero-safe-mobile-bridge` 这类名称只是 Cargo workspace 内部包名，用来保证各 crate 名称唯一。
 
 ---
 
-#### 🔑 核心功能（选项 1-3）
-- **[1. 创建明文私钥](INTERACTIVE_TUTORIAL_CN.md#1-创建明文私钥（选项-1）)** - 生成未加密密钥对（仅测试）
-- **[2. 创建加密私钥](INTERACTIVE_TUTORIAL_CN.md)** - 加密并保存到 keystore
-- **[3. 解密私钥](INTERACTIVE_TUTORIAL_CN.md#3-解密私钥（选项-3）)** - 解密 keystore 显示私钥
+## 3. 开发环境
 
-#### 🔒 钱包管理（选项 U）
-- **[U. 解锁钱包](INTERACTIVE_TUTORIAL_CN.md#u-解锁钱包)** - 解锁钱包进行 Solana 操作
+### 3.1 必要工具链
 
-#### 🛡️ 高级安全（选项 4-6）
-- **[4. 设置 2FA](INTERACTIVE_TUTORIAL_CN.md#4-设置-2fa-认证)** - 配置双因素认证
-- **[5. 生成三因子钱包](INTERACTIVE_TUTORIAL_CN.md#5-生成三因子钱包)** - 创建 3FA 钱包
-- **[6. 解锁三因子钱包](INTERACTIVE_TUTORIAL_CN.md#6-解锁三因子钱包)** - 解密 3FA 加密钱包
+| 工具 | 推荐版本 | 用途 |
+|---|---|---|
+| Rust | 1.89+ | Workspace、CLI、桌面 API、移动端 bridge |
+| Node.js | 20 或 22+ | 桌面端 Web 应用 |
+| npm | 10+ | 桌面端依赖和脚本 |
+| Flutter / Dart | Flutter 3.24+ | iOS 与 Android 应用 |
+| Xcode | 当前稳定版 | macOS 桌面端包、iOS 模拟器/真机/archive |
+| Android Studio / SDK / NDK | 当前稳定版 | Android 构建和模拟器 |
+| JDK | 17 | Android Gradle 构建 |
+| `cargo-ndk` | 最新版 | Android Rust bridge 动态库 |
+| `flutter_rust_bridge_codegen` | FRB 2.x | 重新生成 Dart/Rust bridge 代码 |
 
-#### 💰 Solana 操作（选项 7-18）
-##### 余额与转账
-- **[7. 查询余额](INTERACTIVE_TUTORIAL_CN.md#7-查询-sol-余额)** - 查询 SOL 余额
-- **[8. 转账 SOL](INTERACTIVE_TUTORIAL_CN.md#8-转账-sol)** - 发送 SOL
-
-##### WSOL 操作
-- **[9. 创建 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#9-创建-wsol-ata)** - 创建 WSOL 关联代币账户
-- **[10. 包装 SOL](INTERACTIVE_TUTORIAL_CN.md#10-包装-sol--wsol)** - SOL → WSOL
-- **[11. 解包 WSOL](INTERACTIVE_TUTORIAL_CN.md#11-解包-wsol--sol)** - WSOL → SOL
-- **[12. 关闭 WSOL ATA](INTERACTIVE_TUTORIAL_CN.md#12-关闭-wsol-ata)** - 关闭 WSOL ATA
-
-##### 代币操作
-- **[13. 转账 SPL 代币](INTERACTIVE_TUTORIAL_CN.md#13-转账-spl-代币)** - 发送 SPL 代币
-- **[14. 创建 Nonce 账户](INTERACTIVE_TUTORIAL_CN.md#14-创建-nonce-账户)** - 创建持久化 nonce
-
-##### DEX 操作
-- **[15. Pump.fun 卖出](INTERACTIVE_TUTORIAL_CN.md#15-pumpfun-卖出代币)** - Pump.fun DEX 卖出
-- **[16. PumpSwap 卖出](INTERACTIVE_TUTORIAL_CN.md#16-pumpswap-卖出代币)** - PumpSwap DEX 卖出
-
-##### 返现操作
-- **[17. Pump.fun 返现](INTERACTIVE_TUTORIAL_CN.md#17-pumpfun-返现)** - pump.fun 返现（SOL）
-- **[18. PumpSwap 返现](INTERACTIVE_TUTORIAL_CN.md#18-pumpswap-返现)** - PumpSwap 返现（WSOL）
-
----
----
-
-## 📦 安装
-
-### 从 crates.io 安装（推荐）
-
-最新稳定版本已发布在 [crates.io](https://crates.io/crates/sol-safekey)：
+### 3.2 一次性初始化
 
 ```bash
-# 启用所有功能安装
-cargo install sol-safekey --features full
-
-# 验证安装
-sol-safekey --version
-
-# 启动交互式菜单
-sol-safekey start
+rustup update
+npm --version
+flutter doctor -v
+cargo install cargo-ndk
+cargo install flutter_rust_bridge_codegen
+npm --prefix apps/desktop install
+cd apps/mobile && flutter pub get
 ```
 
-这将安装完整的 CLI 工具，包含所有功能：
-- 🔐 **核心加密** - 基于 AES-256 的密码加密
-- 🔑 **2FA/TOTP** - 双因素认证支持
-- 🌐 **Solana 操作** - 完整的 Solana 交易功能
-- 💱 **DEX 操作** - Pump.fun & PumpSwap 交易
-- 💰 **返现** - 领取交易返现奖励
-
-### 从源码安装
+修改 `crates/mobile-bridge/src/api.rs` 后，需要重新生成移动端 bridge：
 
 ```bash
-# 克隆仓库
-git clone https://github.com/0xfnzero/sol-safekey.git
-cd sol-safekey
-
-# 编译并安装
-cargo install --path . --features full
+cd apps/mobile
+./tool/generate_bridge.sh
 ```
 
-### 系统要求
+### 3.3 构建机说明
 
-- **Rust**: 1.89+ （从 [rustup.rs](https://rustup.rs/) 安装）
-- **操作系统**: Linux、macOS 或 Windows
-- **网络**: 进行 Solana RPC 调用需要互联网连接
+| 构建机 | 说明 |
+|---|---|
+| macOS | macOS 桌面端包和 iOS 构建需要 macOS。请在 Xcode > Settings > Components 安装匹配的 iOS platform/runtime。 |
+| Windows | 推荐在 Windows runner 上运行 `make package-windows`，并安装 MSVC target 和 Visual Studio build tools。 |
+| Android | 推荐 JDK 17。可以用 `ANDROID_JAVA_HOME=/path/to/jdk17 make package-android` 覆盖自动检测。 |
+| iOS 签名 | `make package-ios` 可做无签名 `.app` 构建；签名 IPA/TestFlight 需要 Apple developer team、profile 和 export options。 |
 
-## 🖥️ Web 与桌面 UI
+---
 
-自托管 Web 钱包、本地 Rust API 与 Tauri 桌面应用统一放在本仓库的 [`ui/`](https://github.com/0xfnzero/sol-safekey/tree/main/ui) 下。API 直接依赖根目录的 `sol-safekey` crate，因此 CLI、Rust SDK、Web 钱包与桌面钱包共用同一份源码和 Cargo 锁文件。
+## 4. 开发环境运行
+
+### 4.1 桌面端
+
+在仓库根目录运行：
 
 ```bash
-# 安装 JavaScript 与 Rust 依赖
-make install
-
-# 启动 :3840 的 Next.js 与 :3841 的本地 API
-make ui-dev
-
-# 构建内嵌 Web 页面的 API 二进制
-make api-build
-
-# 启动 Tauri 桌面应用
-make desktop-dev
+npm --prefix apps/desktop install
+make dev
 ```
 
-开发时可访问 `http://127.0.0.1:3840/en/` 或 `http://127.0.0.1:3840/zh/`。发布版 API 二进制会内嵌静态前端，并在 `http://127.0.0.1:3841` 提供服务。
+`make dev` 会先停止旧的本地开发进程，然后启动：
 
-### 创建或导入第一个钱包
+| 服务 | 地址 |
+|---|---|
+| 英文 UI | `http://127.0.0.1:3840/en/` |
+| 中文 UI | `http://127.0.0.1:3840/zh/` |
+| 本地 API 健康检查 | `http://127.0.0.1:3841/api/health` |
 
-1. 打开 UI，选择 **创建新钱包** 或 **导入钱包**。
-2. 创建钱包时填写名称和 10-20 位密码；导入钱包时选择 `keystore.json` 并输入对应密码。
-3. 存入资产前先下载并备份加密 Keystore。钱包密码无法找回。
-4. 在顶部钱包选择器中切换当前钱包，然后从钱包页使用 **接收**、**发送** 或 **交易**。
-5. 每次签名前，在 **设置** 中确认网络和 RPC 是否正确。
+本地 API 只应该绑定 loopback 使用。不要通过公网代理、隧道或端口转发暴露 `3841`。
 
-完整的钱包管理、转账、交易、多签、备份恢复与故障排查说明见 **[UI 钱包用户指南](UI_USER_GUIDE_CN.md)**。
+### 4.2 iOS 端
 
-### Cargo 功能特性
+```bash
+cd apps/mobile
+./tool/bootstrap_mobile.sh
+flutter pub get
+./tool/generate_bridge.sh
+./tool/build_ios_native.sh
+flutter run -d ios
+```
 
-- `full` - 启用所有功能（CLI 默认）
-- `cli` - 命令行界面（带彩色输出）
-- `2fa` - 双因素认证（TOTP）支持
-- `solana-ops` - Solana 区块链操作
-- `sol-trade-sdk` - 交易操作（Pump.fun、PumpSwap）
+iOS 要求：
+
+1. 使用 `xcode-select` 选择正确的 Xcode command line tools。
+2. 在 Xcode Components 中安装匹配的 iOS platform/runtime。
+3. iOS deployment target 是 15.0。
+4. 真机和 TestFlight 需要常规 Xcode 签名配置。
+
+### 4.3 Android 端
+
+```bash
+cd apps/mobile
+./tool/bootstrap_mobile.sh
+flutter pub get
+./tool/generate_bridge.sh
+./tool/build_android_native.sh
+flutter run -d android
+```
+
+Android 说明：
+
+1. Android application id 是 `dev.fnzero.safe`。
+2. Android `minSdk` 是 26。
+3. Rust bridge `.so` 会生成 `arm64-v8a`、`armeabi-v7a`、`x86`、`x86_64` 四种 ABI。
+4. Gradle 推荐使用 JDK 17。
+
+### 4.4 CLI
+
+```bash
+cargo run -p fnzero-safe-core --features full -- start
+```
+
+从源码安装本地 CLI：
+
+```bash
+cargo install --path crates/core --features full
+fnzero-safe start
+```
 
 ---
 
-## 📚 文档
+## 5. 打包发布
 
-- **[UI 钱包用户指南](UI_USER_GUIDE_CN.md)** - 在 Web 或桌面 UI 中创建、导入、备份和使用钱包
-- **[Bot 集成指南](BOT_INTEGRATION_CN.md)** - 如何将 sol-safekey 集成到你的 bot
-- **[使用手册](USER_GUIDE_CN.md)** - 完整的使用说明和示例
+### 5.1 Release 目录
+
+所有打包命令都会把产物复制到根目录 `release/`：
+
+```text
+release/
+├─ android/
+│  ├─ app-release.apk
+│  └─ app-release.aab
+├─ ios/
+│  └─ *.app 或 *.ipa
+├─ macos/
+│  ├─ FnzeroSafe.app
+│  └─ FnzeroSafe_*.dmg
+└─ windows/
+   └─ *.msi 和/或 *.exe
+```
+
+`release/` 已被 Git 忽略。
+
+### 5.2 macOS 桌面端
+
+```bash
+make package-macos
+```
+
+该命令会执行桌面端生产构建，并把 `.dmg` 和 `.app` 复制到 `release/macos/`。
+
+### 5.3 Windows 桌面端
+
+```bash
+make package-windows
+```
+
+该命令会构建 Tauri Windows 安装包，并把 `.msi` 和/或 `.exe` 复制到 `release/windows/`。
+
+推荐构建环境：Windows runner，并安装 Rust、Node.js、npm 和 Microsoft Visual Studio build tools。从 macOS 交叉构建 Windows 安装包需要额外工具链配置。
+
+需要覆盖目标平台时：
+
+```bash
+TAURI_WINDOWS_TARGET=x86_64-pc-windows-msvc make package-windows
+```
+
+### 5.4 iOS
+
+无签名本地 `.app` 构建：
+
+```bash
+make package-ios
+```
+
+签名 IPA 构建：
+
+```bash
+IOS_CODESIGN=true IOS_EXPORT_OPTIONS_PLIST=/path/to/ExportOptions.plist make package-ios
+```
+
+该命令会先构建 Rust iOS `FnzeroSafeMobileBridge.xcframework`，再执行 Flutter iOS 打包，并把产物复制到 `release/ios/`。
+
+### 5.5 Android
+
+```bash
+make package-android
+```
+
+如果 JDK 17 没有被自动发现：
+
+```bash
+ANDROID_JAVA_HOME=/path/to/jdk17 make package-android
+```
+
+Android release signing：
+
+```bash
+cp apps/mobile/android/key.properties.example apps/mobile/android/key.properties
+# 编辑 key.properties，让 storeFile、storePassword、keyAlias、keyPassword 指向你的 upload keystore。
+make package-android
+```
+
+该命令会构建 Rust Android native libraries、release APK 和 release AAB，并把产物复制到 `release/android/`。
+
+### 5.6 全部平台
+
+```bash
+make package
+```
+
+该命令会依次运行 Android、iOS、macOS、Windows 打包目标。CI 中更推荐每个平台放到对应原生 runner 上分别构建。
 
 ---
 
-## 🔐 安全性
+## 6. 命令速查
 
-- ✅ **密码安全**：仅通过 stdin 管道（永不使用环境变量）
-- ✅ **加密方式**：AES-256 配合 PBKDF2 密钥派生
-- ✅ **内存安全**：使用后立即清除密码
-- ✅ **硬件指纹**：基于设备的安全层
-- ✅ **2FA 支持**：可选的双重因素认证以增强安全性
-
-
-## 📖 示例
-
-参见 `examples/bot_example.rs` 获取完整的 bot 集成示例。
+| 命令 | 说明 |
+|---|---|
+| `make dev` | 启动桌面端开发环境；会先停止旧的本地应用/API 进程 |
+| `make package-macos` | 构建 macOS 桌面端包到 `release/macos/` |
+| `make package-windows` | 构建 Windows 桌面端包到 `release/windows/` |
+| `make package-ios` | 构建 iOS `.app` 或签名 `.ipa` 到 `release/ios/` |
+| `make package-android` | 构建 Android APK/AAB 到 `release/android/` |
+| `make package` | 构建全部平台包 |
+| `cargo fmt --all -- --check` | 检查 Rust 格式 |
+| `cargo check --workspace --all-features` | 检查完整 Rust workspace |
+| `cargo test --workspace` | 运行 Rust 测试 |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 运行严格 Rust lint |
+| `npm --prefix apps/desktop run lint` | 运行桌面端 lint 和敏感输入检查 |
+| `npm --prefix apps/desktop run build` | 构建 Next.js 静态前端 |
+| `cd apps/mobile && flutter analyze` | 分析 Flutter 应用 |
+| `cd apps/mobile && flutter test --dart-define=FNZERO_MOBILE_DEV_BRIDGE=true` | 使用 dev bridge fallback 运行 Flutter 测试 |
 
 ---
 
-## 🤝 贡献
+## 7. 配置项
 
-欢迎贡献！请确保遵循安全最佳实践。**提交与 PR 描述请使用英文。**
+| 变量 | 用途 |
+|---|---|
+| `FNZERO_SAFE_API_TOKEN` | 桌面/Web 开发使用的固定本地 API token |
+| `FNZERO_SAFE_DB_PATH` | 覆盖钱包数据库路径 |
+| `FNZERO_SAFE_ALLOWED_ORIGINS` | 额外允许访问本地 API 的 origin，多个用逗号分隔 |
+| `FNZERO_SAFE_ALLOW_SECRET_EXPORT=true` | 允许非桌面本机调试上下文导出明文私钥/助记词 |
+| `FNZERO_SAFE_ALLOW_DIRECT_SECRET_INPUT=true` | 允许 Web 调试上下文直接提交明文私钥 |
+| `FNZERO_MOBILE_DEV_BRIDGE=true` | 无 native library 测试时使用 Flutter dev bridge fallback |
+| `ANDROID_JAVA_HOME` | Android 打包使用的 JDK 17 路径 |
+| `IOS_CODESIGN=true` | 构建签名 iOS IPA，而不是无签名 `.app` |
+| `IOS_EXPORT_OPTIONS_PLIST` | 签名 iOS IPA 使用的 export options plist |
+| `TAURI_WINDOWS_TARGET` | 覆盖 Tauri Windows target triple |
+| `FNZERO_SAFE_FLASHBLOCK_SWQOS_API_TOKEN` | FlashBlock SWQoS token |
+| `FNZERO_SAFE_BLOCKRAZOR_SWQOS_API_TOKEN` | BlockRazor SWQoS token |
+| `FNZERO_SAFE_ASTRALANE_SWQOS_API_TOKEN` | Astralane SWQoS token |
+| `FNZERO_SAFE_SPEEDLANDING_SWQOS_API_TOKEN` | SpeedLanding SWQoS token |
+
+旧的 `SOL_SAFEKEY_*` 环境变量仍作为 fallback 保留，用于兼容已经存在的本机配置。
 
 ---
 
-## 📄 许可证
+## 8. 安全模型
 
-MIT License - 详见 LICENSE 文件
+1. **本地优先 API**：桌面端 API 绑定 loopback，受保护路由需要本地 API token。
+2. **敏感请求加密**：包含密码和 secret 的 JSON 请求在跨本地 Web/API 边界前会先加密。
+3. **Keystore 优先**：已保存钱包存储的是加密 keystore JSON，不保存明文私钥。
+4. **移动端私有存储**：移动端 keystore 文件保存在 App 私有目录；钱包元数据和生物识别设置使用 secure storage。
+5. **生物识别确认**：移动端签名动作可以由系统生物识别二次确认保护；桌面端 Touch ID 使用 macOS Keychain 访问控制。
+6. **显式签名确认**：转账、dApp 签名、交易发送、Squads 操作都必须进入确认页。
+7. **明文导出控制**：明文私钥和助记词导出有意加限制，只应临时用于迁移或本机调试。
+8. **移动端不开放 Program 工作流**：移动端不暴露 Program deploy、upgrade、source build 或 generic invoke API。
+
+存入资产前请先备份加密 Keystore。密码、私钥、助记词无法由 FnzeroSafe 恢复。
+
+---
+
+## 9. 文档索引
+
+- [桌面端 README](apps/desktop/README.md)
+- [移动端 README](apps/mobile/README.md)
+- [移动端内测清单](docs/mobile/INTERNAL_TEST_CHECKLIST.md)
+- [UI 钱包用户指南](UI_USER_GUIDE_CN.md)
+- [Bot 集成指南](BOT_INTEGRATION_CN.md)
+- [CLI 使用手册](USER_GUIDE_CN.md)
+- [交互式教程](INTERACTIVE_TUTORIAL_CN.md)
+- [Program 部署指南](apps/desktop/PROGRAM_DEPLOYMENT_CN.md)
+
+---
+
+## 10. 提交到 GitHub 前
+
+推荐验证：
+
+```bash
+cargo fmt --all -- --check
+cargo check --workspace --all-features
+cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+npm --prefix apps/desktop run lint
+npm --prefix apps/desktop run build
+cd apps/mobile && flutter analyze
+cd apps/mobile && flutter test --dart-define=FNZERO_MOBILE_DEV_BRIDGE=true
+```
+
+需要提交发布产物前，可额外验证打包：
+
+```bash
+make package-android
+make package-macos
+# package-ios 需要在已安装对应 iOS platform/runtime 的 macOS 上运行。
+# package-windows 推荐在安装 MSVC build tools 的 Windows 构建机上运行。
+```
+
+涉及安全敏感逻辑的改动，请在 PR 中写清楚威胁模型和已经执行的验证命令。
+
+---
+
+## 11. 许可证
+
+MIT License。详见 [LICENSE](LICENSE)。

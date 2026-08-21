@@ -1,0 +1,64 @@
+{
+  "name": "@fnzero/safe",
+  "version": "0.4.0",
+  "private": true,
+  "engines": {
+    "node": "20 || >=22"
+  },
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1 -p 3840",
+    "predev:stack": "node scripts/kill-dev-processes.cjs && node scripts/ensure-out.cjs",
+    "dev:stack": "node scripts/dev-stack.cjs",
+    "backend": "cargo run --release -p fnzero-safe-desktop-api",
+    "prebuild": "node scripts/assert-no-next-dev.cjs && node scripts/check-sensitive-inputs.cjs",
+    "build": "next build",
+    "start": "next start",
+    "test:dependency-compat": "node scripts/test-dependency-compat.cjs",
+    "test:devnet-airdrop": "node scripts/test-devnet-airdrop.cjs",
+    "test:program-deploy": "node scripts/test-program-deploy.cjs",
+    "lint": "node scripts/check-sensitive-inputs.cjs && eslint",
+    "tauri": "tauri",
+    "predesktop:dev": "node scripts/kill-dev-processes.cjs && node scripts/refresh-desktop-icons.cjs",
+    "desktop:dev": "node scripts/desktop-dev.cjs",
+    "desktop:build": "tauri build"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.3.0",
+    "@tauri-apps/api": "^2.10.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
+    "next": "^15.5.21",
+    "next-intl": "^4.13.0",
+    "next-themes": "^0.4.6",
+    "qrcode": "^1.5.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.27",
+    "brace-expansion": "file:vendor/brace-expansion-compat",
+    "brace-expansion-upstream": "npm:brace-expansion@5.0.9",
+    "eslint": "^9",
+    "eslint-config-next": "^15.5.21",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "brace-expansion": "$brace-expansion",
+    "postcss": "$postcss",
+    "next": {
+      "sharp": "0.35.0"
+    }
+  }
+}

@@ -1,0 +1,786 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 3.9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96.1%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --accent: 0 0% 96.1%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 89.8%;
+  --input: 0 0% 89.8%;
+  --ring: 0 0% 3.9%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --accent: 0 0% 14.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 14.9%;
+  --input: 0 0% 14.9%;
+  --ring: 0 0% 83.1%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.app-shell {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.app-shell input,
+.app-shell textarea,
+.app-shell code,
+.app-shell pre,
+.select-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Custom scrollbar for sidebar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.app-shell[data-app-theme="light"] {
+  background: #f4f6f8;
+  color: #303236;
+}
+
+.app-shell[data-app-theme="light"] :where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.52);
+  outline-offset: 2px;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar {
+  background: #f7f9fb !important;
+  border-color: #e3e7ec !important;
+  color: #303236;
+  box-shadow: 10px 0 34px rgba(32, 39, 47, 0.06);
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar > div {
+  border-color: #e4e8ee !important;
+}
+
+.app-shell[data-app-theme="light"] .app-main-surface {
+  background: #f5f7fa !important;
+}
+
+.app-shell[data-app-theme="light"] .app-content-card {
+  background: #ffffff !important;
+  border-color: #e1e6ed !important;
+  box-shadow: 0 18px 42px rgba(28, 35, 43, 0.07);
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-card {
+  background: #070d13 !important;
+  border-color: #13202d !important;
+  box-shadow: none !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-zinc-950"],
+.app-shell[data-app-theme="light"] [class~="bg-black"] {
+  background-color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-black/50"],
+.app-shell[data-app-theme="light"] [class~="bg-black/40"],
+.app-shell[data-app-theme="light"] [class~="bg-black/35"],
+.app-shell[data-app-theme="light"] [class~="bg-black/30"],
+.app-shell[data-app-theme="light"] [class~="bg-black/25"],
+.app-shell[data-app-theme="light"] [class~="bg-black/20"] {
+  background-color: #f0f3f7 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-white/[0.03]"],
+.app-shell[data-app-theme="light"] [class~="bg-white/[0.04]"],
+.app-shell[data-app-theme="light"] [class~="bg-white/5"] {
+  background-color: #f7f9fb !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-white/10"],
+.app-shell[data-app-theme="light"] [class~="bg-white/15"] {
+  background-color: #f1f4f8 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-white/20"] {
+  background-color: #e9eef4 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="border-white/10"],
+.app-shell[data-app-theme="light"] [class~="border-white/15"] {
+  border-color: #e2e7ee !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-white"],
+.app-shell[data-app-theme="light"] [class~="text-gray-100"],
+.app-shell[data-app-theme="light"] [class~="text-gray-200"],
+.app-shell[data-app-theme="light"] [class~="text-gray-300"] {
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-white/70"],
+.app-shell[data-app-theme="light"] [class~="text-white/75"],
+.app-shell[data-app-theme="light"] [class~="text-white/80"],
+.app-shell[data-app-theme="light"] [class~="text-white/85"] {
+  color: #8b8f96 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-gray-400"] {
+  color: #8c9097 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-gray-500"] {
+  color: #9a9da3 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-violet-100"],
+.app-shell[data-app-theme="light"] [class~="text-violet-200"] {
+  color: #5d4bb5 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="hover:bg-white/5"]:hover,
+.app-shell[data-app-theme="light"] [class~="hover:bg-white/10"]:hover,
+.app-shell[data-app-theme="light"] [class~="hover:bg-white/15"]:hover,
+.app-shell[data-app-theme="light"] [class~="hover:bg-white/20"]:hover {
+  background-color: #eceff4 !important;
+}
+
+.app-shell[data-app-theme="light"] button[class*="from-purple-500/20"][class*="to-pink-500/20"] {
+  background: #e8f1ff !important;
+  color: #2463c8 !important;
+  box-shadow: inset 3px 0 0 rgba(47, 128, 246, 0.78);
+}
+
+.app-shell[data-app-theme="light"] [class*="from-purple-500"]:not([class*="from-purple-500/20"])[class*="to-pink-500"]:not([class*="to-pink-500/20"]) {
+  background-image: linear-gradient(135deg, #2563eb, #21a6f3) !important;
+  color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] {
+  background-image: linear-gradient(135deg, #2f80f6 0%, #248af4 55%, #1f9cf0 100%) !important;
+  box-shadow: 0 16px 30px rgba(47, 128, 246, 0.18);
+  color: #f8fbff !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] :where(h1, h2, h3, h4, p, button, code, span) {
+  color: #f8fbff !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-white"],
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-white/70"],
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-white/75"] {
+  color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/5"],
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/10"],
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/15"],
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/20"] {
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.26) !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-violet-300"] {
+  background-color: #d8ccff !important;
+  color: #111827 !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-emerald-300"] {
+  background-color: #9ff0c7 !important;
+  color: #063b29 !important;
+}
+
+.app-shell[data-app-theme="light"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-emerald-300"] :where(span, svg) {
+  color: #063b29 !important;
+}
+
+.app-shell[data-app-theme="light"] input,
+.app-shell[data-app-theme="light"] textarea,
+.app-shell[data-app-theme="light"] select {
+  background-color: #ffffff !important;
+  border-color: #e1e6ed !important;
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] input::placeholder,
+.app-shell[data-app-theme="light"] textarea::placeholder {
+  color: #9ca0a8 !important;
+}
+
+.app-shell[data-app-theme="light"] code,
+.app-shell[data-app-theme="light"] pre {
+  background-color: #f1f4f7;
+  color: #60656d;
+}
+
+.app-shell[data-app-theme="light"] .app-theme-menu,
+.app-shell[data-app-theme="light"] .app-theme-menu-button,
+.app-shell[data-app-theme="light"] .app-language-menu-button {
+  background-color: #eef2f6 !important;
+  border-color: #dce2ea !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.app-shell[data-app-theme="light"] .app-theme-switcher button[aria-pressed="true"],
+.app-shell[data-app-theme="light"] .app-theme-switcher button[aria-checked="true"] {
+  background: #2f80f6 !important;
+  border-color: #2f80f6 !important;
+  color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] .app-language-menu {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: #e1e6ed !important;
+  box-shadow: 0 18px 36px rgba(28, 35, 43, 0.12);
+}
+
+.app-shell[data-app-theme="light"] .app-language-menu [class~="bg-purple-500/20"] {
+  background-color: #e8f1ff !important;
+  color: #2463c8 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar {
+  background: #f7f9fb !important;
+}
+
+.app-shell[data-app-theme="light"] .app-content-card {
+  background: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-card {
+  background: #ffffff !important;
+  border-color: #e1e6ed !important;
+  box-shadow: 0 18px 42px rgba(28, 35, 43, 0.07) !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-emerald-400/10"],
+.app-shell[data-app-theme="light"] [class~="bg-emerald-400/15"] {
+  background-color: #e8f7ef !important;
+  border-color: #b9e4c9 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-emerald-100"],
+.app-shell[data-app-theme="light"] [class~="text-emerald-100/85"],
+.app-shell[data-app-theme="light"] [class~="text-emerald-200"] {
+  color: #087443 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-cyan-300/10"],
+.app-shell[data-app-theme="light"] [class~="bg-cyan-400/5"],
+.app-shell[data-app-theme="light"] [class~="bg-cyan-400/10"],
+.app-shell[data-app-theme="light"] [class~="bg-cyan-400/15"] {
+  background-color: #e7f6fb !important;
+  border-color: #b9dde8 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-cyan-100"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/55"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/60"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/65"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/70"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/80"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/85"],
+.app-shell[data-app-theme="light"] [class~="text-cyan-100/90"] {
+  color: #0b6f89 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-amber-400/10"],
+.app-shell[data-app-theme="light"] [class~="bg-amber-400/15"] {
+  background-color: #fff4d8 !important;
+  border-color: #ead08e !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-amber-100"],
+.app-shell[data-app-theme="light"] [class~="text-amber-100/80"],
+.app-shell[data-app-theme="light"] [class~="text-amber-200"] {
+  color: #8a5a00 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="bg-red-500/10"],
+.app-shell[data-app-theme="light"] [class~="bg-red-500/20"] {
+  background-color: #ffe9e9 !important;
+  border-color: #efb7b5 !important;
+}
+
+.app-shell[data-app-theme="light"] [class~="text-red-100"],
+.app-shell[data-app-theme="light"] [class~="text-red-200"],
+.app-shell[data-app-theme="light"] [class~="text-red-200/80"] {
+  color: #b42318 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar [class~="bg-white/5"],
+.app-shell[data-app-theme="light"] .app-sidebar [class~="bg-white/10"],
+.app-shell[data-app-theme="light"] .app-sidebar [class~="bg-black/20"] {
+  background-color: #eef2f6 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar [class~="text-gray-300"],
+.app-shell[data-app-theme="light"] .app-sidebar [class~="text-gray-200"],
+.app-shell[data-app-theme="light"] .app-sidebar [class~="text-white"] {
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar [class~="text-gray-400"] {
+  color: #5f6670 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar [class~="text-gray-500"] {
+  color: #6f7680 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar nav .ml-4 button {
+  color: #5f6670 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar nav .ml-4 button :where(svg, span) {
+  color: #5f6670 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar nav .ml-4 button:hover,
+.app-shell[data-app-theme="light"] .app-sidebar nav .ml-4 button:hover :where(svg, span) {
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar [class~="hover:bg-white/5"]:hover,
+.app-shell[data-app-theme="light"] .app-sidebar [class~="hover:bg-white/10"]:hover,
+.app-shell[data-app-theme="light"] .app-sidebar [class~="hover:bg-white/20"]:hover {
+  background-color: #edf2f8 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-sidebar button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(47, 125, 244, 0.54), 0 0 0 3px rgba(47, 125, 244, 0.12);
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser {
+  background: #f5f7fa !important;
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-zinc-950"] {
+  background-color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-black"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-black/50"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-black/40"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-black/35"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-black/30"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-black/20"] {
+  background-color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-white/[0.04]"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-white/[0.08]"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-white/5"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="bg-white/10"] {
+  background-color: #f7f9fb !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="border-white/10"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="border-white/15"] {
+  border-color: #e1e6ed !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="text-white"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="text-gray-100"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="text-gray-200"],
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="text-gray-300"] {
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="text-gray-400"] {
+  color: #757b84 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser [class~="text-gray-500"] {
+  color: #8e9299 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-new-tab-button {
+  background-color: #ffffff !important;
+  border-color: #d8e0ea !important;
+  color: #68717d !important;
+  box-shadow: 0 1px 2px rgba(28, 35, 43, 0.04);
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-new-tab-button:hover {
+  background-color: #f4f7fb !important;
+  border-color: #c7d2df !important;
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-browser input {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-store-home {
+  background: #f5f7fa !important;
+  color: #303236 !important;
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-store-panel {
+  background: #ffffff !important;
+  border-color: #dfe6ee !important;
+  box-shadow: 0 12px 30px rgba(28, 35, 43, 0.06);
+}
+
+.app-dapp-address-field {
+  min-height: 42px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.app-dapp-address-field:focus-within {
+  border-color: rgba(62, 123, 255, 0.58) !important;
+  box-shadow: 0 0 0 3px rgba(62, 123, 255, 0.18);
+}
+
+.app-dapp-search-field {
+  min-height: 42px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.app-dapp-search-field:focus-within {
+  border-color: rgba(37, 210, 181, 0.58) !important;
+  box-shadow: 0 0 0 3px rgba(37, 210, 181, 0.16);
+}
+
+.app-dapp-search-input {
+  background-color: transparent !important;
+  border: 0 !important;
+}
+
+.app-dapp-address-input:focus,
+.app-dapp-address-input:focus-visible,
+.app-dapp-search-input:focus,
+.app-dapp-search-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.app-shell[data-app-theme="light"] .scrollbar-thin {
+  scrollbar-color: rgba(75, 85, 99, 0.22) transparent;
+}
+
+.app-shell[data-app-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(75, 85, 99, 0.22);
+}
+
+.app-shell[data-app-theme="deep-sea"] {
+  background: #081019;
+  color: #edf7ff;
+}
+
+.app-shell[data-app-theme="deep-sea"] :where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid rgba(37, 210, 181, 0.48);
+  outline-offset: 2px;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-sidebar {
+  background: #081019 !important;
+  border-color: #1a3042 !important;
+  color: #edf7ff;
+  box-shadow: 10px 0 34px rgba(0, 0, 0, 0.24);
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-sidebar > div {
+  border-color: #1a3042 !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-main-surface,
+.app-shell[data-app-theme="deep-sea"] .app-dapp-browser,
+.app-shell[data-app-theme="deep-sea"] .app-dapp-store-home {
+  background: linear-gradient(135deg, #06111b 0%, #081019 48%, #0c1722 100%) !important;
+  color: #edf7ff !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-content-card,
+.app-shell[data-app-theme="deep-sea"] .app-dapp-store-panel {
+  background: #101a25 !important;
+  border-color: #1f3143 !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-dapp-card {
+  background: #081019 !important;
+  border-color: #1a3042 !important;
+  box-shadow: none !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-theme-menu,
+.app-shell[data-app-theme="deep-sea"] .app-language-menu {
+  background: rgba(12, 23, 34, 0.96) !important;
+  border-color: #24384b !important;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-theme-menu-button,
+.app-shell[data-app-theme="deep-sea"] .app-language-menu-button,
+.app-shell[data-app-theme="deep-sea"] .app-dapp-new-tab-button {
+  background-color: #132231 !important;
+  border-color: #263a4e !important;
+  color: #d8e8f4 !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-theme-menu-button:hover,
+.app-shell[data-app-theme="deep-sea"] .app-language-menu-button:hover,
+.app-shell[data-app-theme="deep-sea"] .app-dapp-new-tab-button:hover {
+  background-color: #182a3b !important;
+  border-color: #36546e !important;
+  color: #f5fbff !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-theme-switcher button[aria-checked="true"],
+.app-shell[data-app-theme="deep-sea"] .app-language-menu [class~="bg-purple-500/20"] {
+  background: rgba(37, 210, 181, 0.16) !important;
+  color: #45e6c5 !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class*="from-purple-400"][class*="to-pink-400"] {
+  background-image: linear-gradient(90deg, #60a5fa, #45e6c5) !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class*="from-purple-500/20"][class*="to-pink-500/20"] {
+  background: linear-gradient(90deg, rgba(37, 210, 181, 0.16), rgba(56, 121, 255, 0.14)) !important;
+  box-shadow: inset 3px 0 0 rgba(69, 230, 197, 0.72);
+}
+
+.app-shell[data-app-theme="deep-sea"] [class*="from-purple-500"]:not([class*="from-purple-500/20"])[class*="to-pink-500"]:not([class*="to-pink-500/20"]),
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] {
+  background-image: linear-gradient(135deg, #1677ff, #19c4a7) !important;
+  color: #ffffff !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="bg-zinc-950"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black"] {
+  background-color: #081019 !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black/50"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black/40"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black/35"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black/30"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black/25"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-black/20"] {
+  background-color: rgba(16, 26, 37, 0.86) !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/[0.03]"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/[0.04]"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/[0.08]"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/5"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/10"] {
+  background-color: #132231 !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/15"],
+.app-shell[data-app-theme="deep-sea"] [class~="bg-white/20"] {
+  background-color: #182a3b !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="border-white/10"],
+.app-shell[data-app-theme="deep-sea"] [class~="border-white/15"] {
+  border-color: #263a4e !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="text-white"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-gray-100"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-gray-200"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-gray-300"] {
+  color: #edf7ff !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="text-gray-400"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-white/70"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-white/75"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-white/80"],
+.app-shell[data-app-theme="deep-sea"] [class~="text-white/85"] {
+  color: #93a8ba !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class~="text-gray-500"] {
+  color: #6f8294 !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] input,
+.app-shell[data-app-theme="deep-sea"] textarea,
+.app-shell[data-app-theme="deep-sea"] select {
+  background-color: #0c1722 !important;
+  border-color: #263a4e !important;
+  color: #edf7ff !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] input::placeholder,
+.app-shell[data-app-theme="deep-sea"] textarea::placeholder {
+  color: #71869a !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] code,
+.app-shell[data-app-theme="deep-sea"] pre {
+  background-color: #0c1722;
+  color: #a9d7cf;
+}
+
+.app-shell[data-app-theme="deep-sea"] .app-sidebar [class~="hover:bg-white/5"]:hover,
+.app-shell[data-app-theme="deep-sea"] .app-sidebar [class~="hover:bg-white/10"]:hover,
+.app-shell[data-app-theme="deep-sea"] .app-sidebar [class~="hover:bg-white/20"]:hover,
+.app-shell[data-app-theme="deep-sea"] [class~="hover:bg-white/5"]:hover,
+.app-shell[data-app-theme="deep-sea"] [class~="hover:bg-white/10"]:hover,
+.app-shell[data-app-theme="deep-sea"] [class~="hover:bg-white/15"]:hover,
+.app-shell[data-app-theme="deep-sea"] [class~="hover:bg-white/20"]:hover {
+  background-color: #182a3b !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] .scrollbar-thin {
+  scrollbar-color: rgba(69, 230, 197, 0.22) transparent;
+}
+
+.app-shell[data-app-theme="deep-sea"] .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(69, 230, 197, 0.22);
+}
+
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] :where(h1, h2, h3, h4, p, span, button, svg) {
+  color: #f7fbff !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-gray-300"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-gray-400"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-gray-500"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-white/70"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-white/75"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="text-white/80"] {
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/5"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/10"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/15"],
+.app-shell[data-app-theme="deep-sea"] [class*="from-blue-500"][class*="to-violet-700"] [class~="bg-white/20"] {
+  background-color: rgba(5, 18, 31, 0.26) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.app-dapp-store-card {
+  position: relative;
+  transform: translateY(0);
+  isolation: isolate;
+  backdrop-filter: blur(10px);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.app-dapp-store-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(37, 210, 181, 0.14), rgba(62, 123, 255, 0.08) 52%, rgba(255, 255, 255, 0.04)),
+    radial-gradient(circle at 18% 0%, rgba(125, 245, 222, 0.08), transparent 44%);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.app-dapp-store-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app-dapp-store-card:enabled:hover {
+  transform: translateY(-2px);
+  background-color: rgba(16, 26, 37, 0.78) !important;
+  border-color: rgba(69, 230, 197, 0.62) !important;
+  box-shadow:
+    0 0 0 1px rgba(69, 230, 197, 0.18),
+    0 0 24px rgba(69, 230, 197, 0.18),
+    0 18px 42px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+.app-dapp-store-card:enabled:hover::before {
+  opacity: 0.78;
+}
+
+.app-dapp-store-card:enabled:active {
+  transform: translateY(0);
+}
+
+.app-shell[data-app-theme="light"] .app-dapp-store-card:enabled:hover {
+  background-color: rgba(255, 255, 255, 0.86) !important;
+  border-color: rgba(17, 185, 158, 0.56) !important;
+  box-shadow:
+    0 0 0 1px rgba(17, 185, 158, 0.16),
+    0 0 26px rgba(17, 185, 158, 0.16),
+    0 18px 42px rgba(28, 35, 43, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
+}

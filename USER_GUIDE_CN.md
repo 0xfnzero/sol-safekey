@@ -6,7 +6,7 @@ Sol-safekey 交互命令和操作的完整使用指南。
 
 ## 开始使用
 
-Sol-SafeKey 提供交互式命令行界面，用于安全的 Solana 钱包管理和操作。本指南涵盖所有可用功能和操作。
+FnzeroSafe 提供交互式命令行界面，用于安全的 Solana 钱包管理和操作。本指南涵盖所有可用功能和操作。
 
 ### 前置要求
 
@@ -16,7 +16,7 @@ Sol-SafeKey 提供交互式命令行界面，用于安全的 Solana 钱包管理
 
 ### 访问交互式菜单
 
-如果你使用的 bot 集成了 sol-safekey:
+如果你使用的 bot 集成了 fnzero-safe:
 
 ```bash
 ./你的bot safekey
@@ -30,20 +30,20 @@ Sol-SafeKey 提供交互式命令行界面，用于安全的 Solana 钱包管理
 
 #### 直接安装（独立使用）
 
-对于不使用 bot 的独立使用，直接安装 sol-safekey：
+对于不使用 bot 的独立使用，直接安装 fnzero-safe：
 
 ```bash
 # 从 crates.io 安装（推荐使用最新版本）
-cargo install sol-safekey --features="full"
+cargo install fnzero-safe --features="full"
 
 # 验证安装
-sol-safekey --version
+fnzero-safe --version
 
 # 启动交互式菜单
-sol-safekey start
+fnzero-safe start
 ```
 
-这种方式提供通过交互式菜单直接访问所有 sol-safekey 功能。
+这种方式提供通过交互式菜单直接访问所有 fnzero-safe 功能。
 
 ## 主菜单
 
@@ -702,7 +702,7 @@ Keystore 路径: keystore.json
 - 中英双语提示
 
 **步骤**：
-1. 运行 `sol-safekey`（或 `./你的bot safekey`）并解锁钱包。
+1. 运行 `fnzero-safe`（或 `./你的bot safekey`）并解锁钱包。
 2. 选择 **13**（Pump.fun 卖出）或 **16**（Pump.fun 卖出，无 2FA 确认）。
 3. 按提示输入 RPC URL（或使用默认）。
 4. 按提示选择是否使用 seed 优化 ATA。

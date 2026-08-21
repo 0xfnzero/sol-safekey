@@ -1,0 +1,44 @@
+[package]
+name = "fnzero-safe-desktop"
+version = "0.4.0"
+description = "FnzeroSafe — Tauri desktop shell"
+authors = ["you"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.88"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "FnzeroSafe"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "=2.5.6", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "=2.10.3", features = ["unstable"] }
+tauri-plugin-log = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+aes-gcm = "0.10"
+aws-lc-rs = { version = "=1.17.3", default-features = false, features = ["non-fips", "prebuilt-nasm"] }
+base64 = "0.22"
+pem-rfc7468 = { version = "0.7", features = ["std"] }
+rand = "0.8"
+zeroize = "1"
+rfd = "0.15"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-local-authentication = "0.3.2"
+security-framework = { version = "3.5", features = ["OSX_10_13"] }

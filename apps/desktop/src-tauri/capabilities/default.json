@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "webviews": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-proxy-api-request",
+    "allow-open-external-url",
+    "allow-open-dapp-tab",
+    "allow-navigate-dapp-tab",
+    "allow-set-active-dapp-tab",
+    "allow-close-dapp-tab",
+    "allow-resolve-dapp-sign-request",
+    "allow-biometric-wallet-status",
+    "allow-biometric-wallet-store-password",
+    "allow-biometric-wallet-get-password",
+    "allow-biometric-wallet-delete-password",
+    "allow-pick-source-directory",
+    "allow-save-download-file",
+    "allow-open-download-file-location"
+  ]
+}

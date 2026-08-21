@@ -1,0 +1,5 @@
+rust_input: crate::api
+dart_output: lib/src/bridge/generated
+c_output: ios/Runner/bridge_generated.h
+rust_root: ../../crates/mobile-bridge
+dart_format_line_length: 100

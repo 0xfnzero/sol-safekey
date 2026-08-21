@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo "╔════════════════════════════════════════╗"
-echo "║   Solana Trading Bot with sol-safekey ║"
+echo "║   Solana Trading Bot with fnzero-safe ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 

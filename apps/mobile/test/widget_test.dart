@@ -1,0 +1,14 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fnzero_safe_mobile/src/app.dart';
+
+void main() {
+  testWidgets('mobile app dashboard smoke test', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: FnzeroSafeMobileApp()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('FnzeroSafe'), findsOneWidget);
+    expect(find.text('Mobile Wallet'), findsOneWidget);
+    expect(find.text('Squads'), findsOneWidget);
+  });
+}

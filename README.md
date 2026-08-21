@@ -1,39 +1,38 @@
 <div align="center">
-    <h1>🔐 Sol SafeKey - Secure Solana Wallet &amp; Keystore</h1>
-    <h3><em>Rust SDK · CLI · Web UI · Tauri Desktop Wallet</em></h3>
+    <h1>FnzeroSafe</h1>
+    <h3><em>Local-first Solana wallet, secure keystore, desktop app, and iOS/Android app</em></h3>
 </div>
 
 <p align="center">
-    <strong>Open-source, local-first Solana wallet security toolkit with encrypted keystores, 2FA, bot integration, token operations, Pump trading, and Squads multisig.</strong>
+    <strong>FnzeroSafe is an open-source Solana wallet security workspace for encrypted keystores, desktop signing, mobile wallets, dApp signing, Pump trading, Squads multisig, bot integration, and advanced desktop-only Program workflows.</strong>
 </p>
 
 <p align="center">
-    <a href="https://crates.io/crates/sol-safekey">
-        <img src="https://img.shields.io/crates/v/sol-safekey.svg" alt="Crates.io">
+    <a href="https://crates.io/crates/fnzero-safe-core">
+        <img src="https://img.shields.io/crates/v/fnzero-safe-core.svg" alt="Crates.io">
     </a>
-    <a href="https://docs.rs/sol-safekey">
-        <img src="https://img.shields.io/docs.rs/sol-safekey/badge.svg" alt="Documentation">
+    <a href="https://docs.rs/fnzero-safe-core">
+        <img src="https://img.shields.io/docs.rs/fnzero-safe-core/badge.svg" alt="Documentation">
     </a>
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/LICENSE">
+    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
     </a>
-    <a href="https://github.com/0xfnzero/sol-safekey">
-        <img src="https://img.shields.io/github/stars/0xfnzero/sol-safekey?style=social" alt="GitHub stars">
-    </a>
-    <a href="https://github.com/0xfnzero/sol-safekey/network">
-        <img src="https://img.shields.io/github/forks/0xfnzero/sol-safekey?style=social" alt="GitHub forks">
+    <a href="https://github.com/0xfnzero/fnzero-safe">
+        <img src="https://img.shields.io/github/stars/0xfnzero/fnzero-safe?style=social" alt="GitHub stars">
     </a>
 </p>
 
 <p align="center">
     <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
     <img src="https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana">
-    <img src="https://img.shields.io/badge/Security-FF0000?style=for-the-badge&logo=security&logoColor=white" alt="Security">
+    <img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js">
+    <img src="https://img.shields.io/badge/Tauri-24C8DB?style=for-the-badge&logo=tauri&logoColor=white" alt="Tauri">
+    <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter">
 </p>
 
 <p align="center">
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README_CN.md">中文</a> |
-    <a href="https://github.com/0xfnzero/sol-safekey/blob/main/README.md">English</a> |
+    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/README.md">English</a> |
     <a href="https://fnzero.dev/">Website</a> |
     <a href="https://t.me/fnzero_group">Telegram</a> |
     <a href="https://discord.gg/ckf5UHxz">Discord</a>
@@ -41,231 +40,433 @@
 
 ---
 
-## 📑 Table of Contents
+## Document Outline
 
-- [What This Project Provides](#what-this-project-provides)
-- [✨ Features](#-features)
-- [🚀 Quick Start](#-quick-start)
-- [📦 Installation](#-installation)
-- [🖥️ Web and Desktop UI](#️-web-and-desktop-ui)
-- [📋 Feature Guide](#-feature-guide)
-- [📚 Documentation](#-documentation)
-- [🔐 Security](#-security)
-- [💬 Contact](#-contact)
+1. [Project Overview](#1-project-overview)
+   1. [What FnzeroSafe Is For](#11-what-fnzerosafe-is-for)
+   2. [Product Editions](#12-product-editions)
+   3. [Capability Matrix](#13-capability-matrix)
+   4. [Platform Matrix](#14-platform-matrix)
+2. [Repository Layout](#2-repository-layout)
+3. [Development Environment](#3-development-environment)
+   1. [Required Toolchains](#31-required-toolchains)
+   2. [One-Time Setup](#32-one-time-setup)
+   3. [Host Notes](#33-host-notes)
+4. [Run In Development](#4-run-in-development)
+   1. [Desktop App](#41-desktop-app)
+   2. [iOS App](#42-ios-app)
+   3. [Android App](#43-android-app)
+   4. [CLI](#44-cli)
+5. [Package For Release](#5-package-for-release)
+   1. [Release Directory](#51-release-directory)
+   2. [macOS Desktop](#52-macos-desktop)
+   3. [Windows Desktop](#53-windows-desktop)
+   4. [iOS](#54-ios)
+   5. [Android](#55-android)
+   6. [All Platforms](#56-all-platforms)
+6. [Command Reference](#6-command-reference)
+7. [Configuration](#7-configuration)
+8. [Security Model](#8-security-model)
+9. [Documentation](#9-documentation)
+10. [Before Submitting To GitHub](#10-before-submitting-to-github)
+11. [License](#11-license)
 
-## What This Project Provides
+---
 
-Sol SafeKey is an open-source, local-first Solana wallet and key management toolkit. It combines a Rust SDK, CLI, self-hosted web wallet, and Tauri desktop app in one repository, with encrypted Keystore workflows for developers, bot operators, multisig teams, and individual wallet users.
+## 1. Project Overview
+
+### 1.1 What FnzeroSafe Is For
+
+FnzeroSafe is a local-first Solana wallet and key-management workspace. It combines a Rust core crate, an interactive CLI, a local desktop API, a Next.js web interface, a Tauri desktop shell, and a Flutter mobile app for iOS and Android.
 
 | Area | Coverage |
-|------|----------|
-| Interfaces | Rust SDK, interactive CLI, Next.js web wallet, Tauri desktop wallet |
-| Wallet security | AES-256 encrypted Keystore files, password unlock, hardware fingerprint, optional TOTP 2FA/3FA |
-| Solana operations | SOL and SPL Token transfers, Token-2022 assets, WSOL, durable nonce accounts, transaction history |
-| Trading | Pump.fun and PumpSwap sells, balance shortcuts, cashback claims |
-| Teams and programs | Squads v4 multisig proposals, program deployment, upgrades, and authority management |
-| Automation | Bot helper APIs, local Rust API, examples, and bilingual documentation |
+|---|---|
+| Wallets | Create wallets, import keystores/private keys/mnemonics, unlock wallets, export encrypted backups |
+| Security | Password keystores, encrypted local API bodies, local API token, TOTP, biometric confirmation, sensitive log filtering |
+| Assets | SOL balance, SPL Token accounts, Token-2022 accounts, mint metadata, transaction history |
+| Payments | SOL transfer, SPL transfer, WSOL wrap/unwrap/close ATA |
+| dApps | In-app WebView, Solana provider injection, message/transaction preview, user-confirmed signing |
+| Squads | Squads v4 multisig create/info/proposals/approve/reject/execute, SOL/SPL payment proposals |
+| Trading | Pump.fun and PumpSwap sell flows, cashback views and claims, SWQoS token configuration |
+| Programs | Desktop-only Program deploy, upgrade, source build, authority and deployment workflows |
+| Automation | Rust SDK, CLI helpers, local API, examples for bot integration |
 
-### 📋 Feature Guide
+### 1.2 Product Editions
 
-#### 🚀 Quick Start
-**[Installation →](#-installation)** → **[Unlock Wallet](INTERACTIVE_TUTORIAL.md#u-unlock-wallet)** → **[Check Balance](INTERACTIVE_TUTORIAL.md#7-check-sol-balance)**
+| Edition | Path | Technology | Primary Use |
+|---|---|---|---|
+| Desktop app | `apps/desktop` | Next.js + Tauri + Rust API | Full local wallet console, dApp signing, Pump, Squads, Program workflows |
+| Mobile app | `apps/mobile` | Flutter + `flutter_rust_bridge` + Rust core | iOS/Android wallet, assets, payments, dApp signing, Pump, Squads |
+| Rust core / CLI | `crates/core` | Rust | Keystore, CLI, SDK-style integration and automation |
+| Shared services | `crates/app-services` | Rust | Business logic shared by desktop and mobile |
+| Mobile bridge | `crates/mobile-bridge` | Rust FFI | FRB-friendly API consumed by Flutter |
 
-#### 🔑 Core Functions
-- **[1. Create Plaintext Key](INTERACTIVE_TUTORIAL.md#1-create-plaintext-key)** - Generate unencrypted keypair (testing only)
-- **[2. Create Encrypted Key](INTERACTIVE_TUTORIAL.md#2-create-encrypted-key)** - Encrypt and save to keystore
-- **[3. Decrypt Key](INTERACTIVE_TUTORIAL.md#3-decrypt-key)** - Decrypt keystore and reveal private key
+### 1.3 Capability Matrix
 
-#### 🔒 Wallet Management
-- **[U. Unlock Wallet](INTERACTIVE_TUTORIAL.md#u-unlock-wallet)** - Unlock wallet for Solana operations
+| Capability | Desktop | iOS | Android | Notes |
+|---|---:|---:|---:|---|
+| Wallet create/import/unlock/export | Yes | Yes | Yes | Secrets stay in encrypted keystores |
+| SOL/SPL assets and history | Yes | Yes | Yes | Uses Solana RPC |
+| SOL/SPL/WSOL payments | Yes | Yes | Yes | User confirmation required |
+| dApp message signing | Yes | Yes | Yes | WebView/provider flow on mobile |
+| dApp transaction signing/sending | Yes | Yes | Yes | User confirmation required |
+| Squads multisig | Yes | Yes | Yes | Create, proposals, approve/reject/execute |
+| PumpFun/PumpSwap | Yes | Partial mobile integration | Partial mobile integration | Mobile submit flows continue to mature |
+| Program deploy | Yes | No | No | Desktop-only by design |
+| Program upgrade | Yes | No | No | Desktop-only by design |
+| Program source build | Yes | No | No | Desktop-only by design |
+| Generic Program invoke | Yes | No | No | Desktop-only by design |
 
-#### 🛡️ Advanced Security
-- **[4. Setup 2FA](INTERACTIVE_TUTORIAL.md#4-setup-2fa-authentication)** - Configure two-factor authentication
-- **[5. Generate Triple-Factor Wallet](INTERACTIVE_TUTORIAL.md#5-generate-triple-factor-wallet)** - Create 3FA wallet
-- **[6. Unlock Triple-Factor Wallet](INTERACTIVE_TUTORIAL.md#6-unlock-triple-factor-wallet)** - Decrypt 3FA encrypted wallet
+### 1.4 Platform Matrix
 
-#### 💰 Solana Operations
-##### Balance & Transfer
-- **[7. Check Balance](INTERACTIVE_TUTORIAL.md#7-check-sol-balance)** - Query SOL balance
-- **[8. Transfer SOL](INTERACTIVE_TUTORIAL.md#8-transfer-sol)** - Send SOL
-
-##### WSOL Operations
-- **[9. Create WSOL ATA](INTERACTIVE_TUTORIAL.md#9-create-wsol-ata)** - Create WSOL ATA
-- **[10. Wrap SOL](INTERACTIVE_TUTORIAL.md#10-wrap-sol--wsol)** - SOL → WSOL
-- **[11. Unwrap WSOL](INTERACTIVE_TUTORIAL.md#11-unwrap-wsol--sol)** - WSOL → SOL
-- **[12. Close WSOL ATA](INTERACTIVE_TUTORIAL.md#12-close-wsol-ata)** - Close WSOL ATA
-
-##### Token Operations
-- **[13. Transfer SPL Token](INTERACTIVE_TUTORIAL.md#13-transfer-spl-token)** - Send SPL tokens
-- **[14. Create Nonce Account](INTERACTIVE_TUTORIAL.md#14-create-nonce-account)** - Create durable nonce
-
-##### DEX Operations
-- **[15. Pump.fun Sell](INTERACTIVE_TUTORIAL.md#15-pumpfun-sell-token)** - Sell on Pump.fun DEX
-- **[16. PumpSwap Sell](INTERACTIVE_TUTORIAL.md#16-pumpswap-sell-token)** - Sell on PumpSwap DEX
-
-##### Cashback Operations
-- **[17. Pump.fun Cashback](INTERACTIVE_TUTORIAL.md#17-pumpfun-cashback-view--claim)** - View/claim pump.fun cashback (SOL)
-- **[18. PumpSwap Cashback](INTERACTIVE_TUTORIAL.md#18-pumpswap-cashback-view--claim)** - View/claim PumpSwap cashback (WSOL)
-
----
-
+| Platform | Status | Main Command | Output |
+|---|---|---|---|
+| Desktop development | Supported | `make dev` | Tauri app, Next.js on `127.0.0.1:3840`, API on `127.0.0.1:3841` |
+| macOS desktop package | Supported on macOS | `make package-macos` | `release/macos/*.dmg` and `.app` |
+| Windows desktop package | Supported on Windows runner | `make package-windows` | `release/windows/*.msi` and/or `.exe` |
+| iOS app package | Supported with Xcode iOS platform/signing | `make package-ios` | `release/ios/*.app` or `.ipa` |
+| Android app package | Supported | `make package-android` | `release/android/*.apk` and `.aab` |
+| CLI | Supported | `cargo run -p fnzero-safe-core --features full -- start` | Interactive terminal wallet tools |
 
 ---
 
-## 📦 Installation
+## 2. Repository Layout
 
-### Install from crates.io (Recommended)
-
-The latest stable release is available on [crates.io](https://crates.io/crates/sol-safekey):
-
-```bash
-# Install with all features enabled
-cargo install sol-safekey --features full
-
-# Verify installation
-sol-safekey --version
-
-# Start interactive menu
-sol-safekey start
+```text
+/
+├─ Cargo.toml
+├─ Makefile
+├─ crates/
+│  ├─ core/                      # Rust SDK and CLI binary: fnzero-safe
+│  ├─ app-services/              # Shared wallet/assets/payments/dApp/Squads services
+│  ├─ desktop-api/               # Local Axum API used by desktop/web
+│  └─ mobile-bridge/             # flutter_rust_bridge FFI layer
+├─ apps/
+│  ├─ desktop/                   # Next.js UI and Tauri desktop shell
+│  └─ mobile/                    # Flutter iOS/Android app
+├─ packages/
+│  └─ shared-contracts/          # Shared API contracts and interface notes
+├─ examples/                     # Bot and keystore examples
+├─ docs/                         # Internal testing and development notes
+└─ release/                      # Package output directory, ignored by Git
 ```
 
-This installs the complete CLI with all features:
-- 🔐 **Core encryption** - AES-256 password-based encryption
-- 🔑 **2FA/TOTP** - Two-factor authentication support
-- 🌐 **Solana operations** - Full Solana transaction support
-- 💱 **DEX operations** - Pump.fun & PumpSwap trading
-- 💰 **Cashback** - Claim trading cashback rewards
+The public product name is **FnzeroSafe**. Internal Cargo package names such as `fnzero-safe-core`, `fnzero-safe-desktop-api`, and `fnzero-safe-mobile-bridge` keep workspace crates unique.
 
-### Install from source
+---
+
+## 3. Development Environment
+
+### 3.1 Required Toolchains
+
+| Tool | Recommended Version | Used For |
+|---|---|---|
+| Rust | 1.89+ | Workspace, CLI, desktop API, mobile bridge |
+| Node.js | 20 or 22+ | Desktop web app |
+| npm | 10+ | Desktop dependencies and scripts |
+| Flutter / Dart | Flutter 3.24+ | iOS and Android app |
+| Xcode | Current stable | macOS desktop package, iOS simulator/device/archive |
+| Android Studio / SDK / NDK | Current stable | Android builds and emulators |
+| JDK | 17 | Android Gradle builds |
+| `cargo-ndk` | Latest | Android Rust bridge libraries |
+| `flutter_rust_bridge_codegen` | FRB 2.x | Regenerating Dart/Rust bridge code |
+
+### 3.2 One-Time Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/0xfnzero/sol-safekey.git
-cd sol-safekey
-
-# Build and install
-cargo install --path . --features full
+rustup update
+npm --version
+flutter doctor -v
+cargo install cargo-ndk
+cargo install flutter_rust_bridge_codegen
+npm --prefix apps/desktop install
+cd apps/mobile && flutter pub get
 ```
 
-### System Requirements
-
-- **Rust**: 1.89+ (install from [rustup.rs](https://rustup.rs/))
-- **Operating System**: Linux, macOS, or Windows
-- **Network**: Internet connection for Solana RPC calls
-
-## 🖥️ Web and Desktop UI
-
-The self-hosted web wallet, local Rust API, and Tauri desktop app live in this repository under [`ui/`](https://github.com/0xfnzero/sol-safekey/tree/main/ui). The API depends directly on the root `sol-safekey` crate, so the CLI, Rust SDK, web wallet, and desktop wallet use one source tree and one Cargo lockfile.
+Regenerate mobile bridge bindings after changing `crates/mobile-bridge/src/api.rs`:
 
 ```bash
-# Install JavaScript and Rust dependencies
-make install
-
-# Start Next.js on :3840 and the local API on :3841
-make ui-dev
-
-# Build the embedded web/API binary
-make api-build
-
-# Start the Tauri desktop app
-make desktop-dev
+cd apps/mobile
+./tool/generate_bridge.sh
 ```
 
-Open `http://127.0.0.1:3840/en/` or `http://127.0.0.1:3840/zh/` during development. The release API binary embeds the static frontend and serves it on `http://127.0.0.1:3841`.
+### 3.3 Host Notes
 
-### Create or import your first wallet
-
-1. Open the UI and select **Create New Wallet** or **Import Wallet**.
-2. For a new wallet, enter a name and a 10-20 character password. For an existing wallet, select its `keystore.json` and enter its password.
-3. Download and back up the encrypted Keystore before depositing funds. The password cannot be recovered.
-4. Select the wallet from the wallet picker, then use **Receive**, **Send**, or **Trade** from the wallet page.
-5. Check the selected network and RPC under **Settings** before signing any transaction.
-
-See the **[UI Wallet User Guide](UI_USER_GUIDE.md)** for wallet management, transfers, trading, multisig workflows, backups, and troubleshooting.
-
-### Cargo Feature Flags
-
-- `full` - Enable all features (default for CLI)
-- `cli` - Command-line interface with colored output
-- `2fa` - Two-factor authentication (TOTP) support
-- `solana-ops` - Solana blockchain operations
-- `sol-trade-sdk` - Trading operations (Pump.fun, PumpSwap)
+| Host | Notes |
+|---|---|
+| macOS | Required for macOS desktop packages and iOS builds. Install the matching iOS platform/runtime from Xcode > Settings > Components. |
+| Windows | Recommended for `make package-windows` with the MSVC target and Visual Studio build tools. |
+| Android | Use JDK 17. Override auto-detection with `ANDROID_JAVA_HOME=/path/to/jdk17 make package-android`. |
+| iOS signing | Unsigned `.app` builds can use `make package-ios`; signed IPA/TestFlight builds require an Apple developer team, provisioning profile, and export options. |
 
 ---
 
-## 📖 Complete Interactive Menu Guide
+## 4. Run In Development
 
-📖 **[View Complete Interactive Menu Guide → INTERACTIVE_TUTORIAL.md](INTERACTIVE_TUTORIAL.md)**
+### 4.1 Desktop App
 
-Comprehensive step-by-step guide for all interactive menu operations, including detailed instructions, use cases, and example outputs for each of the 18 menu options.
+Run from the repository root:
+
+```bash
+npm --prefix apps/desktop install
+make dev
+```
+
+`make dev` stops stale local development processes first, then starts:
+
+| Service | URL |
+|---|---|
+| English UI | `http://127.0.0.1:3840/en/` |
+| Chinese UI | `http://127.0.0.1:3840/zh/` |
+| Local API health | `http://127.0.0.1:3841/api/health` |
+
+The local API is designed for loopback use only. Do not expose `3841` through a public proxy, tunnel, or port forward.
+
+### 4.2 iOS App
+
+```bash
+cd apps/mobile
+./tool/bootstrap_mobile.sh
+flutter pub get
+./tool/generate_bridge.sh
+./tool/build_ios_native.sh
+flutter run -d ios
+```
+
+iOS requirements:
+
+1. Xcode command line tools are selected with `xcode-select`.
+2. The matching iOS platform/runtime is installed in Xcode Components.
+3. iOS deployment target is 15.0.
+4. Physical devices and TestFlight require normal Xcode signing setup.
+
+### 4.3 Android App
+
+```bash
+cd apps/mobile
+./tool/bootstrap_mobile.sh
+flutter pub get
+./tool/generate_bridge.sh
+./tool/build_android_native.sh
+flutter run -d android
+```
+
+Android notes:
+
+1. Android application id is `dev.fnzero.safe`.
+2. Android `minSdk` is 26.
+3. Rust bridge `.so` libraries are generated for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`.
+4. JDK 17 is recommended for Gradle.
+
+### 4.4 CLI
+
+```bash
+cargo run -p fnzero-safe-core --features full -- start
+```
+
+Install the CLI locally from source:
+
+```bash
+cargo install --path crates/core --features full
+fnzero-safe start
+```
 
 ---
 
-## 📚 Documentation
+## 5. Package For Release
 
-- **[UI Wallet User Guide](UI_USER_GUIDE.md)** - Create, import, back up, and use wallets in the web or desktop UI
-- **[Bot Integration Guide](BOT_INTEGRATION.md)** - How to integrate sol-safekey into your bot
-- **[User Guide](USER_GUIDE.md)** - Complete usage instructions and examples
+### 5.1 Release Directory
+
+All package commands copy artifacts into the root `release/` directory:
+
+```text
+release/
+├─ android/
+│  ├─ app-release.apk
+│  └─ app-release.aab
+├─ ios/
+│  └─ *.app or *.ipa
+├─ macos/
+│  ├─ FnzeroSafe.app
+│  └─ FnzeroSafe_*.dmg
+└─ windows/
+   └─ *.msi and/or *.exe
+```
+
+`release/` is ignored by Git.
+
+### 5.2 macOS Desktop
+
+```bash
+make package-macos
+```
+
+This runs the desktop production build and copies `.dmg` and `.app` artifacts into `release/macos/`.
+
+### 5.3 Windows Desktop
+
+```bash
+make package-windows
+```
+
+This builds the Tauri Windows package and copies `.msi` and/or `.exe` artifacts into `release/windows/`.
+
+Recommended build environment: a Windows runner with Rust, Node.js, npm, and Microsoft Visual Studio build tools installed. Cross-building Windows installers from macOS requires extra toolchain setup.
+
+Override the target when needed:
+
+```bash
+TAURI_WINDOWS_TARGET=x86_64-pc-windows-msvc make package-windows
+```
+
+### 5.4 iOS
+
+Unsigned local `.app` build:
+
+```bash
+make package-ios
+```
+
+Signed IPA build:
+
+```bash
+IOS_CODESIGN=true IOS_EXPORT_OPTIONS_PLIST=/path/to/ExportOptions.plist make package-ios
+```
+
+The command first builds the Rust iOS `FnzeroSafeMobileBridge.xcframework`, then runs the Flutter iOS package step and copies artifacts into `release/ios/`.
+
+### 5.5 Android
+
+```bash
+make package-android
+```
+
+If JDK 17 is not auto-detected:
+
+```bash
+ANDROID_JAVA_HOME=/path/to/jdk17 make package-android
+```
+
+Android release signing:
+
+```bash
+cp apps/mobile/android/key.properties.example apps/mobile/android/key.properties
+# Edit key.properties so storeFile, storePassword, keyAlias, and keyPassword point to your upload keystore.
+make package-android
+```
+
+The command builds Rust Android native libraries, a release APK, and a release AAB, then copies artifacts into `release/android/`.
+
+### 5.6 All Platforms
+
+```bash
+make package
+```
+
+This runs Android, iOS, macOS, and Windows package targets in sequence. For CI, run each platform on its native runner when possible.
 
 ---
 
-## 🔐 Security
+## 6. Command Reference
 
-- ✅ **Password Security**: stdin pipe only (never in environment variables)
-- ✅ **Encryption**: AES-256 with PBKDF2 key derivation
-- ✅ **Memory Safety**: Immediate password cleanup after use
-- ✅ **Hardware Fingerprint**: Device-based security layer
-- ✅ **2FA Support**: Optional two-factor authentication for enhanced security
-
-
-## 🛠️ Available Operations
-
-### Wallet Management
-- **Create Wallet** - Generate new encrypted wallet with AES-256
-- **Import Wallet** - Import existing wallet from private key or seed phrase
-- **Export Wallet** - Export wallet to encrypted JSON format
-- **View Address** - Display wallet public address
-
-### SOL Operations
-- **Query Balance** - Check SOL balance in your wallet
-- **Transfer SOL** - Send SOL to other addresses
-- **Wrap SOL** - Convert SOL to WSOL (Wrapped SOL)
-- **Unwrap WSOL** - Convert WSOL back to SOL
-- **Close WSOL ATA** - Close WSOL ATA account
-
-### Token Operations
-- **Transfer SPL Token** - Send SPL tokens to other addresses
-- **Query Token Balance** - Check token balances
-
-### DEX Operations
-- **🔥 Pump.fun Sell** - Interactive token selling on Pump.fun DEX (internal market only)
-- **🔄 PumpSwap Sell** - Sell tokens on PumpSwap DEX
-
-### Cashback Operations
-- **Pump.fun Cashback** - View and claim pump.fun cashback (native SOL)
-- **PumpSwap Cashback** - View and claim PumpSwap cashback (WSOL)
-
-### Advanced Features
-- **Durable Nonce Accounts** - Create and manage nonce accounts for offline signing
-- **2FA Support** - Optional two-factor authentication for enhanced security
-
-### Transaction Management
-- **Check Transaction Status** - Query transaction status on Solana
+| Command | Description |
+|---|---|
+| `make dev` | Start desktop development; stale local app/API processes are stopped first |
+| `make package-macos` | Build macOS desktop package into `release/macos/` |
+| `make package-windows` | Build Windows desktop package into `release/windows/` |
+| `make package-ios` | Build iOS `.app` or signed `.ipa` into `release/ios/` |
+| `make package-android` | Build Android APK/AAB into `release/android/` |
+| `make package` | Build all package targets |
+| `cargo fmt --all -- --check` | Check Rust formatting |
+| `cargo check --workspace --all-features` | Check the full Rust workspace |
+| `cargo test --workspace` | Run Rust tests |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Run strict Rust linting |
+| `npm --prefix apps/desktop run lint` | Run desktop lint and sensitive-input checks |
+| `npm --prefix apps/desktop run build` | Build the Next.js static frontend |
+| `cd apps/mobile && flutter analyze` | Analyze the Flutter app |
+| `cd apps/mobile && flutter test --dart-define=FNZERO_MOBILE_DEV_BRIDGE=true` | Run Flutter tests with the dev bridge fallback |
 
 ---
 
-## 📖 Examples
+## 7. Configuration
 
-See `examples/bot_example.rs` for a complete bot integration example.
+| Variable | Purpose |
+|---|---|
+| `FNZERO_SAFE_API_TOKEN` | Fixed local API token for desktop/web development |
+| `FNZERO_SAFE_DB_PATH` | Override wallet database path |
+| `FNZERO_SAFE_ALLOWED_ORIGINS` | Comma-separated list of additional trusted local API origins |
+| `FNZERO_SAFE_ALLOW_SECRET_EXPORT=true` | Allow plaintext private key/mnemonic export from non-desktop local debugging contexts |
+| `FNZERO_SAFE_ALLOW_DIRECT_SECRET_INPUT=true` | Allow direct plaintext private key submission from web debugging contexts |
+| `FNZERO_MOBILE_DEV_BRIDGE=true` | Use Flutter dev bridge fallback for tests without native libraries |
+| `ANDROID_JAVA_HOME` | JDK 17 path for Android package builds |
+| `IOS_CODESIGN=true` | Build a signed iOS IPA instead of an unsigned `.app` |
+| `IOS_EXPORT_OPTIONS_PLIST` | Export options plist path for signed iOS IPA builds |
+| `TAURI_WINDOWS_TARGET` | Override the Tauri Windows target triple |
+| `FNZERO_SAFE_FLASHBLOCK_SWQOS_API_TOKEN` | FlashBlock SWQoS token |
+| `FNZERO_SAFE_BLOCKRAZOR_SWQOS_API_TOKEN` | BlockRazor SWQoS token |
+| `FNZERO_SAFE_ASTRALANE_SWQOS_API_TOKEN` | Astralane SWQoS token |
+| `FNZERO_SAFE_SPEEDLANDING_SWQOS_API_TOKEN` | SpeedLanding SWQoS token |
+
+Legacy `SOL_SAFEKEY_*` variables are still accepted as fallbacks for existing local setups.
 
 ---
 
-## 🤝 Contributing
+## 8. Security Model
 
-Contributions welcome! Please ensure security best practices are followed. **Use English for commit and PR descriptions.**
+1. **Local-first API**: the desktop API binds to loopback and requires a local API token for protected routes.
+2. **Encrypted sensitive requests**: password and secret-bearing JSON requests are encrypted before crossing the local web/API boundary.
+3. **Keystore-first storage**: saved wallets store encrypted keystore JSON, not plaintext private keys.
+4. **Mobile private storage**: mobile keystore files stay in app private storage; wallet metadata and biometric settings use secure storage.
+5. **Biometric confirmation**: mobile signing actions can be gated by platform biometrics; desktop Touch ID uses macOS Keychain access control.
+6. **Explicit signing confirmation**: payments, dApp signing, transaction sending, and Squads actions go through a confirmation screen.
+7. **Plaintext export controls**: plaintext private key and mnemonic export are intentionally gated and should be used only for migration or local debugging.
+8. **No mobile Program workflows**: mobile builds do not expose Program deploy, upgrade, source build, or generic invoke APIs.
+
+Always back up encrypted keystores before depositing funds. Passwords and seed phrases cannot be recovered by FnzeroSafe.
 
 ---
 
-## 📄 License
+## 9. Documentation
 
-MIT License - See LICENSE file for details
+- [Desktop UI README](apps/desktop/README.md)
+- [Mobile README](apps/mobile/README.md)
+- [Mobile Internal Test Checklist](docs/mobile/INTERNAL_TEST_CHECKLIST.md)
+- [UI Wallet User Guide](UI_USER_GUIDE.md)
+- [Bot Integration Guide](BOT_INTEGRATION.md)
+- [CLI User Guide](USER_GUIDE.md)
+- [Interactive Tutorial](INTERACTIVE_TUTORIAL.md)
+- [Program Deployment Guide](apps/desktop/PROGRAM_DEPLOYMENT.md)
+
+---
+
+## 10. Before Submitting To GitHub
+
+Recommended validation:
+
+```bash
+cargo fmt --all -- --check
+cargo check --workspace --all-features
+cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+npm --prefix apps/desktop run lint
+npm --prefix apps/desktop run build
+cd apps/mobile && flutter analyze
+cd apps/mobile && flutter test --dart-define=FNZERO_MOBILE_DEV_BRIDGE=true
+```
+
+Package validation when release artifacts are needed:
+
+```bash
+make package-android
+make package-macos
+# Run package-ios on a macOS host with the required iOS platform/runtime installed.
+# Run package-windows on a Windows host with MSVC build tools installed.
+```
+
+For security-sensitive changes, include the threat model and the validation commands you ran in the pull request.
+
+---
+
+## 11. License
+
+MIT License. See [LICENSE](LICENSE).

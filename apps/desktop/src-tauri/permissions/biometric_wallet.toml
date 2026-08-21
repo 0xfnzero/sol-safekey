@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-biometric-wallet-status"
+description = "Allow the main wallet UI to check whether a saved wallet has a Touch ID-protected password."
+commands.allow = ["biometric_wallet_status"]
+
+[[permission]]
+identifier = "allow-biometric-wallet-store-password"
+description = "Allow the main wallet UI to store a saved wallet password in macOS Keychain with Touch ID protection."
+commands.allow = ["biometric_wallet_store_password"]
+
+[[permission]]
+identifier = "allow-biometric-wallet-get-password"
+description = "Allow the main wallet UI to retrieve a saved wallet password after macOS Touch ID authentication."
+commands.allow = ["biometric_wallet_get_password"]
+
+[[permission]]
+identifier = "allow-biometric-wallet-delete-password"
+description = "Allow the main wallet UI to remove a saved wallet Touch ID password from macOS Keychain."
+commands.allow = ["biometric_wallet_delete_password"]

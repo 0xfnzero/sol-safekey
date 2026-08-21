@@ -1,10 +1,10 @@
-# Sol-SafeKey 快速入门教程
+# FnzeroSafe 快速入门教程
 
-本教程将带你完成 Sol-SafeKey 的安装和基本使用流程。
+本教程将带你完成 FnzeroSafe 的安装和基本使用流程。
 
 ## 📋 目录
 
-1. [安装 Sol-SafeKey](#安装-sol-safekey)
+1. [安装 FnzeroSafe](#安装-fnzero-safe)
 2. [启动交互式菜单](#启动交互式菜单)
 3. [创建 keystore.json 钱包](#创建-keystorejson-钱包)
 4. [解锁钱包](#解锁钱包)
@@ -13,25 +13,25 @@
 
 ---
 
-## 📦 安装 Sol-SafeKey
+## 📦 安装 FnzeroSafe
 
 ### 方式一：从源码编译安装（推荐）
 
 ```bash
 # 1. 克隆或进入项目目录
-cd /path/to/sol-safekey
+cd /path/to/fnzero-safe
 
 # 2. 使用 full feature 编译并安装
-cargo install --path . --features="full"
+cargo install --path crates/core --features="full"
 
 # 3. 验证安装
-sol-safekey --version
+fnzero-safe --version
 ```
 
 ### 方式二：从 crates.io 安装
 
 ```bash
-cargo install sol-safekey --features="full"
+cargo install fnzero-safe --features="full"
 ```
 
 ---
@@ -41,14 +41,14 @@ cargo install sol-safekey --features="full"
 安装完成后，启动交互式菜单：
 
 ```bash
-sol-safekey start
+fnzero-safe start
 ```
 
 你将看到语言选择界面：
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Sol-SafeKey - Solana 密钥管理工具
+  FnzeroSafe - Solana 密钥管理工具
   Solana Security Key Management Tool
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -285,7 +285,7 @@ A: 密码无法恢复。如果忘记了密码，你需要：
 
 A: 将 `keystore.json` 文件复制到目标设备，然后：
    ```bash
-   sol-safekey start
+   fnzero-safe start
    # 选择 3. 解密 keystore.json
    ```
 
@@ -303,14 +303,14 @@ A: 可能的原因：
 
 - **Solana 官网**: https://solana.com
 - **Solana Explorer**: https://solscan.io
-- **Sol-SafeKey GitHub**: https://github.com/0xfnzero/sol-safekey
+- **FnzeroSafe GitHub**: https://github.com/0xfnzero/fnzero-safe
 
 ---
 
 ## 🎉 恭喜！
 
 你已经学会了如何：
-- ✅ 安装和配置 Sol-SafeKey
+- ✅ 安装和配置 FnzeroSafe
 - ✅ 创建安全的加密钱包
 - ✅ 解锁钱包进行操作
 - ✅ 创建 WSOL ATA 账号
