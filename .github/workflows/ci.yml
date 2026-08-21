@@ -32,6 +32,19 @@ jobs:
             patchelf \
             pkg-config
 
+      - name: Set up Node.js for embedded desktop assets
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20.19.5
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Build embedded desktop assets
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
