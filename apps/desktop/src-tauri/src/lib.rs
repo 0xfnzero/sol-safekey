@@ -32,6 +32,7 @@ const DAPP_TAB_TITLE_EVENT: &str = "dapp://tab-title";
 const DAPP_NEW_WINDOW_EVENT: &str = "dapp://new-window";
 const DAPP_REQUEST_TTL_MS: u64 = 3 * 60 * 1000;
 const DAPP_WALLET_NAME: &str = "FnzeroSafe";
+#[cfg(target_os = "macos")]
 const BIOMETRIC_WALLET_PASSWORD_SERVICE: &str = "dev.fnzero-safe.wallet.password.v3";
 
 #[derive(Clone)]
