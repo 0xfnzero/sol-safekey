@@ -14,11 +14,11 @@
     <a href="https://docs.rs/fnzero-safe-core">
         <img src="https://img.shields.io/docs.rs/fnzero-safe-core/badge.svg" alt="Documentation">
     </a>
-    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/LICENSE">
+    <a href="https://github.com/0xfnzero/FnzeroSafe/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
     </a>
-    <a href="https://github.com/0xfnzero/fnzero-safe">
-        <img src="https://img.shields.io/github/stars/0xfnzero/fnzero-safe?style=social" alt="GitHub stars">
+    <a href="https://github.com/0xfnzero/FnzeroSafe">
+        <img src="https://img.shields.io/github/stars/0xfnzero/FnzeroSafe?style=social" alt="GitHub stars">
     </a>
 </p>
 
@@ -31,8 +31,8 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/README_CN.md">中文</a> |
-    <a href="https://github.com/0xfnzero/fnzero-safe/blob/main/README.md">English</a> |
+    <a href="https://github.com/0xfnzero/FnzeroSafe/blob/main/README_CN.md">中文</a> |
+    <a href="https://github.com/0xfnzero/FnzeroSafe/blob/main/README.md">English</a> |
     <a href="https://fnzero.dev/">Website</a> |
     <a href="https://t.me/fnzero_group">Telegram</a> |
     <a href="https://discord.gg/ckf5UHxz">Discord</a>
